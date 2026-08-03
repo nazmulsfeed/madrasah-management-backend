@@ -77,7 +77,7 @@ exports.getAttendance = async (req, res, next) => {
     
     if (userType === 'student' || userType === 'guardian') {
       let hasFullAccess = false;
-      const rolePerm = await RolePermission.findOne({ role: userType });
+      const rolePerm = await RolePermission.findOne({ where: { role: userType } });
       if (rolePerm && rolePerm.permissions && rolePerm.permissions.can_view_all_attendance) {
         hasFullAccess = true;
       }

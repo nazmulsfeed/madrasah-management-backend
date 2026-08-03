@@ -6,7 +6,7 @@ const ApiResponse = require('../utils/apiResponse');
 // @access  Private (Super Admin only)
 exports.getAllPermissions = async (req, res, next) => {
   try {
-    const permissions = await RolePermission.find();
+    const permissions = await RolePermission.findAll();
     ApiResponse.success(res, permissions);
   } catch (error) {
     next(error);
@@ -21,15 +21,15 @@ exports.updateRolePermissions = async (req, res, next) => {
     const { role } = req.params;
     const updates = req.body; // should be an object of permission keys
 
-    let rolePerm = await RolePermission.findOne({ role });
+    let rolePerm = await RolePermission.findOne({ where: { role } });
 
     if (!rolePerm) {
-      rolePerm = new RolePermission({ role, permissions: updates });
+      rolePerm = await RolePermission.create({ role, permissions: updates });
     } else {
-      rolePerm.permissions = { ...rolePerm.permissions.toObject(), ...updates };
+      rolePerm.permissions = { ...(rolePerm.permissions || {}), ...updates };
+      rolePerm.changed('permissions', true); // Force update for JSON column
+      await rolePerm.save();
     }
-
-    await rolePerm.save();
 
     ApiResponse.success(res, rolePerm, `${role} এর পারমিশন আপডেট করা হয়েছে`);
   } catch (error) {
@@ -71,12 +71,12 @@ exports.getMyPermissions = async (req, res, next) => {
     const rolesToCheck = [req.user.userType];
     if (req.user.adminRole) rolesToCheck.push(req.user.adminRole);
 
-    const rolePerms = await RolePermission.find({ role: { $in: rolesToCheck } });
+    const rolePerms = await RolePermission.findAll({ where: { role: rolesToCheck } });
     const permissions = {};
     
     for (const rp of rolePerms) {
       if (rp.permissions) {
-        const permObj = rp.permissions.toObject();
+        const permObj = rp.permissions;
         Object.keys(permObj).forEach(key => {
           if (permObj[key] === true) {
             permissions[key] = true;

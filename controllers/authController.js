@@ -64,7 +64,7 @@ exports.login = async (req, res, next) => {
         can_view_all_attendance: true, can_view_all_homework: true, can_use_messaging: true, can_manage_hostel: true
       };
     } else {
-      const rolePerm = await RolePermission.findOne({ role: user.userType });
+      const rolePerm = await RolePermission.findOne({ where: { role: user.userType } });
       if (rolePerm) permissions = rolePerm.permissions;
     }
 
@@ -156,7 +156,7 @@ exports.getMe = async (req, res, next) => {
         can_view_all_attendance: true, can_view_all_homework: true, can_use_messaging: true, can_manage_hostel: true
       };
     } else {
-      const rolePerm = await RolePermission.findOne({ role: user.userType });
+      const rolePerm = await RolePermission.findOne({ where: { role: user.userType } });
       if (rolePerm) permissions = rolePerm.permissions;
     }
     
