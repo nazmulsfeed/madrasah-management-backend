@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Production/Build
+dist/
+build/
+
+# IDEs / System
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Zip / Archives
+*.zip
+*.tar.gz
+*.rar
