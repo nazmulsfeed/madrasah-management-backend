@@ -11,6 +11,8 @@ const sequelize = new Sequelize(
     logging: false, // Set to console.log if debugging SQL queries
     define: {
       timestamps: true,
+      charset: 'utf8mb4',
+      collate: 'utf8mb4_unicode_ci',
     },
   }
 );

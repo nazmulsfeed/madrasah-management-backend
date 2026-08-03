@@ -41,7 +41,7 @@ Guardian.init({
   relationshipLabel: {
     type: DataTypes.STRING,
     allowNull: true,
-    defaultValue: 'পিতা/মাতা',
+    defaultValue: '',
   },
   status: {
     type: DataTypes.STRING,
