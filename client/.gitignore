@@ -27,9 +27,3 @@ Thumbs.db
 *.zip
 *.tar.gz
 *.rar
-
-# Media / Videos
-*.mp4
-*.avi
-*.mkv
-*.mov
