@@ -117,9 +117,13 @@ exports.getHomeworks = async (req, res, next) => {
     
     // Fetch assignedBy users manually
     const userIds = [...new Set(homeworksRaw.map(h => h.assignedBy).filter(Boolean))];
-    const users = await User.findAll({ where: { _id: { [Op.in]: userIds } }, attributes: ['_id', 'firstName', 'lastName', 'fullName'] });
+    const users = await User.findAll({ where: { _id: { [Op.in]: userIds } }, attributes: ['_id', 'firstName', 'lastName'] });
     const userMap = {};
-    users.forEach(u => userMap[u._id] = u.toJSON());
+    users.forEach(u => {
+      const userObj = u.toJSON();
+      userObj.fullName = `${userObj.firstName || ''} ${userObj.lastName || ''}`.trim();
+      userMap[userObj._id] = userObj;
+    });
     
     const homeworks = homeworksRaw.map(hw => {
       const h = hw.toJSON();
@@ -151,9 +155,13 @@ exports.createHomework = async (req, res, next) => {
       assignedBy: req.user._id,
     });
     
-    const user = await User.findOne({ where: { _id: req.user._id }, attributes: ['_id', 'firstName', 'lastName', 'fullName'] });
+    const user = await User.findOne({ where: { _id: req.user._id }, attributes: ['_id', 'firstName', 'lastName'] });
     const h = homework.toJSON();
-    if (user) h.assignedBy = user.toJSON();
+    if (user) {
+      const uObj = user.toJSON();
+      uObj.fullName = `${uObj.firstName || ''} ${uObj.lastName || ''}`.trim();
+      h.assignedBy = uObj;
+    }
 
     ApiResponse.created(res, { homework: h }, 'হোমওয়ার্ক সফলভাবে দেওয়া হয়েছে');
   } catch (error) {
@@ -171,8 +179,12 @@ exports.getHomework = async (req, res, next) => {
     
     const h = homeworkRaw.toJSON();
     if (h.assignedBy) {
-       const user = await User.findOne({ where: { _id: h.assignedBy }, attributes: ['_id', 'firstName', 'lastName', 'fullName'] });
-       if (user) h.assignedBy = user.toJSON();
+       const user = await User.findOne({ where: { _id: h.assignedBy }, attributes: ['_id', 'firstName', 'lastName'] });
+       if (user) {
+         const uObj = user.toJSON();
+         uObj.fullName = `${uObj.firstName || ''} ${uObj.lastName || ''}`.trim();
+         h.assignedBy = uObj;
+       }
     }
 
     ApiResponse.success(res, { homework: h });
@@ -286,9 +298,13 @@ exports.getPublicHomeworks = async (req, res, next) => {
     
     // Fetch assignedBy users manually
     const userIds = [...new Set(homeworksRaw.map(h => h.assignedBy).filter(Boolean))];
-    const users = await User.findAll({ where: { _id: { [Op.in]: userIds } }, attributes: ['_id', 'firstName', 'lastName', 'fullName'] });
+    const users = await User.findAll({ where: { _id: { [Op.in]: userIds } }, attributes: ['_id', 'firstName', 'lastName'] });
     const userMap = {};
-    users.forEach(u => userMap[u._id] = u.toJSON());
+    users.forEach(u => {
+      const userObj = u.toJSON();
+      userObj.fullName = `${userObj.firstName || ''} ${userObj.lastName || ''}`.trim();
+      userMap[userObj._id] = userObj;
+    });
     
     const homeworks = homeworksRaw.map(hw => {
       const h = hw.toJSON();
