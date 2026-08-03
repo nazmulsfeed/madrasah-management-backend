@@ -141,7 +141,7 @@ exports.getHomeworks = async (req, res, next) => {
 
 exports.createHomework = async (req, res, next) => {
   try {
-    const { title, description, subject, classLevel, section, dueDate, status } = req.body;
+    const { title, description, subject, classLevel, section, dueDate, status, isKhataHomework } = req.body;
 
     const homework = await Homework.create({
       institution: req.user.institution,
@@ -152,6 +152,7 @@ exports.createHomework = async (req, res, next) => {
       section,
       dueDate,
       status: status || 'active',
+      isKhataHomework: isKhataHomework === true || isKhataHomework === 'true',
       assignedBy: req.user._id,
     });
     

@@ -59,6 +59,10 @@ Homework.init({
     allowNull: true,
     defaultValue: 'active',
   },
+  isKhataHomework: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+  },
 }, {
   sequelize,
   modelName: 'Homework',
