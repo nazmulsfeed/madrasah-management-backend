@@ -52,7 +52,7 @@ Branch.init({
 }, {
   sequelize,
   modelName: 'Branch',
-  tableName: 'branchs',
+  tableName: 'branches',
 });
 
 Branch.associate = function(models) {

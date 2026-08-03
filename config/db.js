@@ -9,6 +9,12 @@ const sequelize = new Sequelize(
     port: process.env.DB_PORT || 3306,
     dialect: 'mysql',
     logging: false, // Set to console.log if debugging SQL queries
+    dialectOptions: {
+      // Required for MySQL 8.4 caching_sha2_password plugin in local dev
+      allowPublicKeyRetrieval: true,
+      ssl: false,
+      charset: 'utf8mb4',
+    },
     define: {
       timestamps: true,
       charset: 'utf8mb4',
@@ -31,6 +37,8 @@ const connectDB = async () => {
         port: parseInt(process.env.DB_PORT || '3306', 10),
         user: dbUser,
         password: dbPassword,
+        allowPublicKeyRetrieval: true,
+        ssl: false,
       });
       await connection.query(`CREATE DATABASE IF NOT EXISTS \`${process.env.DB_NAME || 'annurisl_madrasah'}\`;`);
       await connection.end();
@@ -44,6 +52,8 @@ const connectDB = async () => {
           port: parseInt(process.env.DB_PORT || '3306', 10),
           user: dbUser,
           password: dbPassword,
+          allowPublicKeyRetrieval: true,
+          ssl: false,
         });
         await connection.query(`CREATE DATABASE IF NOT EXISTS \`${process.env.DB_NAME || 'annurisl_madrasah'}\`;`);
         await connection.end();
