@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const Homework = require('../models/Homework');
 const HomeworkSubmission = require('../models/HomeworkSubmission');
 const Subject = require('../models/Subject');
@@ -6,6 +7,19 @@ const Guardian = require('../models/Guardian');
 const StudentEnrollment = require('../models/StudentEnrollment');
 const RolePermission = require('../models/RolePermission');
 const ApiResponse = require('../utils/apiResponse');
+const User = require('../models/User'); // Required for fetching assignedBy
+
+// Helper function to map assignedByUser to assignedBy for frontend compatibility
+const mapAssignedBy = (homeworks) => {
+  return homeworks.map(hw => {
+    const h = hw.toJSON();
+    if (h.assignedByUser) {
+      h.assignedBy = h.assignedByUser;
+      delete h.assignedByUser;
+    }
+    return h;
+  });
+};
 
 // @desc    সকল হোমওয়ার্ক তালিকা
 // @route   GET /api/v1/homework
@@ -13,54 +27,41 @@ exports.getHomeworks = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 25;
-    const skip = (page - 1) * limit;
+    const offset = (page - 1) * limit;
 
-    const filter = {};
-    // super_admin হলে institution ফিল্টার প্রযোজ্য হবে না (সব দেখতে পারবে)
+    const where = {};
     if (req.user.userType !== 'super_admin' && req.user.institution) {
-      filter.institution = req.user.institution;
+      where.institution = req.user.institution;
     }
     
-    console.log('GET /homework - UserType:', req.user.userType, 'Institution:', req.user.institution);
-    console.log('GET /homework - Filter before query:', filter);
-    
-    // ফিল্টার: classLevel, section, subject
-    if (req.query.classLevel) filter.classLevel = req.query.classLevel;
-    if (req.query.section) filter.section = req.query.section;
-    if (req.query.subject) filter.subject = req.query.subject;
-    if (req.query.status) filter.status = req.query.status;
+    if (req.query.classLevel) where.classLevel = req.query.classLevel;
+    if (req.query.section) where.section = req.query.section;
+    if (req.query.subject) where.subject = req.query.subject;
+    if (req.query.status) where.status = req.query.status;
 
-    // ডেট ফিল্টার
     if (req.query.dateFilter === 'today') {
-      const startOfToday = new Date();
-      startOfToday.setHours(0, 0, 0, 0);
-      const endOfToday = new Date();
-      endOfToday.setHours(23, 59, 59, 999);
-      filter.assignDate = { $gte: startOfToday, $lte: endOfToday };
+      const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+      const endOfToday = new Date(); endOfToday.setHours(23, 59, 59, 999);
+      where.assignDate = { [Op.between]: [startOfToday, endOfToday] };
     } else if (req.query.dateFilter && req.query.dateFilter !== 'all') {
       const selectedDate = new Date(req.query.dateFilter);
       if (!isNaN(selectedDate.getTime())) {
-        const startOfDay = new Date(selectedDate);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(selectedDate);
-        endOfDay.setHours(23, 59, 59, 999);
-        filter.assignDate = { $gte: startOfDay, $lte: endOfDay };
+        const startOfDay = new Date(selectedDate); startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(selectedDate); endOfDay.setHours(23, 59, 59, 999);
+        where.assignDate = { [Op.between]: [startOfDay, endOfDay] };
       }
     }
 
-    // সার্চ ফিল্টার
     if (req.query.search) {
-      const searchRegex = new RegExp(req.query.search, 'i');
-      filter.$or = [
-        { title: searchRegex },
-        { description: searchRegex },
-        { subject: searchRegex }
+      const searchTerm = `%${req.query.search}%`;
+      where[Op.or] = [
+        { title: { [Op.like]: searchTerm } },
+        { description: { [Op.like]: searchTerm } },
+        { subject: { [Op.like]: searchTerm } }
       ];
     }
 
-    // --- Student/Guardian class scoping ---
     const userType = req.user.userType;
-
     if (userType === 'student' || userType === 'guardian') {
       let hasFullAccess = false;
       const rolePerm = await RolePermission.findOne({ where: { role: userType } });
@@ -70,45 +71,63 @@ exports.getHomeworks = async (req, res, next) => {
 
       if (!hasFullAccess) {
         let classLevelNames = [];
-
         if (userType === 'student') {
-          const student = await Student.findOne({ user: req.user._id });
+          const student = await Student.findOne({ where: { user: req.user._id } });
           if (student && student.currentEnrollment) {
-            const enrollment = await StudentEnrollment.findById(student.currentEnrollment).populate('classLevel');
-            if (enrollment && enrollment.classLevel) {
-              classLevelNames = [enrollment.classLevel.name];
+            const enrollment = await StudentEnrollment.findByPk(student.currentEnrollment);
+            if (enrollment) { // Note: might need to fetch classLevel name manually
+               const classLvl = await require('../models/ClassLevel').findByPk(enrollment.classLevel);
+               if (classLvl) classLevelNames = [classLvl.name];
+               else classLevelNames = [enrollment.classLevel];
             }
           }
-          filter.status = 'active';
+          where.status = 'active';
         } else if (userType === 'guardian') {
-          const guardian = await Guardian.findOne({ user: req.user._id });
+          const guardian = await Guardian.findOne({ where: { user: req.user._id } });
           if (guardian && guardian.students && guardian.students.length > 0) {
             const linkedStudentIds = guardian.students.map(s => s.student);
-            const students = await Student.find({ _id: { $in: linkedStudentIds } });
+            const students = await Student.findAll({ where: { _id: { [Op.in]: linkedStudentIds } } });
             const enrollmentIds = students.filter(s => s.currentEnrollment).map(s => s.currentEnrollment);
-            const enrollments = await StudentEnrollment.find({ _id: { $in: enrollmentIds } }).populate('classLevel');
-            classLevelNames = [...new Set(enrollments.map(e => e.classLevel?.name).filter(Boolean))];
+            const enrollments = await StudentEnrollment.findAll({ where: { _id: { [Op.in]: enrollmentIds } } });
+            // Simplified: we'll use raw classLevel field from enrollments
+            classLevelNames = [...new Set(enrollments.map(e => e.classLevel).filter(Boolean))];
           }
-          filter.status = 'active';
+          where.status = 'active';
         }
 
-        if (classLevelNames.length > 0 && !filter.classLevel) {
-          filter.classLevel = { $in: classLevelNames };
+        if (classLevelNames.length > 0 && !where.classLevel) {
+          where.classLevel = { [Op.in]: classLevelNames };
         } else if (classLevelNames.length === 0) {
           return ApiResponse.paginated(res, [], page, limit, 0);
         }
       }
     } else if (userType === 'student') {
-      // Fallback: if student type without scoping above
-      filter.status = 'active';
+      where.status = 'active';
     }
 
-    const total = await Homework.countDocuments(filter);
-    const homeworks = await Homework.find(filter)
-      .populate('assignedBy', 'firstName lastName fullName')
-      .sort({ assignDate: -1 })
-      .skip(skip)
-      .limit(limit);
+    const total = await Homework.count({ where });
+    
+    // We will query User separately and attach manually to avoid missing associations
+    const homeworksRaw = await Homework.findAll({
+      where,
+      order: [['assignDate', 'DESC']],
+      offset: offset,
+      limit: limit
+    });
+    
+    // Fetch assignedBy users manually
+    const userIds = [...new Set(homeworksRaw.map(h => h.assignedBy).filter(Boolean))];
+    const users = await User.findAll({ where: { _id: { [Op.in]: userIds } }, attributes: ['_id', 'firstName', 'lastName', 'fullName'] });
+    const userMap = {};
+    users.forEach(u => userMap[u._id] = u.toJSON());
+    
+    const homeworks = homeworksRaw.map(hw => {
+      const h = hw.toJSON();
+      if (h.assignedBy && userMap[h.assignedBy]) {
+        h.assignedBy = userMap[h.assignedBy];
+      }
+      return h;
+    });
 
     ApiResponse.paginated(res, homeworks, page, limit, total);
   } catch (error) {
@@ -116,8 +135,6 @@ exports.getHomeworks = async (req, res, next) => {
   }
 };
 
-// @desc    নতুন হোমওয়ার্ক তৈরি
-// @route   POST /api/v1/homework
 exports.createHomework = async (req, res, next) => {
   try {
     const { title, description, subject, classLevel, section, dueDate, status } = req.body;
@@ -133,45 +150,46 @@ exports.createHomework = async (req, res, next) => {
       status: status || 'active',
       assignedBy: req.user._id,
     });
+    
+    const user = await User.findOne({ where: { _id: req.user._id }, attributes: ['_id', 'firstName', 'lastName', 'fullName'] });
+    const h = homework.toJSON();
+    if (user) h.assignedBy = user.toJSON();
 
-    const populatedHomework = await Homework.findById(homework._id)
-      .populate('assignedBy', 'fullName');
-
-    ApiResponse.created(res, { homework: populatedHomework }, 'হোমওয়ার্ক সফলভাবে দেওয়া হয়েছে');
+    ApiResponse.created(res, { homework: h }, 'হোমওয়ার্ক সফলভাবে দেওয়া হয়েছে');
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    হোমওয়ার্ক বিস্তারিত
-// @route   GET /api/v1/homework/:id
 exports.getHomework = async (req, res, next) => {
   try {
-    const homework = await Homework.findById(req.params.id)
-      .populate('assignedBy', 'firstName lastName fullName');
+    const homeworkRaw = await Homework.findByPk(req.params.id);
 
-    if (!homework) {
+    if (!homeworkRaw) {
       return ApiResponse.notFound(res, 'হোমওয়ার্ক পাওয়া যায়নি');
     }
+    
+    const h = homeworkRaw.toJSON();
+    if (h.assignedBy) {
+       const user = await User.findOne({ where: { _id: h.assignedBy }, attributes: ['_id', 'firstName', 'lastName', 'fullName'] });
+       if (user) h.assignedBy = user.toJSON();
+    }
 
-    ApiResponse.success(res, { homework });
+    ApiResponse.success(res, { homework: h });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    হোমওয়ার্ক আপডেট
-// @route   PATCH /api/v1/homework/:id
 exports.updateHomework = async (req, res, next) => {
   try {
-    const homework = await Homework.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
-    });
+    const homework = await Homework.findByPk(req.params.id);
 
     if (!homework) {
       return ApiResponse.notFound(res, 'হোমওয়ার্ক পাওয়া যায়নি');
     }
+    
+    await homework.update(req.body);
 
     ApiResponse.success(res, { homework }, 'হোমওয়ার্ক আপডেট হয়েছে');
   } catch (error) {
@@ -179,28 +197,23 @@ exports.updateHomework = async (req, res, next) => {
   }
 };
 
-// @desc    হোমওয়ার্ক ডিলিট
-// @route   DELETE /api/v1/homework/:id
 exports.deleteHomework = async (req, res, next) => {
   try {
-    const homework = await Homework.findById(req.params.id);
+    const homework = await Homework.findByPk(req.params.id);
     if (!homework) {
       return ApiResponse.notFound(res, 'হোমওয়ার্ক পাওয়া যায়নি');
     }
 
-    // শুধু যে homework দিয়েছে সে delete করতে পারবে,
-    // তবে super_admin ও admin সবসময় delete করতে পারবে
-    const isOwner = homework.assignedBy.toString() === req.user._id.toString();
+    const isOwner = homework.assignedBy === req.user._id;
     const isAdmin = ['super_admin', 'admin'].includes(req.user.userType);
 
     if (!isOwner && !isAdmin) {
       return ApiResponse.forbidden(res, 'আপনি শুধুমাত্র নিজের দেওয়া হোমওয়ার্ক মুছতে পারবেন');
     }
 
-    await homework.deleteOne();
+    await homework.destroy();
 
-    // হোমওয়ার্ক সাবমিশনগুলোও মুছে ফেলতে হবে
-    await HomeworkSubmission.deleteMany({ homework: req.params.id });
+    await HomeworkSubmission.destroy({ where: { homework: req.params.id } });
 
     ApiResponse.success(res, null, 'হোমওয়ার্ক সফলভাবে মুছে ফেলা হয়েছে');
   } catch (error) {
@@ -208,12 +221,10 @@ exports.deleteHomework = async (req, res, next) => {
   }
 };
 
-// @desc    পাবলিক হোমওয়ার্ক সেটিংস
-// @route   GET /api/v1/homework/public/settings
 exports.getPublicHomeworkSettings = async (req, res, next) => {
   try {
     const Institution = require('../models/Institution');
-    const inst = await Institution.findOne();
+    const inst = await Institution.findOne(); // Assumes only one institution exists or needs order
     const isPublic = inst ? inst.isHomeworkPublic : false;
     ApiResponse.success(res, { isHomeworkPublic: isPublic });
   } catch (error) {
@@ -221,8 +232,6 @@ exports.getPublicHomeworkSettings = async (req, res, next) => {
   }
 };
 
-// @desc    পাবলিক হোমওয়ার্ক তালিকা
-// @route   GET /api/v1/homework/public
 exports.getPublicHomeworks = async (req, res, next) => {
   try {
     const Institution = require('../models/Institution');
@@ -233,52 +242,61 @@ exports.getPublicHomeworks = async (req, res, next) => {
 
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 500;
-    const skip = (page - 1) * limit;
+    const offset = (page - 1) * limit;
 
-    const filter = {};
+    const where = {};
     if (req.query.status) {
-      filter.status = req.query.status;
+      where.status = req.query.status;
     } else {
-      filter.status = 'active';
+      where.status = 'active';
     }
-    if (req.query.classLevel) filter.classLevel = req.query.classLevel;
-    if (req.query.section) filter.section = req.query.section;
-    if (req.query.subject) filter.subject = req.query.subject;
+    if (req.query.classLevel) where.classLevel = req.query.classLevel;
+    if (req.query.section) where.section = req.query.section;
+    if (req.query.subject) where.subject = req.query.subject;
 
-    // ডেট ফিল্টার
     if (req.query.dateFilter === 'today') {
-      const startOfToday = new Date();
-      startOfToday.setHours(0, 0, 0, 0);
-      const endOfToday = new Date();
-      endOfToday.setHours(23, 59, 59, 999);
-      filter.assignDate = { $gte: startOfToday, $lte: endOfToday };
+      const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+      const endOfToday = new Date(); endOfToday.setHours(23, 59, 59, 999);
+      where.assignDate = { [Op.between]: [startOfToday, endOfToday] };
     } else if (req.query.dateFilter && req.query.dateFilter !== 'all') {
       const selectedDate = new Date(req.query.dateFilter);
       if (!isNaN(selectedDate.getTime())) {
-        const startOfDay = new Date(selectedDate);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(selectedDate);
-        endOfDay.setHours(23, 59, 59, 999);
-        filter.assignDate = { $gte: startOfDay, $lte: endOfDay };
+        const startOfDay = new Date(selectedDate); startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(selectedDate); endOfDay.setHours(23, 59, 59, 999);
+        where.assignDate = { [Op.between]: [startOfDay, endOfDay] };
       }
     }
 
-    // সার্চ ফিল্টার
     if (req.query.search) {
-      const searchRegex = new RegExp(req.query.search, 'i');
-      filter.$or = [
-        { title: searchRegex },
-        { description: searchRegex },
-        { subject: searchRegex }
+      const searchTerm = `%${req.query.search}%`;
+      where[Op.or] = [
+        { title: { [Op.like]: searchTerm } },
+        { description: { [Op.like]: searchTerm } },
+        { subject: { [Op.like]: searchTerm } }
       ];
     }
 
-    const total = await Homework.countDocuments(filter);
-    const homeworks = await Homework.find(filter)
-      .populate('assignedBy', 'firstName lastName fullName')
-      .sort({ assignDate: -1 })
-      .skip(skip)
-      .limit(limit);
+    const total = await Homework.count({ where });
+    const homeworksRaw = await Homework.findAll({
+      where,
+      order: [['assignDate', 'DESC']],
+      offset: offset,
+      limit: limit
+    });
+    
+    // Fetch assignedBy users manually
+    const userIds = [...new Set(homeworksRaw.map(h => h.assignedBy).filter(Boolean))];
+    const users = await User.findAll({ where: { _id: { [Op.in]: userIds } }, attributes: ['_id', 'firstName', 'lastName', 'fullName'] });
+    const userMap = {};
+    users.forEach(u => userMap[u._id] = u.toJSON());
+    
+    const homeworks = homeworksRaw.map(hw => {
+      const h = hw.toJSON();
+      if (h.assignedBy && userMap[h.assignedBy]) {
+        h.assignedBy = userMap[h.assignedBy];
+      }
+      return h;
+    });
 
     ApiResponse.paginated(res, homeworks, page, limit, total);
   } catch (error) {
@@ -286,8 +304,6 @@ exports.getPublicHomeworks = async (req, res, next) => {
   }
 };
 
-// @desc    পাবলিক হোমওয়ার্ক টগল করুন (super_admin শুধুমাত্র)
-// @route   POST /api/v1/homework/public/toggle
 exports.togglePublicHomework = async (req, res, next) => {
   try {
     if (req.user.userType !== 'super_admin') {
