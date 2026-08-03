@@ -260,8 +260,8 @@ const defaultRolePermissions = [
 
 const autoSeed = async () => {
   try {
-    // 1. Seed Role Permissions if missing
-    const permissionCount = await RolePermission.countDocuments();
+    // 1. Seed Role Permissions if missing (Sequelize: count() not countDocuments())
+    const permissionCount = await RolePermission.count();
     if (permissionCount === 0) {
       console.log('➕ Database initialized: Seeding default role permissions...');
       const defaultRolePermissionsUpdated = defaultRolePermissions.map(item => {
@@ -274,12 +274,13 @@ const autoSeed = async () => {
         
         return item;
       });
-      await RolePermission.insertMany(defaultRolePermissionsUpdated);
+      // Sequelize: bulkCreate() instead of insertMany()
+      await RolePermission.bulkCreate(defaultRolePermissionsUpdated);
       console.log('✅ Role permissions successfully seeded!');
     }
 
-    // 2. Seed default data if no Users exist
-    const userCount = await User.countDocuments();
+    // 2. Seed default data if no Users exist (Sequelize: count() not countDocuments())
+    const userCount = await User.count();
     if (userCount === 0) {
       console.log('➕ Database initialized: Seeding default users and system structures...');
       
@@ -341,5 +342,6 @@ const autoSeed = async () => {
     console.error('❌ Auto-seeding failed:', error);
   }
 };
+
 
 module.exports = autoSeed;
