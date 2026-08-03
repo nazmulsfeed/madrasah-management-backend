@@ -104,9 +104,9 @@ function main() {
 
   generateSQL('classlevels.bson', 'classlevels', doc => ({
     _id: toStr(doc._id), institution: toStr(doc.institution)||null,
-    branch: toStr(doc.branch)||null, name: doc.name||'', arabicName: doc.arabicName||'',
-    order_num: doc.order||doc.order_num||0, educationStream: doc.educationStream||'general',
-    status: doc.status||'active',
+    branch: toStr(doc.branch)||null, name: doc.name||'', code: doc.code||'',
+    order: doc.order||doc.order_num||0, educationStream: doc.educationStream||'general',
+    isActive: doc.status === 'active' || doc.isActive ? 1 : 0,
     createdAt: toDate(doc.createdAt)||now, updatedAt: toDate(doc.updatedAt)||now,
   }));
 
@@ -124,7 +124,7 @@ function main() {
     _id: toStr(doc._id), user: toStr(doc.user)||null,
     institution: toStr(doc.institution)||null, branch: toStr(doc.branch)||null,
     employeeId: doc.employeeId||`TCH-${Date.now()}`,
-    teacherType: doc.teacherType||'regular', designation: doc.designation||'',
+    teacherType: doc.teacherType||'regular',
     qualification: doc.qualification||'', specialization: doc.specialization||'',
     joiningDate: toDate(doc.joiningDate)||now, status: doc.status||'active',
     createdAt: toDate(doc.createdAt)||now, updatedAt: toDate(doc.updatedAt)||now,
