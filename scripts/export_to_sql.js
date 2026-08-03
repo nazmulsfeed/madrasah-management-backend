@@ -57,7 +57,8 @@ function generateSQL(bsonFile, tableName, mapper) {
   if (!docs.length) return;
   console.log(`Generating SQL for ${tableName}: ${docs.length} records`);
   
-  // We can use INSERT IGNORE to avoid duplicate key errors on the live server
+  sqlOut += `ALTER TABLE \`${tableName}\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n`;
+  // We can use REPLACE INTO to overwrite the corrupted rows (????) with correct text
   for (const doc of docs) {
     try {
       const mapped = mapper(doc);
@@ -65,7 +66,7 @@ function generateSQL(bsonFile, tableName, mapper) {
       const keys = Object.keys(mapped);
       const vals = keys.map(k => escape(mapped[k]));
       
-      sqlOut += `INSERT IGNORE INTO \`${tableName}\` (${keys.map(k=>'`'+k+'`').join(',')}) VALUES (${vals.join(',')});\n`;
+      sqlOut += `REPLACE INTO \`${tableName}\` (${keys.map(k=>'`'+k+'`').join(',')}) VALUES (${vals.join(',')});\n`;
     } catch (e) {
       console.error(e);
     }
