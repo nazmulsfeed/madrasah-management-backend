@@ -138,7 +138,7 @@ function main() {
     description: doc.description||'',
     assignDate: toDate(doc.assignDate)||now, dueDate: toDate(doc.dueDate)||null,
     status: doc.status||'active', assignedBy: toStr(doc.assignedBy)||null,
-    attachments: doc.fileUrl||doc.attachments||'',
+    attachments: doc.fileUrl ? JSON.stringify([doc.fileUrl]) : (doc.attachments ? JSON.stringify(doc.attachments) : JSON.stringify([])),
     createdAt: toDate(doc.createdAt)||now, updatedAt: toDate(doc.updatedAt)||now,
   }));
 
