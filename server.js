@@ -85,6 +85,10 @@ app.use((req, res, next) => {
   if (!req.url.startsWith('/api')) {
     req.url = '/api' + req.url;
   }
+  // RFC 7230 fix for LiteSpeed / Passenger HTTP/2 POST requests where both Transfer-Encoding and Content-Length are sent
+  if (req.headers['transfer-encoding'] && req.headers['content-length']) {
+    delete req.headers['content-length'];
+  }
   console.log(`[REQ] ${req.method} ${req.url}`);
   next();
 });

@@ -9,6 +9,10 @@ const errorHandler = (err, req, res, next) => {
     console.error('Failed to write log file:', e);
   }
 
+  if (err instanceof SyntaxError && 'body' in err) {
+    return ApiResponse.error(res, 'অবৈধ JSON ডেটা', 400);
+  }
+
   if (err.name === 'ValidationError') {
     const messages = Object.values(err.errors).map((e) => e.message);
     return ApiResponse.error(res, 'ভ্যালিডেশন ত্রুটি', 400, messages);
