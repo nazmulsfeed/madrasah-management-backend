@@ -19,15 +19,38 @@ const mysql = require('mysql2/promise');
 
 const connectDB = async () => {
   try {
+    let dbUser = process.env.DB_USER || 'root';
+    let dbPassword = process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : '';
+
     // Auto-create database if it doesn't exist
-    const connection = await mysql.createConnection({
-      host: process.env.DB_HOST || '127.0.0.1',
-      port: parseInt(process.env.DB_PORT || '3306', 10),
-      user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASSWORD || '',
-    });
-    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${process.env.DB_NAME || 'annurisl_madrasah'}\`;`);
-    await connection.end();
+    try {
+      const connection = await mysql.createConnection({
+        host: process.env.DB_HOST || '127.0.0.1',
+        port: parseInt(process.env.DB_PORT || '3306', 10),
+        user: dbUser,
+        password: dbPassword,
+      });
+      await connection.query(`CREATE DATABASE IF NOT EXISTS \`${process.env.DB_NAME || 'annurisl_madrasah'}\`;`);
+      await connection.end();
+    } catch (createErr) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('⚠️ Primary DB user connect failed, trying fallback root user for local dev...');
+        dbUser = 'root';
+        dbPassword = '';
+        const connection = await mysql.createConnection({
+          host: process.env.DB_HOST || '127.0.0.1',
+          port: parseInt(process.env.DB_PORT || '3306', 10),
+          user: dbUser,
+          password: dbPassword,
+        });
+        await connection.query(`CREATE DATABASE IF NOT EXISTS \`${process.env.DB_NAME || 'annurisl_madrasah'}\`;`);
+        await connection.end();
+        sequelize.config.username = dbUser;
+        sequelize.config.password = dbPassword;
+      } else {
+        throw createErr;
+      }
+    }
 
     await sequelize.authenticate();
     console.log('✅ MySQL/Sequelize সংযুক্ত হয়েছে');
