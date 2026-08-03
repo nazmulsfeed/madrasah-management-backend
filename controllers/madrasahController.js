@@ -2,7 +2,7 @@ const QurbaniSkin = require('../models/QurbaniSkin');
 const FundTransfer = require('../models/FundTransfer');
 const JournalEntry = require('../models/JournalEntry');
 const Account = require('../models/Account');
-const ApiResponse = require('../utils/ApiResponse');
+const ApiResponse = require('../utils/apiResponse');
 const mongoose = require('mongoose');
 
 // Helper to get or create fund account UUID
