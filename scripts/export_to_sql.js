@@ -58,7 +58,9 @@ function generateSQL(bsonFile, tableName, mapper) {
   console.log(`Generating SQL for ${tableName}: ${docs.length} records`);
   
   sqlOut += `ALTER TABLE \`${tableName}\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n`;
-  // We can use REPLACE INTO to overwrite the corrupted rows (????) with correct text
+  sqlOut += `TRUNCATE TABLE \`${tableName}\`;\n`;
+  
+  // We can use REPLACE INTO or INSERT INTO since we just truncated the table
   for (const doc of docs) {
     try {
       const mapped = mapper(doc);
