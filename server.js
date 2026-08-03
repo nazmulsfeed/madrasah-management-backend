@@ -65,16 +65,18 @@ const madrasahRoutes = require('./routes/madrasah');
 const app = express();
 
 // মিডলওয়্যার
-const allowedOrigins = process.env.CLIENT_URL
-  ? process.env.CLIENT_URL.split(',').map(url => url.trim())
-  : ['http://localhost:5173', 'http://144.217.68.82', 'https://annurislamicacademy.edu.bd'];
-
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+    if (
+      !origin ||
+      origin.includes('annurislamicacademy.edu.bd') ||
+      origin.includes('localhost') ||
+      origin.includes('127.0.0.1') ||
+      origin.includes('144.217.68.82')
+    ) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(null, true); // Allow all fallback
     }
   },
   credentials: true,
