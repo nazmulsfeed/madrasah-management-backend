@@ -1,6 +1,7 @@
 const { Op } = require('sequelize');
 const Notice = require('../models/Notice');
 const ApiResponse = require('../utils/apiResponse');
+const { broadcastNotification } = require('../utils/pushHelper');
 
 // @desc    পাবলিক নোটিশ তালিকা
 // @route   GET /api/v1/notices/public
@@ -65,6 +66,13 @@ exports.createNotice = async (req, res, next) => {
     });
 
     ApiResponse.created(res, { notice }, 'নোটিশ সফলভাবে তৈরি করা হয়েছে');
+
+    // ব্যাকগ্রাউন্ডে নোটিফিকেশন পাঠানো হচ্ছে (await ব্যবহার না করায় সার্ভার ব্লক হবে না)
+    broadcastNotification({
+      title: `📢 নতুন নোটিশ: ${title}`,
+      body: content ? content.substring(0, 100) : 'একটি নতুন নোটিশ পোস্ট করা হয়েছে।',
+      url: '/public',
+    });
   } catch (error) {
     next(error);
   }

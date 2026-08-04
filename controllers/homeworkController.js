@@ -8,6 +8,7 @@ const StudentEnrollment = require('../models/StudentEnrollment');
 const RolePermission = require('../models/RolePermission');
 const ApiResponse = require('../utils/apiResponse');
 const User = require('../models/User'); // Required for fetching assignedBy
+const { broadcastNotification } = require('../utils/pushHelper');
 
 // Helper function to map assignedByUser to assignedBy for frontend compatibility
 const mapAssignedBy = (homeworks) => {
@@ -165,6 +166,13 @@ exports.createHomework = async (req, res, next) => {
     }
 
     ApiResponse.created(res, { homework: h }, 'হোমওয়ার্ক সফলভাবে দেওয়া হয়েছে');
+
+    // ব্যাকগ্রাউন্ডে নোটিফিকেশন পাঠানো হচ্ছে
+    broadcastNotification({
+      title: `📚 নতুন হোমওয়ার্ক: ${title}`,
+      body: description ? description.substring(0, 100) : `বিষয়: ${subject || ''} | শ্রেণী: ${classLevel || ''}`,
+      url: '/public',
+    });
   } catch (error) {
     next(error);
   }
