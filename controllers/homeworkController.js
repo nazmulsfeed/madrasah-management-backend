@@ -333,10 +333,15 @@ exports.togglePublicHomework = async (req, res, next) => {
       return ApiResponse.notFound(res, 'প্রতিষ্ঠান পাওয়া যায়নি');
     }
 
-    inst.isHomeworkPublic = req.body.isHomeworkPublic === true;
-    await inst.save();
+    const newValue = req.body.isHomeworkPublic === true;
+    
+    // Use update() directly to ensure Sequelize saves the boolean value
+    await Institution.update(
+      { isHomeworkPublic: newValue },
+      { where: { _id: inst._id } }
+    );
 
-    ApiResponse.success(res, { isHomeworkPublic: inst.isHomeworkPublic }, 'পাবলিক সেটিংস আপডেট হয়েছে');
+    ApiResponse.success(res, { isHomeworkPublic: newValue }, 'পাবলিক সেটিংস আপডেট হয়েছে');
   } catch (error) {
     next(error);
   }
