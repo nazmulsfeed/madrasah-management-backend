@@ -171,7 +171,7 @@ exports.createHomework = async (req, res, next) => {
     broadcastNotification({
       title: `📚 নতুন হোমওয়ার্ক: ${title}`,
       body: description ? description.substring(0, 100) : `বিষয়: ${subject || ''} | শ্রেণী: ${classLevel || ''}`,
-      url: '/public',
+      url: '/public-homework',
     });
   } catch (error) {
     next(error);

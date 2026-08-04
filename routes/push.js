@@ -15,7 +15,7 @@ router.get('/test-send', async (req, res) => {
   const results = await broadcastNotification({
     title: '🔔 টেস্ট নোটিফিকেশন',
     body: 'এটি একটি টেস্ট নোটিফিকেশন — সার্ভার থেকে সরাসরি পাঠানো হয়েছে।',
-    url: '/public',
+    url: '/public-homework',
   });
   res.json({ success: true, results });
 });

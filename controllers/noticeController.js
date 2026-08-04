@@ -71,7 +71,7 @@ exports.createNotice = async (req, res, next) => {
     broadcastNotification({
       title: `📢 নতুন নোটিশ: ${title}`,
       body: content ? content.substring(0, 100) : 'একটি নতুন নোটিশ পোস্ট করা হয়েছে।',
-      url: '/public',
+      url: '/public-homework',
     });
   } catch (error) {
     next(error);
