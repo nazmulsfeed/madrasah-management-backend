@@ -249,9 +249,10 @@ exports.deleteHomework = async (req, res, next) => {
 exports.getPublicHomeworkSettings = async (req, res, next) => {
   try {
     const Institution = require('../models/Institution');
-    const inst = await Institution.findOne(); // Assumes only one institution exists or needs order
+    const inst = await Institution.findOne();
     const isPublic = inst ? inst.isHomeworkPublic : false;
-    ApiResponse.success(res, { isHomeworkPublic: isPublic });
+    const name = inst ? inst.name : 'দারুল উলূম মাদ্রাসা';
+    ApiResponse.success(res, { isHomeworkPublic: isPublic, institutionName: name });
   } catch (error) {
     next(error);
   }
