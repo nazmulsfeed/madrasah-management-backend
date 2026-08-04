@@ -8,5 +8,6 @@ router.use(protect);
 
 router.get('/', noticeController.getNotices);
 router.post('/', authorize('super_admin', 'admin', 'principal', 'vice_principal'), noticeController.createNotice);
+router.delete('/:id', authorize('super_admin', 'admin', 'principal', 'vice_principal'), noticeController.deleteNotice);
 
 module.exports = router;

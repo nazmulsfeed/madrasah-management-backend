@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const Notice = require('../models/Notice');
 const ApiResponse = require('../utils/apiResponse');
 
@@ -5,20 +6,20 @@ const ApiResponse = require('../utils/apiResponse');
 // @route   GET /api/v1/notices
 exports.getNotices = async (req, res, next) => {
   try {
-    const filter = { institution: req.user.institution };
+    const where = {};
+    if (req.user.userType !== 'super_admin' && req.user.institution) {
+      where.institution = req.user.institution;
+    }
     
     // Role based filtering
-    if (req.user.userType !== 'super_admin' && req.user.userType !== 'admin' && req.user.userType !== 'principal') {
-      filter.isPublished = true;
-      filter.$or = [
-        { audience: 'all' },
-        { audience: `${req.user.userType}s` } // e.g. 'students', 'teachers'
-      ];
+    if (!['super_admin', 'admin', 'principal', 'co_super_admin'].includes(req.user.userType)) {
+      where.isPublished = true;
     }
 
-    const notices = await Notice.find(filter)
-      .populate('publishedBy', 'firstName lastName')
-      .sort({ publishedAt: -1 });
+    const notices = await Notice.findAll({
+      where,
+      order: [['createdAt', 'DESC']]
+    });
 
     ApiResponse.success(res, { notices });
   } catch (error) {
@@ -37,12 +38,32 @@ exports.createNotice = async (req, res, next) => {
       title,
       content,
       audience: audience || ['all'],
-      priority,
+      priority: priority || 'normal',
       isPublished: isPublished !== undefined ? isPublished : true,
       publishedBy: req.user._id,
     });
 
     ApiResponse.created(res, { notice }, 'নোটিশ সফলভাবে তৈরি করা হয়েছে');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    নোটিশ ডিলিট
+// @route   DELETE /api/v1/notices/:id
+exports.deleteNotice = async (req, res, next) => {
+  try {
+    const isNumeric = /^\d+$/.test(req.params.id);
+    const notice = isNumeric
+      ? await Notice.findByPk(req.params.id)
+      : await Notice.findOne({ where: { _id: req.params.id } });
+
+    if (!notice) {
+      return ApiResponse.notFound(res, 'নোটিশ পাওয়া যায়নি');
+    }
+
+    await notice.destroy();
+    ApiResponse.success(res, null, 'নোটিশ মুছে ফেলা হয়েছে');
   } catch (error) {
     next(error);
   }
