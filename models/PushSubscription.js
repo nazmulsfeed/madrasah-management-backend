@@ -5,7 +5,7 @@ class PushSubscription extends Model {}
 
 PushSubscription.init({
   endpoint: {
-    type: DataTypes.TEXT,
+    type: DataTypes.STRING(700),
     primaryKey: true,
     allowNull: false,
   },
