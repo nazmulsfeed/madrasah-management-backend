@@ -172,10 +172,14 @@ exports.createHomework = async (req, res, next) => {
 
 exports.getHomework = async (req, res, next) => {
   try {
-    const homeworkRaw = await Homework.findByPk(req.params.id);
+    // Support both integer id and MongoDB _id string
+    const isNumeric = /^\d+$/.test(req.params.id);
+    const homeworkRaw = isNumeric
+      ? await Homework.findByPk(req.params.id)
+      : await Homework.findOne({ where: { _id: req.params.id } });
 
     if (!homeworkRaw) {
-      return ApiResponse.notFound(res, 'হোমওয়ার্ক পাওয়া যায়নি');
+      return ApiResponse.notFound(res, 'হোমওয়ার্ক পাওয়া যায়নি');
     }
     
     const h = homeworkRaw.toJSON();
@@ -196,15 +200,18 @@ exports.getHomework = async (req, res, next) => {
 
 exports.updateHomework = async (req, res, next) => {
   try {
-    const homework = await Homework.findByPk(req.params.id);
+    const isNumeric = /^\d+$/.test(req.params.id);
+    const homework = isNumeric
+      ? await Homework.findByPk(req.params.id)
+      : await Homework.findOne({ where: { _id: req.params.id } });
 
     if (!homework) {
-      return ApiResponse.notFound(res, 'হোমওয়ার্ক পাওয়া যায়নি');
+      return ApiResponse.notFound(res, 'হোমওয়ার্ক পাওয়া যায়নি');
     }
     
     await homework.update(req.body);
 
-    ApiResponse.success(res, { homework }, 'হোমওয়ার্ক আপডেট হয়েছে');
+    ApiResponse.success(res, { homework }, 'হোমওয়ার্ক আপডেট হয়েছে');
   } catch (error) {
     next(error);
   }
@@ -212,7 +219,11 @@ exports.updateHomework = async (req, res, next) => {
 
 exports.deleteHomework = async (req, res, next) => {
   try {
-    const homework = await Homework.findByPk(req.params.id);
+    const isNumeric = /^\d+$/.test(req.params.id);
+    const homework = isNumeric
+      ? await Homework.findByPk(req.params.id)
+      : await Homework.findOne({ where: { _id: req.params.id } });
+
     if (!homework) {
       return ApiResponse.notFound(res, 'হোমওয়ার্ক পাওয়া যায়নি');
     }
@@ -226,7 +237,8 @@ exports.deleteHomework = async (req, res, next) => {
 
     await homework.destroy();
 
-    await HomeworkSubmission.destroy({ where: { homework: req.params.id } });
+    // Use homework._id for submission cleanup (not the URL param which may be integer id)
+    await HomeworkSubmission.destroy({ where: { homework: homework._id } });
 
     ApiResponse.success(res, null, 'হোমওয়ার্ক সফলভাবে মুছে ফেলা হয়েছে');
   } catch (error) {
