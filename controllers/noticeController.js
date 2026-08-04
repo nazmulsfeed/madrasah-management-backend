@@ -2,6 +2,27 @@ const { Op } = require('sequelize');
 const Notice = require('../models/Notice');
 const ApiResponse = require('../utils/apiResponse');
 
+// @desc    পাবলিক নোটিশ তালিকা
+// @route   GET /api/v1/notices/public
+exports.getPublicNotices = async (req, res, next) => {
+  try {
+    const Institution = require('../models/Institution');
+    const inst = await Institution.findOne();
+    if (!inst || !inst.isHomeworkPublic) {
+      return ApiResponse.forbidden(res, 'পাবলিক ভিউ নিষ্ক্রিয় রয়েছে');
+    }
+
+    const notices = await Notice.findAll({
+      where: { isPublished: true },
+      order: [['createdAt', 'DESC']]
+    });
+
+    ApiResponse.success(res, { notices });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    সকল নোটিশ দেখা
 // @route   GET /api/v1/notices
 exports.getNotices = async (req, res, next) => {

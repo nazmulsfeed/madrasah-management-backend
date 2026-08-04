@@ -4,6 +4,8 @@ const noticeController = require('../controllers/noticeController');
 const { protect } = require('../middleware/auth');
 const { authorize } = require('../middleware/rbac');
 
+router.get('/public', noticeController.getPublicNotices);
+
 router.use(protect);
 
 router.get('/', noticeController.getNotices);
