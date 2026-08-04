@@ -228,7 +228,7 @@ exports.deleteHomework = async (req, res, next) => {
       return ApiResponse.notFound(res, 'হোমওয়ার্ক পাওয়া যায়নি');
     }
 
-    const isOwner = homework.assignedBy === req.user._id;
+    const isOwner = homework.assignedBy?.toString() === req.user._id?.toString();
     const isAdmin = ['super_admin', 'admin'].includes(req.user.userType);
 
     if (!isOwner && !isAdmin) {
