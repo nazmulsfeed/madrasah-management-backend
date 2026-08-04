@@ -25,9 +25,9 @@ async function broadcastNotification(payload) {
     const notificationPayload = JSON.stringify({
       title: payload.title || 'নতুন আপডেট',
       body: payload.body || 'মাদ্রাসা থেকে একটি নতুন আপডেট এসেছে।',
-      icon: '/icon-192x192.png',
-      badge: '/icon-192x192.png',
-      url: payload.url || '/',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      url: payload.url || '/public-homework',
     });
 
     const sendPromises = subscriptions.map(async (sub) => {
