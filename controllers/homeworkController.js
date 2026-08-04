@@ -22,6 +22,22 @@ const mapAssignedBy = (homeworks) => {
   });
 };
 
+// Helper to calculate startOfDay and endOfDay in Bangladesh Timezone (UTC+6)
+const getBDDateRange = (dateStr) => {
+  let targetDateStr;
+  if (!dateStr || dateStr === 'today') {
+    const now = new Date();
+    targetDateStr = new Date(now.getTime() + (6 * 60 * 60 * 1000)).toISOString().slice(0, 10);
+  } else {
+    targetDateStr = typeof dateStr === 'string' ? dateStr.slice(0, 10) : new Date(dateStr).toISOString().slice(0, 10);
+  }
+
+  const startOfDay = new Date(`${targetDateStr}T00:00:00.000+06:00`);
+  const endOfDay = new Date(`${targetDateStr}T23:59:59.999+06:00`);
+
+  return { startOfDay, endOfDay };
+};
+
 // @desc    সকল হোমওয়ার্ক তালিকা
 // @route   GET /api/v1/homework
 exports.getHomeworks = async (req, res, next) => {
@@ -41,16 +57,11 @@ exports.getHomeworks = async (req, res, next) => {
     if (req.query.status) where.status = req.query.status;
 
     if (req.query.dateFilter === 'today') {
-      const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
-      const endOfToday = new Date(); endOfToday.setHours(23, 59, 59, 999);
-      where.assignDate = { [Op.between]: [startOfToday, endOfToday] };
+      const { startOfDay, endOfDay } = getBDDateRange('today');
+      where.assignDate = { [Op.between]: [startOfDay, endOfDay] };
     } else if (req.query.dateFilter && req.query.dateFilter !== 'all') {
-      const selectedDate = new Date(req.query.dateFilter);
-      if (!isNaN(selectedDate.getTime())) {
-        const startOfDay = new Date(selectedDate); startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(selectedDate); endOfDay.setHours(23, 59, 59, 999);
-        where.assignDate = { [Op.between]: [startOfDay, endOfDay] };
-      }
+      const { startOfDay, endOfDay } = getBDDateRange(req.query.dateFilter);
+      where.assignDate = { [Op.between]: [startOfDay, endOfDay] };
     }
 
     if (req.query.search) {
@@ -289,16 +300,11 @@ exports.getPublicHomeworks = async (req, res, next) => {
     if (req.query.subject) where.subject = req.query.subject;
 
     if (req.query.dateFilter === 'today') {
-      const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
-      const endOfToday = new Date(); endOfToday.setHours(23, 59, 59, 999);
-      where.assignDate = { [Op.between]: [startOfToday, endOfToday] };
+      const { startOfDay, endOfDay } = getBDDateRange('today');
+      where.assignDate = { [Op.between]: [startOfDay, endOfDay] };
     } else if (req.query.dateFilter && req.query.dateFilter !== 'all') {
-      const selectedDate = new Date(req.query.dateFilter);
-      if (!isNaN(selectedDate.getTime())) {
-        const startOfDay = new Date(selectedDate); startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(selectedDate); endOfDay.setHours(23, 59, 59, 999);
-        where.assignDate = { [Op.between]: [startOfDay, endOfDay] };
-      }
+      const { startOfDay, endOfDay } = getBDDateRange(req.query.dateFilter);
+      where.assignDate = { [Op.between]: [startOfDay, endOfDay] };
     }
 
     if (req.query.search) {
