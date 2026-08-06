@@ -40,6 +40,23 @@ const getUserTypeLabel = (type) => {
   return labels[type] || type;
 };
 
+const defaultRolePermissions = {
+  teacher: {
+    can_view_homework: true, can_view_all_homework: true, can_create_homework: true, can_edit_homework: true, can_delete_homework: true,
+    can_view_attendance: true, can_view_all_attendance: true, can_mark_attendance: true,
+    can_view_exams: true, can_view_notice: true, can_manage_notice: true,
+    can_grade_exams: true, can_add_syllabus: true, can_communicate_parents: true, can_take_live_class: true, can_use_messaging: true,
+    can_view_students: true, can_view_library: true
+  },
+  hifz_teacher: {
+    can_view_homework: true, can_view_all_homework: true, can_create_homework: true, can_edit_homework: true, can_delete_homework: true,
+    can_view_attendance: true, can_view_all_attendance: true, can_mark_attendance: true,
+    can_view_exams: true, can_view_notice: true, can_manage_notice: true,
+    can_grade_exams: true, can_add_syllabus: true, can_communicate_parents: true, can_take_live_class: true, can_use_messaging: true,
+    can_manage_hifz: true, can_view_students: true, can_view_library: true
+  }
+};
+
 const checkPermission = (permissionKey) => {
   return async (req, res, next) => {
     if (!req.user) {
@@ -60,15 +77,37 @@ const checkPermission = (permissionKey) => {
       if (req.user.adminRole) rolesToCheck.push(req.user.adminRole);
 
       const rolePerms = await RolePermission.findAll({ where: { role: rolesToCheck } });
-      const hasPermission = rolePerms.some(rp => {
+      
+      let hasExplicitPermission = false;
+      let hasExplicitDenial = false;
+
+      for (const rp of rolePerms) {
         let perms = rp.permissions;
         if (typeof perms === 'string') {
           try { perms = JSON.parse(perms); } catch (e) {}
         }
-        return perms && (perms[permissionKey] === true || perms[permissionKey] === 'true');
-      });
+        if (perms && typeof perms === 'object') {
+          if (perms[permissionKey] === true || perms[permissionKey] === 'true') {
+            hasExplicitPermission = true;
+          } else if (perms[permissionKey] === false || perms[permissionKey] === 'false') {
+            hasExplicitDenial = true;
+          }
+        }
+      }
 
-      if (hasPermission) {
+      if (hasExplicitPermission) {
+        return next();
+      }
+
+      if (hasExplicitDenial) {
+        return ApiResponse.forbidden(
+          res,
+          `এই কার্যক্রমের জন্য আপনার (${getUserTypeLabel(req.user.userType)}) অনুমতি নেই`
+        );
+      }
+
+      const isAllowedByDefault = rolesToCheck.some(r => defaultRolePermissions[r]?.[permissionKey] === true);
+      if (isAllowedByDefault) {
         return next();
       }
 
