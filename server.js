@@ -160,9 +160,14 @@ const start = async () => {
 
     // Fix Branch bug corruption
     const User = require('./models/User');
+    const { Op } = require('sequelize');
     const corruptedUsers = await User.findAll({ 
       where: { 
-        institution: ['Dhaka Main Branch', 'Chittagong Branch', 'Sylhet Branch'] 
+        [Op.or]: [
+          { institution: { [Op.ne]: 'আন-নুর-ইসলামিক একাডেমি' } },
+          { institution: null },
+          { institution: '' }
+        ]
       } 
     });
     for (const u of corruptedUsers) {
