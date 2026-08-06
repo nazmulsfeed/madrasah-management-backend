@@ -64,8 +64,18 @@ exports.login = async (req, res, next) => {
         can_view_all_attendance: true, can_view_all_homework: true, can_use_messaging: true, can_manage_hostel: true
       };
     } else {
-      const rolePerm = await RolePermission.findOne({ where: { role: user.userType } });
-      if (rolePerm) permissions = rolePerm.permissions;
+      const rolesToCheck = [user.userType];
+      if (user.adminRole) rolesToCheck.push(user.adminRole);
+      const rolePerms = await RolePermission.findAll({ where: { role: rolesToCheck } });
+      rolePerms.forEach(rp => {
+        let perms = rp.permissions;
+        if (typeof perms === 'string') {
+          try { perms = JSON.parse(perms); } catch (e) {}
+        }
+        if (perms && typeof perms === 'object') {
+          Object.assign(permissions, perms);
+        }
+      });
     }
 
     const token = generateToken(user._id);
@@ -156,8 +166,18 @@ exports.getMe = async (req, res, next) => {
         can_view_all_attendance: true, can_view_all_homework: true, can_use_messaging: true, can_manage_hostel: true
       };
     } else {
-      const rolePerm = await RolePermission.findOne({ where: { role: user.userType } });
-      if (rolePerm) permissions = rolePerm.permissions;
+      const rolesToCheck = [user.userType];
+      if (user.adminRole) rolesToCheck.push(user.adminRole);
+      const rolePerms = await RolePermission.findAll({ where: { role: rolesToCheck } });
+      rolePerms.forEach(rp => {
+        let perms = rp.permissions;
+        if (typeof perms === 'string') {
+          try { perms = JSON.parse(perms); } catch (e) {}
+        }
+        if (perms && typeof perms === 'object') {
+          Object.assign(permissions, perms);
+        }
+      });
     }
     
     // Check hifz eligibility for students and guardians

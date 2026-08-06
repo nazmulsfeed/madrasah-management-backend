@@ -60,7 +60,13 @@ const checkPermission = (permissionKey) => {
       if (req.user.adminRole) rolesToCheck.push(req.user.adminRole);
 
       const rolePerms = await RolePermission.findAll({ where: { role: rolesToCheck } });
-      const hasPermission = rolePerms.some(rp => rp.permissions && rp.permissions[permissionKey] === true);
+      const hasPermission = rolePerms.some(rp => {
+        let perms = rp.permissions;
+        if (typeof perms === 'string') {
+          try { perms = JSON.parse(perms); } catch (e) {}
+        }
+        return perms && (perms[permissionKey] === true || perms[permissionKey] === 'true');
+      });
 
       if (hasPermission) {
         return next();
