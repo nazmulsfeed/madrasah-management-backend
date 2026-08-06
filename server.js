@@ -140,6 +140,27 @@ const PORT = process.env.PORT || 5000;
 const start = async () => {
   await db.connectDB();
   
+  // Apply one-time notice permission fix for teachers
+  try {
+    const RolePermission = require('./models/RolePermission');
+    const perms = await RolePermission.findAll({ where: { role: ['teacher', 'hifz_teacher'] } });
+    for (const p of perms) {
+      let permissions = p.permissions;
+      if (typeof permissions === 'string') {
+        try { permissions = JSON.parse(permissions); } catch(e){}
+      }
+      if (permissions && permissions.can_manage_notice === false) {
+        permissions.can_manage_notice = true;
+        p.permissions = permissions;
+        p.changed('permissions', true);
+        await p.save();
+        console.log(`[Migration] Fixed notice permission to true for role: ${p.role}`);
+      }
+    }
+  } catch (error) {
+    console.error('[Migration] Failed to fix notice permissions:', error.message);
+  }
+
   // Start Monthly Invoice Auto-Scheduler
   const { startInvoiceScheduler } = require('./utils/invoiceScheduler');
   startInvoiceScheduler();
