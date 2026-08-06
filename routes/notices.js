@@ -2,14 +2,14 @@ const express = require('express');
 const router = express.Router();
 const noticeController = require('../controllers/noticeController');
 const { protect } = require('../middleware/auth');
-const { authorize } = require('../middleware/rbac');
+const { authorize, checkPermission } = require('../middleware/rbac');
 
 router.get('/public', noticeController.getPublicNotices);
 
 router.use(protect);
 
 router.get('/', noticeController.getNotices);
-router.post('/', authorize('super_admin', 'admin', 'principal', 'vice_principal'), noticeController.createNotice);
-router.delete('/:id', authorize('super_admin', 'admin', 'principal', 'vice_principal'), noticeController.deleteNotice);
+router.post('/', checkPermission('can_manage_notice'), noticeController.createNotice);
+router.delete('/:id', checkPermission('can_manage_notice'), noticeController.deleteNotice);
 
 module.exports = router;
