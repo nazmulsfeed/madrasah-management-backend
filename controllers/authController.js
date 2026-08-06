@@ -50,7 +50,8 @@ exports.login = async (req, res, next) => {
     await user.save({ validateBeforeSave: false });
 
     let permissions = {};
-    if (user.userType === 'super_admin') {
+    const isSuperOrCoSuper = user.userType === 'super_admin' || user.userType === 'co_super_admin' || user.adminRole === 'co_super_admin';
+    if (isSuperOrCoSuper) {
       permissions = {
         can_view_homework: true, can_create_homework: true, can_edit_homework: true, can_delete_homework: true,
         can_view_attendance: true, can_mark_attendance: true,
@@ -61,7 +62,8 @@ exports.login = async (req, res, next) => {
         can_grade_exams: true, can_add_syllabus: true,
         can_communicate_parents: true, can_take_live_class: true,
         can_view_reports: true, can_manage_hifz: true, can_view_students: true,
-        can_view_all_attendance: true, can_view_all_homework: true, can_use_messaging: true, can_manage_hostel: true
+        can_view_all_attendance: true, can_view_all_homework: true, can_use_messaging: true, can_manage_hostel: true,
+        can_view_library: true, can_view_settings: true
       };
     } else {
       const rolesToCheck = [user.userType];
@@ -152,7 +154,8 @@ exports.getMe = async (req, res, next) => {
       .populate('branch', 'name code');
 
     let permissions = {};
-    if (user.userType === 'super_admin') {
+    const isSuperOrCoSuper = user.userType === 'super_admin' || user.userType === 'co_super_admin' || user.adminRole === 'co_super_admin';
+    if (isSuperOrCoSuper) {
       permissions = {
         can_view_homework: true, can_create_homework: true, can_edit_homework: true, can_delete_homework: true,
         can_view_attendance: true, can_mark_attendance: true,
@@ -163,7 +166,8 @@ exports.getMe = async (req, res, next) => {
         can_grade_exams: true, can_add_syllabus: true,
         can_communicate_parents: true, can_take_live_class: true,
         can_view_reports: true, can_manage_hifz: true, can_view_students: true,
-        can_view_all_attendance: true, can_view_all_homework: true, can_use_messaging: true, can_manage_hostel: true
+        can_view_all_attendance: true, can_view_all_homework: true, can_use_messaging: true, can_manage_hostel: true,
+        can_view_library: true, can_view_settings: true
       };
     } else {
       const rolesToCheck = [user.userType];
