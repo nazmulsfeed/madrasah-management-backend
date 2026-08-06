@@ -10,6 +10,7 @@ router.use(protect);
 
 router.get('/', noticeController.getNotices);
 router.post('/', checkPermission('can_manage_notice'), noticeController.createNotice);
+router.put('/:id', checkPermission('can_manage_notice'), noticeController.updateNotice);
 router.delete('/:id', checkPermission('can_manage_notice'), noticeController.deleteNotice);
 
 module.exports = router;

@@ -97,3 +97,31 @@ exports.deleteNotice = async (req, res, next) => {
     next(error);
   }
 };
+// @desc    নোটিশ আপডেট
+// @route   PUT /api/v1/notices/:id
+exports.updateNotice = async (req, res, next) => {
+  try {
+    const isNumeric = /^\d+$/.test(req.params.id);
+    const notice = isNumeric
+      ? await Notice.findByPk(req.params.id)
+      : await Notice.findOne({ where: { _id: req.params.id } });
+
+    if (!notice) {
+      return ApiResponse.notFound(res, 'নোটিশ পাওয়া যায়নি');
+    }
+
+    const { title, content, audience, priority, isPublished } = req.body;
+
+    if (title !== undefined) notice.title = title;
+    if (content !== undefined) notice.content = content;
+    if (audience !== undefined) notice.audience = audience;
+    if (priority !== undefined) notice.priority = priority;
+    if (isPublished !== undefined) notice.isPublished = isPublished;
+
+    await notice.save();
+    
+    ApiResponse.success(res, { notice }, 'নোটিশ সফলভাবে আপডেট করা হয়েছে');
+  } catch (error) {
+    next(error);
+  }
+};
