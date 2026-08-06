@@ -1,0 +1,1922 @@
+[{
+  "_id": {
+    "$oid": "6a4b263b78be8193c802b25c"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": "গণিত",
+  "description": "১৪ নম্বর পৃষ্ঠার, ৪ নাম্বার ৫ নাম্বার ৬ নাম্বার ৭ নাম্বার অংক",
+  "subject": "গনিত",
+  "classLevel": "প্রথম",
+  "section": "ক",
+  "assignedBy": {
+    "$oid": "6a4a1afb84d6cc5a6824a33e"
+  },
+  "dueDate": {
+    "$date": "2026-07-06T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-06T03:51:23.245Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-06T03:51:23.245Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-06T03:51:23.245Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4b324478be8193c802b395"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "৩৩ নম্বর পৃষ্ঠা শেষের তিন লাইন পড়া",
+  "subject": "ইংরেজী",
+  "classLevel": "প্রথম",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1af178be8193c802ae7b"
+  },
+  "dueDate": {
+    "$date": "2026-07-06T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-06T04:42:44.436Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-06T04:42:44.436Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-06T04:42:44.436Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4b348578be8193c802b3d4"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "৬ নং হাদিস ও    আলিফ থেকে শীন পর্যন্ত খাতা লেখা পৃষ্ঠা পুরন করে।",
+  "subject": "আরবী",
+  "classLevel": "নার্সারী",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1b5c78be8193c802ae94"
+  },
+  "dueDate": {
+    "$date": "2026-07-06T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-06T04:52:21.400Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-06T04:52:21.401Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-06T04:52:21.401Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4b399678be8193c802b460"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "বেলুন ",
+  "subject": "ড্রইং",
+  "classLevel": "প্রথম",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1b3278be8193c802ae87"
+  },
+  "dueDate": {
+    "$date": "2026-07-06T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-06T05:13:58.544Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-06T05:13:58.544Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-06T05:13:58.544Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4b3fd578be8193c802b501"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "ফুল রং করো ",
+  "subject": "ড্রইং",
+  "classLevel": "প্লে",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4a1afb84d6cc5a6824a33e"
+  },
+  "dueDate": {
+    "$date": "2026-07-06T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-06T05:40:37.442Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-06T05:40:37.442Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-06T05:40:37.442Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4b409978be8193c802b514"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": "A",
+  "description": " বেলুন আঁকা ও রং করা",
+  "subject": "ড্রইং",
+  "classLevel": "নার্সারী",
+  "section": "ক",
+  "assignedBy": {
+    "$oid": "6a4a1afb84d6cc5a6824a33e"
+  },
+  "dueDate": {
+    "$date": "2026-07-06T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-06T05:43:53.342Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-06T05:43:53.342Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-06T05:43:53.342Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c68b378be8193c802b912"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": " د ذ ر ز س ش ص ض ط ظ পর্যন্ত পড়া ও খাতা লেখা\n৬ নাম্বার হাদিস অর্থসহ মুখস্থ ",
+  "subject": "আরবী",
+  "classLevel": "নার্সারী",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1b5c78be8193c802ae94"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T02:47:15.626Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T02:47:15.627Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T02:47:15.627Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c702d78be8193c802ba25"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": " 31 নম্বর পৃষ্ঠার প্রথম দুই লাইন অর্থসহ পড়া",
+  "subject": "ইংরেজী",
+  "classLevel": "দ্বিতীয়",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1af178be8193c802ae7b"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T03:19:09.172Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T03:19:09.173Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T03:19:09.173Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c762778be8193c802bb92"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "১০নং অনুশীলন ৪ নং প্রশ্ন প্রথম  ৪টি শব্দ দিয়ে বাক্য রচনা",
+  "subject": "বাংলা",
+  "classLevel": "তৃতীয়",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1b5c78be8193c802ae94"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T03:44:39.303Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T03:44:39.303Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T03:44:39.303Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c76dc78be8193c802bbe7"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "২৫ ও ২৬ নম্বর সাবক পড়া এবং সূরা নাসরের শেষ আয়াত লেখার মাধ্যমে মুখস্ত।",
+  "subject": "আরবী",
+  "classLevel": "দ্বিতীয়",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1ba078be8193c802aea2"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T03:47:40.419Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T03:47:40.419Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T03:47:40.419Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c7a5378be8193c802bc50"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": "অনুশীলনী ৪",
+  "description": "৮ নম্বার অংক। \n৪,৫,৬,৭ এ তিনটি অংক করানো হয়েছে",
+  "subject": "গনিত",
+  "classLevel": "প্রথম",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4a1afb84d6cc5a6824a33e"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T04:02:27.107Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T04:02:27.108Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T04:02:27.108Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c7afd78be8193c802bc81"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "A-Z পর্যন্ত মুখস্থ করে খাতায় লিখা।",
+  "subject": "ইংরেজী",
+  "classLevel": "প্লে",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1c2278be8193c802aec1"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T04:05:17.722Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T04:05:17.723Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T04:05:17.723Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c823378be8193c802bd55"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "১২ নং অনুশীলন ১ নং প্রশ্ন পড়া ও খাতা লেখা \nসাতে উপরের রিডিং পাঠ গুলো ভাল করে পড়া।",
+  "subject": "বাংলা",
+  "classLevel": "দ্বিতীয়",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1b5c78be8193c802ae94"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T04:36:03.706Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T04:36:03.707Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T04:36:03.707Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c827578be8193c802bd75"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "1-50 সংখ্যা মুখস্ত করে লিখা।",
+  "subject": "গনিত",
+  "classLevel": "নার্সারী",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1c2278be8193c802aec1"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T04:37:09.904Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T04:37:09.904Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T04:37:09.904Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c8a4778be8193c802be03"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "কালেমায়ে তাইয়্যেবা এবং ن সিলেটের লেখা।",
+  "subject": "আরবী",
+  "classLevel": "প্লে",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4a1afb84d6cc5a6824a33e"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T05:10:31.865Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T05:10:31.865Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T05:10:31.865Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c8a4c78be8193c802be13"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "৮ নং অনুশীলন ৪ নং প্রশ্ন ক.খ.গ.ঘ মুখস্ত করে খাতা লেখা",
+  "subject": "সমাজ ",
+  "classLevel": "তৃতীয়",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1b5c78be8193c802ae94"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T05:10:36.553Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T05:10:36.554Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T05:10:36.554Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c8b8378be8193c802be89"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "1-20 পর্যন্ত সংখ্যা মুখস্ত করে লিখা।",
+  "subject": "গনিত",
+  "classLevel": "প্লে",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1c2278be8193c802aec1"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T05:15:47.912Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T05:15:47.912Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T05:15:47.912Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c8bd478be8193c802bead"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "ট ঠ ড ঢ ণ পড়া ও লিখা।",
+  "subject": "বাংলা",
+  "classLevel": "প্লে",
+  "section": ", ",
+  "assignedBy": {
+    "$oid": "6a4b1b3278be8193c802ae87"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T05:17:08.304Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T05:17:08.305Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T05:17:08.305Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c8c3378be8193c802bec5"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "বাংলা সাত দিনের নাম না দেখে লিখা।",
+  "subject": "বাংলা",
+  "classLevel": "নার্সারী",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1b3278be8193c802ae87"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T05:18:43.894Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T05:18:43.894Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T05:18:43.894Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c8c7478be8193c802bed8"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "My parents ( word meaning )",
+  "subject": "ইংরেজী",
+  "classLevel": "তৃতীয়",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1b3278be8193c802ae87"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T05:19:48.694Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T05:19:48.694Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T05:19:48.694Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c8ce978be8193c802bef2"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "ছন্দ, ছড়া ৮ লাইন না দেখে লেখা।",
+  "subject": "বাংলা",
+  "classLevel": "প্রথম",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1b3278be8193c802ae87"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T05:21:45.545Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T05:21:45.545Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T05:21:45.545Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c95eb78be8193c802c018"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "২৫ ও ২৬ নম্বর শরবত এবং সূরা নাসের শেষ নম্বর আয়াত",
+  "subject": "আরবী",
+  "classLevel": "দ্বিতীয়",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1ba078be8193c802aea2"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T06:00:11.584Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T06:00:11.585Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T06:00:11.585Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c966178be8193c802c056"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "চার আলিফ মদের প্রথমটি পড়া এবং সূরা এখলাছের শেষ নম্বর আয়াত লেখার মাধ্যমে মুখস্ত করতে হবে এবং সাধারণ জ্ঞানে ১৫ নাম্বার পৃষ্ঠা শেষ পাঁচটি প্রশ্ন",
+  "subject": "আরবী",
+  "classLevel": "প্রথম",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1ba078be8193c802aea2"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T06:02:09.714Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T06:02:09.715Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T06:02:09.715Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c96a778be8193c802c097"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "৭ নম্বর মাসনুন দোয়া।",
+  "subject": "ইসলাম শিক্ষা",
+  "classLevel": "তৃতীয়",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4a1afb84d6cc5a6824a33e"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T06:03:19.387Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T06:03:19.387Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T06:03:19.387Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c96da78be8193c802c0d1"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "১৭ পৃষ্ঠা নয় নম্বর প্রশ্ন পড়া ও লেখা।",
+  "subject": "ইংরেজী",
+  "classLevel": "নার্সারী",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1ba078be8193c802aea2"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T06:04:10.616Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T06:04:10.617Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T06:04:10.617Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4c9abe78be8193c802c10d"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "৩৮ নম্বর পৃষ্ঠার দুই নাম্বার পড়া",
+  "subject": "গনিত",
+  "classLevel": "দ্বিতীয়",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1af178be8193c802ae7b"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T06:20:46.409Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T06:20:46.409Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T06:20:46.409Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4cbf6d78be8193c802c2b1"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "আগের পাড়ায় থাকলো",
+  "subject": "ইংরেজী",
+  "classLevel": "প্রথম",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1af178be8193c802ae7b"
+  },
+  "dueDate": {
+    "$date": "2026-07-07T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-07T08:57:17.483Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-07T08:57:17.484Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-07T08:57:17.484Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4dbb0278be8193c802c69f"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "কোরআন বইয়ের ৩০ নম্বর পৃষ্ঠার প্রথম দুই লাইন ইসলাম শিক্ষা বইয়ের মাসনুন দোয়ার ১৬ নাম্বার দোয়া। সাথে খাতা লেখা,",
+  "subject": "আরবী",
+  "classLevel": "তৃতীয়",
+  "section": "ক",
+  "assignedBy": {
+    "$oid": "6a4a1afb84d6cc5a6824a33e"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T02:50:42.924Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T02:50:42.925Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T02:52:29.405Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4dbbaa78be8193c802c736"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "৩৯ নম্বর পৃষ্ঠার এক নম্বর পড়া সাথে খাতা লেখা",
+  "subject": "গনিত",
+  "classLevel": "দ্বিতীয়",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1af178be8193c802ae7b"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T02:53:30.090Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T02:53:30.091Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T02:53:30.091Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4dbd7278be8193c802c7a6"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "ত  থ  দ  ধ   ন  পড়া ও লিখা ",
+  "subject": "বাংলা",
+  "classLevel": "প্লে",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1b3278be8193c802ae87"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T03:01:06.467Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T03:01:06.467Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T03:01:06.467Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4dc93b78be8193c802c950"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "১৩ পৃষ্টা এলোমেলো বর্ণ সাজিয়ে লিখ।",
+  "subject": "বাংলা",
+  "classLevel": "নার্সারী",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1b3278be8193c802ae87"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T03:51:23.087Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T03:51:23.088Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T03:51:23.088Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4dc99178be8193c802c964"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "২৫-২৬ ও ২৮ নাম্বার সবক পড়া এবং সূরা নাসর সম্পূর্ণ লেখার মাধ্যমে মুখস্ত করতে হবে।",
+  "subject": "আরবী",
+  "classLevel": "দ্বিতীয়",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1ba078be8193c802aea2"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T03:52:49.628Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T03:52:49.628Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T03:52:49.628Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4dc9e278be8193c802c97d"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "চার আলিফ মদের প্রথম দুইটি পড়া এবং সূরা এখলাছ লেখার মাধ্যমে মুখস্থ করতে হবে।",
+  "subject": "আরবী",
+  "classLevel": "প্রথম",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1ba078be8193c802aea2"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T03:54:10.495Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T03:54:10.495Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T03:54:35.712Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4dca5978be8193c802c9b2"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "ص —  \nض — \nط — \nظ — \nع _\nغ — \n পর্যন্ত পড়া ও খাতা লেখা সাতে ১ থেকে ৬ টি হাদিস অর্থ সহ। \n",
+  "subject": "আরবী",
+  "classLevel": "নার্সারী",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1b5c78be8193c802ae94"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T03:56:09.861Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T03:56:09.861Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T03:56:09.861Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4dcc0378be8193c802ca4b"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "A-Z পর্যন্ত মুখস্ত করে লিখা। সাথে খাতা লিখা।",
+  "subject": "ইংরেজী",
+  "classLevel": "প্লে",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1c2278be8193c802aec1"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T04:03:15.780Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T04:03:15.780Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T04:03:15.780Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4dcfbf78be8193c802ca91"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "১০ নং অনুশীলন ৪ নং প্রশ্ন পরের ৪ টি পড়া ও খাতা লেখা",
+  "subject": "বাংলা",
+  "classLevel": "তৃতীয়",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1b5c78be8193c802ae94"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T04:19:11.156Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T04:19:11.157Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T04:19:11.157Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4dd02178be8193c802cb38"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "Fill in the blanks  (27)",
+  "subject": "ইংরেজী",
+  "classLevel": "তৃতীয়",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1b3278be8193c802ae87"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T04:20:49.023Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T04:20:49.023Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T04:20:49.023Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4dd37178be8193c802cb6c"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "১-৫০ পর্যন্ত সংখ্যা ও 1-50 পর্যন্ত সংখ্যা পড়ালেখা।",
+  "subject": "গনিত",
+  "classLevel": "নার্সারী",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1c2278be8193c802aec1"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T04:34:57.492Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T04:34:57.492Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T04:35:50.901Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4dd5f778be8193c802cbbb"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "তেত্রিশ নাম্বার পৃষ্ঠার পড়া অর্থসহ সাথে খাতা লেখা",
+  "subject": "ইংরেজী",
+  "classLevel": "প্রথম",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1af178be8193c802ae7b"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T04:45:43.758Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T04:45:43.758Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T04:45:43.758Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4dd65378be8193c802cbe0"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "১২ নং অনুশীলন ২ নং প্রশ্ন পড়া ও খাতা লেখা",
+  "subject": "বাংলা",
+  "classLevel": "দ্বিতীয়",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1b5c78be8193c802ae94"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T04:47:15.889Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T04:47:15.890Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T04:47:15.890Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4ddd5d78be8193c802cc1b"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "1-20 পর্যন্ত সংখ্যা মুখস্ত করে লিখা।",
+  "subject": "গনিত",
+  "classLevel": "প্লে",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1c2278be8193c802aec1"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T05:17:17.712Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T05:17:17.712Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T05:17:59.017Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4ddda078be8193c802cc48"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "31 নম্বর পৃষ্ঠার পড়া সাথে খাতা লেখা",
+  "subject": "ইংরেজী",
+  "classLevel": "দ্বিতীয়",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1af178be8193c802ae7b"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T05:18:24.109Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T05:18:24.110Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T05:18:24.110Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4ddeca78be8193c802cc68"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "৮ নং অনুশীলন \n৪ নং প্রশ্ন \nঙ, চ,ছ - পড়া ও খাতা লেখা",
+  "subject": "সমাজ ",
+  "classLevel": "তৃতীয়",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1b5c78be8193c802ae94"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T05:23:22.607Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T05:23:22.607Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T05:23:22.607Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4de41d78be8193c802ccca"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "৪৩ নম্বর পৃষ্ঠা ৪ নম্বর পড়া সাথে খাতা লেখা",
+  "subject": "গনিত",
+  "classLevel": "তৃতীয়",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1af178be8193c802ae7b"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T05:46:05.359Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T05:46:05.360Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T05:46:05.360Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4de5cb78be8193c802cd52"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "Life ছড়া মুখস্ত করতে হবে এবং ১৭ পৃষ্ঠার নয় নাম্বার প্রশ্ন homework.",
+  "subject": "ইংরেজী",
+  "classLevel": "নার্সারী",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1ba078be8193c802aea2"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T05:53:15.194Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T05:53:15.195Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T05:53:15.195Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4de5f078be8193c802cd6a"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "১৫ পৃষ্ঠা সম্পূর্ণ পড়া।",
+  "subject": "সাধারন জ্ঞান",
+  "classLevel": "প্রথম",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1ba078be8193c802aea2"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T05:53:52.240Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T05:53:52.240Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T05:53:52.240Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4de60f78be8193c802cd7d"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": "অনুশীলনী ৪",
+  "description": "৯ নম্বর অংক। খাতায় লেখা।",
+  "subject": "গনিত",
+  "classLevel": "প্রথম",
+  "section": "ক",
+  "assignedBy": {
+    "$oid": "6a4a1afb84d6cc5a6824a33e"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T05:54:23.091Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T05:54:23.092Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T05:54:23.092Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4de65378be8193c802cdac"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": "কালিমাতুস শাহাদা",
+  "description": " এবং و সিলেটে লেখা",
+  "subject": "আরবী",
+  "classLevel": "প্লে",
+  "section": "ক",
+  "assignedBy": {
+    "$oid": "6a4a1afb84d6cc5a6824a33e"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T05:55:31.996Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T05:55:31.996Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T05:57:54.455Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4de68e78be8193c802cdbf"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": "১৪ নম্বর পৃষ্ঠা 2 নম্বর প্রশ্নগুলো।",
+  "description": ",",
+  "subject": "সমাজ ",
+  "classLevel": "দ্বিতীয়",
+  "section": "ক",
+  "assignedBy": {
+    "$oid": "6a4a1afb84d6cc5a6824a33e"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T05:56:30.583Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T05:56:30.583Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T05:56:30.583Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4de6c478be8193c802cdd2"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": "মাসনুন দোয়া ৭  নম্বর।",
+  "description": ",",
+  "subject": "ইসলাম শিক্ষা",
+  "classLevel": "দ্বিতীয়",
+  "section": "ক",
+  "assignedBy": {
+    "$oid": "6a4a1afb84d6cc5a6824a33e"
+  },
+  "dueDate": {
+    "$date": "2026-07-08T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-08T05:57:24.284Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-08T05:57:24.284Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-08T05:57:24.284Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4f0d1728da9d83b627aba6"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "৩৯ নম্বর পৃষ্ঠা ২ নাম্বার",
+  "subject": "গনিত",
+  "classLevel": "দ্বিতীয়",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1af178be8193c802ae7b"
+  },
+  "dueDate": {
+    "$date": "2026-07-09T00:00:00.000Z"
+  },
+  "status": "draft",
+  "assignDate": {
+    "$date": "2026-07-09T02:53:11.328Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-09T02:53:11.329Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-09T02:53:11.329Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4f19a228da9d83b627ac24"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "প ফ ব ভ ম  পড়া-লেখাসহ বর্ণগুলো দিয়ে ছন্দ বলা।",
+  "subject": "বাংলা",
+  "classLevel": "প্লে",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1b3278be8193c802ae87"
+  },
+  "dueDate": {
+    "$date": "2026-07-09T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-09T03:46:42.362Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-09T03:46:42.363Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-09T03:46:42.363Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4f1a9228da9d83b627ac3d"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "পৃষ্ঠা : ৫ ৬ ৭ ৮ নম্বর,এলোমেলো বর্ণ সাজিয়ে শব্দ তৈরি।",
+  "subject": "বাংলা",
+  "classLevel": "নার্সারী",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1b3278be8193c802ae87"
+  },
+  "dueDate": {
+    "$date": "2026-07-09T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-09T03:50:42.595Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-09T03:50:42.595Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-09T03:50:42.595Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4f1d2828da9d83b627ac9a"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "২৯ ৩০ ৩১ ও ৩২ নাম্বার সবক পড়া এবং সূরা নাসর লেখার মাধ্যমে মুখস্ত করতে হবে",
+  "subject": "আরবী",
+  "classLevel": "দ্বিতীয়",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1ba078be8193c802aea2"
+  },
+  "dueDate": {
+    "$date": "2026-07-09T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-09T04:01:44.091Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-09T04:01:44.092Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-09T04:01:44.092Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4f1d3d28da9d83b627acc8"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "A - Z Capital লেটার মুখস্ত করে লিখা।",
+  "subject": "ইংরেজী",
+  "classLevel": "প্লে",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1c2278be8193c802aec1"
+  },
+  "dueDate": {
+    "$date": "2026-07-09T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-09T04:02:05.653Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-09T04:02:05.654Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-09T04:02:05.654Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4f1d4f28da9d83b627acdb"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "সূরা ইখলাস লেখার মাধ্যমে মুখস্ত করতে হবে।",
+  "subject": "আরবী",
+  "classLevel": "প্রথম",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1ba078be8193c802aea2"
+  },
+  "dueDate": {
+    "$date": "2026-07-09T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-09T04:02:23.503Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-09T04:02:23.503Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-09T04:02:23.503Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4f1dd428da9d83b627acee"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "আলিফ থেকে  গইন পর্যন্ত খেলার  মাধ্যমে পড়া \n১ থেকে ৬ পর্যন্ত হাদিস অর্থসহ মুখস্থ \nকালিমা শাহাদাত অর্থসহ মুখস্ত ",
+  "subject": "আরবী",
+  "classLevel": "নার্সারী",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1b5c78be8193c802ae94"
+  },
+  "dueDate": {
+    "$date": "2026-07-09T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-09T04:04:36.491Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-09T04:04:36.491Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-09T04:04:36.491Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4f1ef828da9d83b627ad0e"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "৩৬ নং পৃষ্ঠা \nআশার আলো ছড়াটি কবির নামসহ প্রথম ৮ লাইন মুখস্ত করে খাতায় লেখা",
+  "subject": "বাংলা",
+  "classLevel": "তৃতীয়",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1b5c78be8193c802ae94"
+  },
+  "dueDate": {
+    "$date": "2026-07-09T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-09T04:09:28.137Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-09T04:09:28.137Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-09T04:09:28.137Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4f229328da9d83b627ad4c"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "১২ নং অনুশীলন নতুন পড়া ৩ নং প্রশ্ন \nএবং এই অনুশীলন সম্পূর্ণ ভাল করে রিভাইস করে খাতাই লেখা",
+  "subject": "বাংলা",
+  "classLevel": "দ্বিতীয়",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1b5c78be8193c802ae94"
+  },
+  "dueDate": {
+    "$date": "2026-07-09T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-09T04:24:51.816Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-09T04:24:51.816Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-09T04:24:51.816Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4f22bf28da9d83b627ad6b"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": "২ - ৩০ জোড়াসংখ্যা মুখস্ত করে লিখা।",
+  "subject": "গনিত",
+  "classLevel": "নার্সারী",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1c2278be8193c802aec1"
+  },
+  "dueDate": {
+    "$date": "2026-07-09T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-09T04:25:35.504Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-09T04:25:35.505Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-09T04:25:35.505Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4f233028da9d83b627ad83"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ".",
+  "description": " 28 page. 1, 2, 3, 4",
+  "subject": "ইংরেজী",
+  "classLevel": "তৃতীয়",
+  "section": ".",
+  "assignedBy": {
+    "$oid": "6a4b1b3278be8193c802ae87"
+  },
+  "dueDate": {
+    "$date": "2026-07-09T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-09T04:27:28.595Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-09T04:27:28.595Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-09T04:27:28.595Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "6a4f28a728da9d83b627adde"
+  },
+  "institution": {
+    "$oid": "652000000000000000000002"
+  },
+  "title": ",",
+  "description": "তেত্রিশ নম্বর পৃষ্ঠার পড়া সাতে খাতা লেখা",
+  "subject": "ইংরেজী",
+  "classLevel": "প্রথম",
+  "section": ",",
+  "assignedBy": {
+    "$oid": "6a4b1af178be8193c802ae7b"
+  },
+  "dueDate": {
+    "$date": "2026-07-09T00:00:00.000Z"
+  },
+  "status": "active",
+  "assignDate": {
+    "$date": "2026-07-09T04:50:47.621Z"
+  },
+  "attachments": [],
+  "createdAt": {
+    "$date": "2026-07-09T04:50:47.621Z"
+  },
+  "updatedAt": {
+    "$date": "2026-07-09T04:50:47.621Z"
+  },
+  "__v": 0
+}]

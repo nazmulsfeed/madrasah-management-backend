@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"exam":{"$numberInt":"1"},"student":{"$numberInt":"1"},"subject":{"$numberInt":"1"}},"name":"exam_1_student_1_subject_1","background":true,"unique":true}],"uuid":"524b0945ee414e12960cd1cb163628b9","collectionName":"markentries","type":"collection"}
