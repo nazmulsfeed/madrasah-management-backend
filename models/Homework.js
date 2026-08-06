@@ -23,7 +23,7 @@ Homework.init({
   },
   description: {
     type: DataTypes.TEXT,
-    allowNull: false,
+    allowNull: true,
   },
   subject: {
     type: DataTypes.STRING,
