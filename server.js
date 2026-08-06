@@ -158,26 +158,34 @@ const start = async () => {
       }
     }
 
-    // Fix Branch bug corruption
-    const User = require('./models/User');
+    // Fix Branch bug corruption across ALL tables
     const { Op } = require('sequelize');
-    const corruptedUsers = await User.findAll({ 
-      where: { 
-        [Op.or]: [
-          { institution: { [Op.ne]: 'আন-নুর-ইসলামিক একাডেমি' } },
-          { institution: null },
-          { institution: '' }
-        ]
-      } 
-    });
-    for (const u of corruptedUsers) {
-      const wrongInst = u.institution;
-      u.institution = 'আন-নুর-ইসলামিক একাডেমি';
-      if (!u.branch) {
-        u.branch = wrongInst;
+    const correctInstitution = 'আন-নুর-ইসলামিক একাডেমি';
+    const models = db.models;
+    
+    for (const modelName of Object.keys(models)) {
+      const model = models[modelName];
+      if (model.rawAttributes && model.rawAttributes.institution) {
+        try {
+          const [updatedRows] = await model.update(
+            { institution: correctInstitution },
+            {
+              where: {
+                [Op.or]: [
+                  { institution: { [Op.ne]: correctInstitution } },
+                  { institution: null },
+                  { institution: '' }
+                ]
+              }
+            }
+          );
+          if (updatedRows > 0) {
+            console.log(`[Migration] Fixed ${updatedRows} corrupted institution(s) in model ${modelName}`);
+          }
+        } catch (e) {
+          console.error(`[Migration] Error fixing institution in ${modelName}:`, e.message);
+        }
       }
-      await u.save();
-      console.log(`[Migration] Fixed corrupted institution for user ${u.username}`);
     }
   } catch (error) {
     console.error('[Migration] Failed to run database migrations:', error.message);
