@@ -140,7 +140,7 @@ const PORT = process.env.PORT || 5000;
 const start = async () => {
   await db.connectDB();
   
-  // Apply one-time notice permission fix for teachers
+  // Apply one-time notice permission and branch corruption fix
   try {
     const RolePermission = require('./models/RolePermission');
     const perms = await RolePermission.findAll({ where: { role: ['teacher', 'hifz_teacher'] } });
@@ -157,8 +157,25 @@ const start = async () => {
         console.log(`[Migration] Fixed notice permission to true for role: ${p.role}`);
       }
     }
+
+    // Fix Branch bug corruption
+    const User = require('./models/User');
+    const corruptedUsers = await User.findAll({ 
+      where: { 
+        institution: ['Dhaka Main Branch', 'Chittagong Branch', 'Sylhet Branch'] 
+      } 
+    });
+    for (const u of corruptedUsers) {
+      const wrongInst = u.institution;
+      u.institution = 'আন-নুর-ইসলামিক একাডেমি';
+      if (!u.branch) {
+        u.branch = wrongInst;
+      }
+      await u.save();
+      console.log(`[Migration] Fixed corrupted institution for user ${u.username}`);
+    }
   } catch (error) {
-    console.error('[Migration] Failed to fix notice permissions:', error.message);
+    console.error('[Migration] Failed to run database migrations:', error.message);
   }
 
   // Start Monthly Invoice Auto-Scheduler

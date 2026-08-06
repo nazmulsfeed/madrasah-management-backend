@@ -489,7 +489,7 @@ router.post('/change-branch', protect, authorize('super_admin'), async (req, res
     const { branch } = req.body;
     if (!branch) return res.status(400).json({ success: false, message: 'Branch name is required' });
     
-    req.user.institution = branch;
+    req.user.branch = branch;
     await req.user.save();
     
     res.status(200).json({ success: true, message: `Branch switched to ${branch}` });
