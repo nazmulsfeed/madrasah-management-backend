@@ -7,7 +7,14 @@ const ApiResponse = require('../utils/apiResponse');
 exports.getAllPermissions = async (req, res, next) => {
   try {
     const permissions = await RolePermission.findAll();
-    ApiResponse.success(res, permissions);
+    const result = permissions.map(p => {
+      const item = p.toJSON();
+      if (typeof item.permissions === 'string') {
+        try { item.permissions = JSON.parse(item.permissions); } catch (e) {}
+      }
+      return item;
+    });
+    ApiResponse.success(res, result);
   } catch (error) {
     next(error);
   }
@@ -26,7 +33,18 @@ exports.updateRolePermissions = async (req, res, next) => {
     if (!rolePerm) {
       rolePerm = await RolePermission.create({ role, permissions: updates });
     } else {
-      rolePerm.permissions = { ...(rolePerm.permissions || {}), ...updates };
+      let currentPerms = rolePerm.permissions;
+      if (typeof currentPerms === 'string') {
+        try { currentPerms = JSON.parse(currentPerms); } catch (e) { currentPerms = {}; }
+      }
+      // Filter out integer index keys if any previous corruption happened
+      const cleanPerms = {};
+      if (currentPerms && typeof currentPerms === 'object') {
+        Object.keys(currentPerms).forEach(k => {
+          if (isNaN(k)) cleanPerms[k] = currentPerms[k];
+        });
+      }
+      rolePerm.permissions = { ...cleanPerms, ...updates };
       rolePerm.changed('permissions', true); // Force update for JSON column
       await rolePerm.save();
     }
@@ -76,12 +94,17 @@ exports.getMyPermissions = async (req, res, next) => {
     
     for (const rp of rolePerms) {
       if (rp.permissions) {
-        const permObj = rp.permissions;
-        Object.keys(permObj).forEach(key => {
-          if (permObj[key] === true) {
-            permissions[key] = true;
-          }
-        });
+        let permObj = rp.permissions;
+        if (typeof permObj === 'string') {
+          try { permObj = JSON.parse(permObj); } catch (e) {}
+        }
+        if (permObj && typeof permObj === 'object') {
+          Object.keys(permObj).forEach(key => {
+            if (permObj[key] === true || permObj[key] === 'true') {
+              permissions[key] = true;
+            }
+          });
+        }
       }
     }
 
