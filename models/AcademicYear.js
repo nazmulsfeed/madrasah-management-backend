@@ -12,6 +12,7 @@ AcademicYear.init({
   _id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
   },
   institution: {
     type: DataTypes.STRING,

@@ -94,8 +94,8 @@ const connectDB = async () => {
       }
     });
 
-    // Sync database — নতুন table তৈরি করবে, existing table পরিবর্তন করবে না
-    await sequelize.sync({ force: false });
+    // Sync database — নতুন table তৈরি করবে, existing table-এ নতুন কলাম যোগ করবে
+    await sequelize.sync({ alter: true });
     console.log('✅ ডাটাবেস টেবিলগুলো সফলভাবে সিঙ্ক করা হয়েছে');
   } catch (error) {
     console.error(`❌ MySQL সংযোগ বা সিঙ্ক ব্যর্থ: ${error.message}`);

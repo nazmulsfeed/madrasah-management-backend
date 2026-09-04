@@ -1,10 +1,13 @@
 const ApiResponse = require('../utils/apiResponse');
 const fs = require('fs');
+const path = require('path');
 
 const errorHandler = (err, req, res, next) => {
   console.error('❌ Error:', err);
   try {
-    fs.appendFileSync('C:\\Users\\Nazmul\\.gemini\\antigravity-ide\\brain\\87dd51c6-8e83-4392-aad8-4cfdb121e2fc\\error_log_debug.txt', `${new Date().toISOString()} - ${err.message}\n${err.stack}\n\n`);
+    const logDir = path.join(__dirname, '..', 'logs');
+    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+    fs.appendFileSync(path.join(logDir, 'error.log'), `${new Date().toISOString()} - ${req.method} ${req.originalUrl} - ${err.message}\n${err.stack}\n\n`);
   } catch (e) {
     console.error('Failed to write log file:', e);
   }
@@ -16,6 +19,20 @@ const errorHandler = (err, req, res, next) => {
   if (err.name === 'ValidationError') {
     const messages = Object.values(err.errors).map((e) => e.message);
     return ApiResponse.error(res, 'ভ্যালিডেশন ত্রুটি', 400, messages);
+  }
+
+  if (err.name === 'SequelizeUniqueConstraintError') {
+    const field = err.errors?.[0]?.path || 'ক্ষেত্র';
+    return ApiResponse.error(res, `${field} ইতিমধ্যে ব্যবহৃত হয়েছে`, 400);
+  }
+
+  if (err.name === 'SequelizeValidationError') {
+    const messages = err.errors.map((e) => e.message);
+    return ApiResponse.error(res, 'ভ্যালিডেশন ত্রুটি', 400, messages);
+  }
+
+  if (err.name === 'SequelizeDatabaseError') {
+    return ApiResponse.error(res, `ডাটাবেস ত্রুটি: ${err.message}`, 500);
   }
 
   if (err.code === 11000) {
@@ -37,9 +54,10 @@ const errorHandler = (err, req, res, next) => {
 
   return ApiResponse.error(
     res,
-    process.env.NODE_ENV === 'development' ? err.message : 'সার্ভারে একটি সমস্যা হয়েছে',
+    err.message || 'সার্ভারে একটি সমস্যা হয়েছে',
     err.statusCode || 500
   );
 };
 
 module.exports = errorHandler;
+
