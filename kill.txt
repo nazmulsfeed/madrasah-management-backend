@@ -1,1 +1,4 @@
 kill -9 $(pgrep -f lsnode)
+
+
+cd ~/public_html && git pull origin main && cd ~/backend && git pull origin main && kill -9 $(pgrep -f lsnode)
