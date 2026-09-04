@@ -174,20 +174,72 @@ exports.getStudents = async (req, res, next) => {
       ];
     }
 
-    if (req.query.classLevel || req.query.section || req.query.sections) {
+    if (req.query.classLevel || req.query.section || req.query.sections || req.query.academicYear) {
       const enrollmentFilter = { institution: req.user.institution };
       if (req.query.classLevel) enrollmentFilter.classLevel = req.query.classLevel;
-      // single section
-      if (req.query.section) enrollmentFilter.section = req.query.section;
-      // multiple sections (comma-separated)
-      if (req.query.sections) {
-        const secIds = req.query.sections.split(',').filter(Boolean);
-        enrollmentFilter.section = { $in: secIds };
+      if (req.query.academicYear) enrollmentFilter.academicYear = req.query.academicYear;
+      if (req.query.branch) enrollmentFilter.branch = req.query.branch;
+
+      // Section filtering (supports matching both section name and section ID)
+      if (req.query.section && req.query.section !== 'all') {
+        const targetSec = req.query.section.trim();
+        const Section = require('../models/Section');
+        const candidateValues = [targetSec];
+
+        try {
+          const matchedSections = await Section.find({
+            institution: req.user.institution,
+            $or: [
+              { _id: targetSec },
+              { name: targetSec },
+              { name: { $regex: targetSec, $options: 'i' } }
+            ]
+          }).select('_id name');
+
+          matchedSections.forEach(s => {
+            if (s._id) candidateValues.push(s._id);
+            if (s.name) candidateValues.push(s.name);
+          });
+        } catch (_) {}
+
+        if (targetSec === 'কোন সেকশন নাই') {
+          candidateValues.push('no_section', '', null);
+        }
+
+        enrollmentFilter.section = { $in: [...new Set(candidateValues)] };
+      } else if (req.query.sections) {
+        const secParts = req.query.sections.split(',').map(s => s.trim()).filter(Boolean);
+        if (secParts.length > 0 && !secParts.includes('all')) {
+          const Section = require('../models/Section');
+          const candidateValues = [...secParts];
+          try {
+            const matchedSections = await Section.find({
+              institution: req.user.institution,
+              $or: [
+                { _id: { $in: secParts } },
+                { name: { $in: secParts } }
+              ]
+            }).select('_id name');
+
+            matchedSections.forEach(s => {
+              if (s._id) candidateValues.push(s._id);
+              if (s.name) candidateValues.push(s.name);
+            });
+          } catch (_) {}
+
+          if (secParts.includes('কোন সেকশন নাই')) {
+            candidateValues.push('no_section', '', null);
+          }
+
+          enrollmentFilter.section = { $in: [...new Set(candidateValues)] };
+        }
       }
-      enrollmentFilter.enrollmentStatus = 'active';
+
+      // Do not filter out enrollments if enrollmentStatus is null or active
+      enrollmentFilter.enrollmentStatus = { $ne: 'inactive' };
 
       const enrollments = await StudentEnrollment.find(enrollmentFilter).select('student');
-      const studentIds = enrollments.map((e) => e.student);
+      const studentIds = enrollments.map((e) => e.student).filter(Boolean);
       filter._id = { $in: studentIds };
     }
 

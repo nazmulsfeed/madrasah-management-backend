@@ -26,8 +26,8 @@ exports.markAttendance = async (req, res, next) => {
     const attendanceRecords = students.map((s) => ({
       institution: req.user.institution,
       student: s.studentId,
-      classLevel,
-      section,
+      classLevel: s.classLevel || classLevel,
+      section: s.section || section || '',
       date: targetDate,
       status: s.status,
       remarks: s.remarks || '',
@@ -66,10 +66,12 @@ exports.getAttendance = async (req, res, next) => {
     }
 
     if (classLevel) filter.classLevel = classLevel;
-    if (section) filter.section = section;
+    if (section && section !== 'all') filter.section = section;
     if (req.query.sections) {
       const secIds = req.query.sections.split(',').filter(Boolean);
-      filter.section = { $in: secIds };
+      if (secIds.length > 0 && !secIds.includes('all')) {
+        filter.section = { $in: secIds };
+      }
     }
 
     // --- Student/Guardian data scoping ---
