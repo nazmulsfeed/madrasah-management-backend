@@ -94,6 +94,24 @@ const connectDB = async () => {
       }
     });
 
+    // Fix collation mismatch — সকল টেবিল ও কলাম utf8mb4_unicode_ci তে কনভার্ট
+    try {
+      const dbName = process.env.DB_NAME || 'annurisl_madrasah';
+      await sequelize.query(`ALTER DATABASE \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+      const [tables] = await sequelize.query(`SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '${dbName}' AND TABLE_TYPE = 'BASE TABLE';`);
+      for (const row of tables) {
+        const tableName = row.TABLE_NAME;
+        try {
+          await sequelize.query(`ALTER TABLE \`${tableName}\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+        } catch (tableErr) {
+          console.warn(`⚠️ টেবিল ${tableName} কনভার্ট করতে ব্যর্থ:`, tableErr.message);
+        }
+      }
+      console.log('✅ ডাটাবেস collation utf8mb4_unicode_ci তে কনভার্ট করা হয়েছে');
+    } catch (collationErr) {
+      console.warn('⚠️ Collation ফিক্স করতে ব্যর্থ:', collationErr.message);
+    }
+
     // Sync database — নতুন table তৈরি করবে, existing table-এ নতুন কলাম যোগ করবে
     await sequelize.sync({ alter: true });
     console.log('✅ ডাটাবেস টেবিলগুলো সফলভাবে সিঙ্ক করা হয়েছে');
