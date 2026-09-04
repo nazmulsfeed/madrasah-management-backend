@@ -176,7 +176,7 @@ exports.getStudents = async (req, res, next) => {
 
     if (req.query.classLevel || req.query.section || req.query.sections || req.query.academicYear) {
       const enrollmentFilter = { institution: req.user.institution };
-      if (req.query.classLevel) enrollmentFilter.classLevel = req.query.classLevel;
+      if (req.query.classLevel && req.query.classLevel !== 'all') enrollmentFilter.classLevel = req.query.classLevel;
       if (req.query.academicYear) enrollmentFilter.academicYear = req.query.academicYear;
       if (req.query.branch) enrollmentFilter.branch = req.query.branch;
 

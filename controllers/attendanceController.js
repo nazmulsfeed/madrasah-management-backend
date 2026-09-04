@@ -15,57 +15,77 @@ const getDayRange = (dateStr) => {
 // @route   POST /api/v1/attendance
 exports.markAttendance = async (req, res, next) => {
   try {
-    const { date, classLevel, section, students } = req.body;
+    const { date, dates, classLevel, section, students } = req.body;
 
-    if (!date || !students || students.length === 0) {
+    // Support single date or multiple dates
+    const dateList = Array.isArray(dates) && dates.length > 0 ? dates : (date ? [date] : []);
+
+    if (dateList.length === 0 || !students || students.length === 0) {
       return ApiResponse.error(res, 'তারিখ এবং ছাত্র তালিকা প্রয়োজন', 400);
     }
 
-    const targetDate = new Date(date + 'T00:00:00.000Z');
+    const bulkOps = [];
+    let totalRecords = 0;
 
-    const attendanceRecords = students.map((s) => ({
-      institution: req.user.institution,
-      student: s.studentId,
-      classLevel: s.classLevel || classLevel,
-      section: s.section || section || '',
-      date: targetDate,
-      status: s.status,
-      remarks: s.remarks || '',
-      markedBy: req.user._id,
-    }));
+    dateList.forEach(dStr => {
+      const targetDate = new Date(dStr + 'T00:00:00.000Z');
+      students.forEach((s) => {
+        // Allow per-date status override if passed as { [studentId]: { [date]: status } }
+        const studentStatus = s.statuses ? (s.statuses[dStr] || 'present') : (s.status || 'present');
+        const studentRemarks = s.remarksMap ? (s.remarksMap[dStr] || '') : (s.remarks || '');
 
-    const bulkOps = attendanceRecords.map((record) => ({
-      updateOne: {
-        filter: { student: record.student, date: targetDate },
-        update: { $set: record },
-        upsert: true,
-      },
-    }));
+        const record = {
+          institution: req.user.institution,
+          student: s.studentId,
+          classLevel: s.classLevel || (classLevel !== 'all' ? classLevel : ''),
+          section: s.section || (section !== 'all' ? section : '') || '',
+          date: targetDate,
+          status: studentStatus,
+          remarks: studentRemarks,
+          markedBy: req.user._id,
+        };
 
-    await StudentAttendance.bulkWrite(bulkOps);
+        totalRecords++;
+        bulkOps.push({
+          updateOne: {
+            filter: { student: record.student, date: targetDate },
+            update: { $set: record },
+            upsert: true,
+          },
+        });
+      });
+    });
 
-    ApiResponse.success(res, { count: students.length }, 'উপস্থিতি সফলভাবে রেকর্ড করা হয়েছে');
+    if (bulkOps.length > 0) {
+      await StudentAttendance.bulkWrite(bulkOps);
+    }
+
+    ApiResponse.success(res, { count: totalRecords }, 'উপস্থিতি সফলভাবে রেকর্ড করা হয়েছে');
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    একটি নির্দিষ্ট দিনের ক্লাসের উপস্থিতি দেখা
+// @desc    একটি নির্দিষ্ট দিনের বা তারিখের ব্যাপ্তির ক্লাসের উপস্থিতি দেখা
 // @route   GET /api/v1/attendance
 exports.getAttendance = async (req, res, next) => {
   try {
-    const { date, classLevel, section } = req.query;
+    const { date, startDate, endDate, classLevel, section } = req.query;
 
     const filter = {
       institution: req.user.institution,
     };
 
-    if (date) {
+    if (startDate && endDate) {
+      const start = new Date(startDate + 'T00:00:00.000Z');
+      const end = new Date(endDate + 'T23:59:59.999Z');
+      filter.date = { $gte: start, $lte: end };
+    } else if (date) {
       const { start, end } = getDayRange(date);
       filter.date = { $gte: start, $lte: end };
     }
 
-    if (classLevel) filter.classLevel = classLevel;
+    if (classLevel && classLevel !== 'all') filter.classLevel = classLevel;
     if (section && section !== 'all') filter.section = section;
     if (req.query.sections) {
       const secIds = req.query.sections.split(',').filter(Boolean);
