@@ -148,6 +148,9 @@ class SequelizeQueryBuilder {
         if (p === 'teacher') {
           targetModelName = 'User';
         }
+        if (p === 'currentEnrollment') {
+          targetModelName = 'StudentEnrollment';
+        }
         if (targetModelName) {
           const targetModel = this.model.sequelize.models[targetModelName];
           this.model.belongsTo(targetModel, { foreignKey: p, targetKey: '_id', as: assocName });

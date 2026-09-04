@@ -32,10 +32,10 @@ exports.getSummary = async (req, res, next) => {
     const inactiveStudents = await Student.countDocuments({ ...instFilter, status: 'inactive', isDeleted: { $ne: true } });
     log(`inactiveStudents: ${inactiveStudents}`);
     log("Querying maleStudents");
-    const maleStudents = await Student.countDocuments({ ...instFilter, gender: 'male', isDeleted: { $ne: true } });
+    const maleStudents = await Student.countDocuments({ ...instFilter, gender: { $in: ['male', 'পুরুষ'] }, isDeleted: { $ne: true } });
     log(`maleStudents: ${maleStudents}`);
     log("Querying femaleStudents");
-    const femaleStudents = await Student.countDocuments({ ...instFilter, gender: 'female', isDeleted: { $ne: true } });
+    const femaleStudents = await Student.countDocuments({ ...instFilter, gender: { $in: ['female', 'মহিলা'] }, isDeleted: { $ne: true } });
     log(`femaleStudents: ${femaleStudents}`);
 
     // Students per class

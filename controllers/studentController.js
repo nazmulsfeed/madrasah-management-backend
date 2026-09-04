@@ -4,7 +4,142 @@ const User = require('../models/User');
 const ClassLevel = require('../models/ClassLevel');
 const Section = require('../models/Section');
 const Subject = require('../models/Subject');
+const AcademicYear = require('../models/AcademicYear');
 const ApiResponse = require('../utils/apiResponse');
+
+/**
+ * Helper to ensure student currentEnrollment is deeply populated with classLevel, section, and academicYear
+ */
+async function populateStudentEnrollments(students) {
+  if (!students) return [];
+  const isArray = Array.isArray(students);
+  const studentList = isArray ? students : [students];
+  if (studentList.length === 0) return isArray ? [] : null;
+
+  const enrollmentIds = [];
+  const studentsNeedingLookup = [];
+
+  for (const s of studentList) {
+    const sObj = typeof s.toJSON === 'function' ? s.toJSON() : { ...s };
+    const curEnrId = sObj.currentEnrollment && typeof sObj.currentEnrollment === 'object'
+      ? sObj.currentEnrollment._id
+      : sObj.currentEnrollment;
+
+    if (curEnrId && typeof curEnrId === 'string' && curEnrId.trim() !== '') {
+      enrollmentIds.push(curEnrId);
+    } else if (sObj._id) {
+      studentsNeedingLookup.push(sObj._id);
+    }
+  }
+
+  let fallbackEnrollments = [];
+  if (studentsNeedingLookup.length > 0) {
+    fallbackEnrollments = await StudentEnrollment.findAll({
+      where: {
+        student: studentsNeedingLookup,
+        enrollmentStatus: 'active'
+      },
+      order: [['createdAt', 'DESC']]
+    });
+  }
+
+  const allEnrollmentIds = [
+    ...new Set([
+      ...enrollmentIds,
+      ...fallbackEnrollments.map(e => e._id)
+    ])
+  ];
+
+  let enrollments = [];
+  if (allEnrollmentIds.length > 0) {
+    enrollments = await StudentEnrollment.findAll({
+      where: { _id: allEnrollmentIds }
+    });
+  }
+
+  const classLevelIds = [...new Set(enrollments.map(e => e.classLevel).filter(Boolean))];
+  const academicYearIds = [...new Set(enrollments.map(e => e.academicYear).filter(Boolean))];
+
+  const [classes, years] = await Promise.all([
+    classLevelIds.length > 0 ? ClassLevel.findAll({ where: { _id: classLevelIds } }) : [],
+    academicYearIds.length > 0 ? AcademicYear.findAll({ where: { _id: academicYearIds } }) : []
+  ]);
+
+  const classMap = new Map();
+  classes.forEach(c => {
+    const cVal = typeof c.toJSON === 'function' ? c.toJSON() : c;
+    classMap.set(cVal._id, cVal);
+  });
+
+  const yearMap = new Map();
+  years.forEach(y => {
+    const yVal = typeof y.toJSON === 'function' ? y.toJSON() : y;
+    yearMap.set(yVal._id, yVal);
+  });
+
+  const enrollmentMap = new Map();
+  const studentToEnrollmentMap = new Map();
+
+  enrollments.forEach(e => {
+    const eVal = typeof e.toJSON === 'function' ? e.toJSON() : e;
+    const cl = classMap.get(eVal.classLevel);
+    const ay = yearMap.get(eVal.academicYear);
+    const secVal = eVal.section || '';
+
+    const populatedEnr = {
+      ...eVal,
+      classLevel: cl ? {
+        _id: cl._id,
+        name: cl.name,
+        code: cl.code,
+        order: cl.order,
+        monthlyFee: cl.monthlyFee,
+        admissionFee: cl.admissionFee,
+        sessionFee: cl.sessionFee,
+        examFee: cl.examFee
+      } : (eVal.classLevel ? { _id: eVal.classLevel, name: '' } : null),
+      academicYear: ay ? {
+        _id: ay._id,
+        name: ay.name,
+        isCurrent: ay.isCurrent
+      } : (eVal.academicYear ? { _id: eVal.academicYear, name: '' } : null),
+      section: {
+        _id: secVal,
+        name: secVal
+      },
+      rollNumber: eVal.rollNumber || ''
+    };
+
+    enrollmentMap.set(eVal._id, populatedEnr);
+    if (!studentToEnrollmentMap.has(eVal.student)) {
+      studentToEnrollmentMap.set(eVal.student, populatedEnr);
+    }
+  });
+
+  const result = studentList.map(s => {
+    const sObj = typeof s.toJSON === 'function' ? s.toJSON() : { ...s };
+    const curEnrId = sObj.currentEnrollment && typeof sObj.currentEnrollment === 'object'
+      ? sObj.currentEnrollment._id
+      : sObj.currentEnrollment;
+
+    let finalEnr = null;
+    if (curEnrId && enrollmentMap.has(curEnrId)) {
+      finalEnr = enrollmentMap.get(curEnrId);
+    } else if (studentToEnrollmentMap.has(sObj._id)) {
+      finalEnr = studentToEnrollmentMap.get(sObj._id);
+      Student.update({ currentEnrollment: finalEnr._id }, { where: { _id: sObj._id } }).catch(() => {});
+    }
+
+    sObj.currentEnrollment = finalEnr;
+
+    if (sObj.gender === 'পুরুষ') sObj.gender = 'male';
+    else if (sObj.gender === 'মহিলা') sObj.gender = 'female';
+
+    return sObj;
+  });
+
+  return isArray ? result : result[0];
+}
 
 // @desc    সকল ছাত্র/ছাত্রীর তালিকা
 // @route   GET /api/v1/students
@@ -61,20 +196,13 @@ exports.getStudents = async (req, res, next) => {
       .populate('user', 'firstName lastName email phone photo fullName')
       .populate('institution', 'name code')
       .populate('branch', 'name code')
-      .populate({
-        path: 'currentEnrollment',
-        select: 'classLevel section academicYear rollNumber enrollmentStatus',
-        populate: [
-          { path: 'classLevel', select: 'name code order monthlyFee admissionFee sessionFee examFee' },
-          { path: 'section', select: 'name' },
-          { path: 'academicYear', select: 'name isCurrent' },
-        ],
-      })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
-    ApiResponse.paginated(res, students, page, limit, total);
+    const populatedStudents = await populateStudentEnrollments(students);
+
+    ApiResponse.paginated(res, populatedStudents, page, limit, total);
   } catch (error) {
     next(error);
   }
@@ -87,21 +215,15 @@ exports.getStudent = async (req, res, next) => {
     const student = await Student.findById(req.params.id)
       .populate('user', 'firstName lastName email phone photo username fullName')
       .populate('institution', 'name code')
-      .populate('branch', 'name code')
-      .populate({
-        path: 'currentEnrollment',
-        populate: [
-          { path: 'classLevel', select: 'name code order monthlyFee admissionFee sessionFee examFee' },
-          { path: 'section', select: 'name' },
-          { path: 'academicYear', select: 'name isCurrent' },
-        ],
-      });
+      .populate('branch', 'name code');
 
     if (!student) {
       return ApiResponse.notFound(res, 'ছাত্র/ছাত্রী পাওয়া যায়নি');
     }
 
-    ApiResponse.success(res, { student });
+    const populatedStudent = await populateStudentEnrollments(student);
+
+    ApiResponse.success(res, { student: populatedStudent });
   } catch (error) {
     next(error);
   }
@@ -166,6 +288,7 @@ exports.createStudent = async (req, res, next) => {
     const user = await User.create(userFields);
 
     // ছাত্র তৈরি
+    const finalGender = (gender === 'female' || gender === 'মহিলা') ? 'female' : 'male';
     const student = await Student.create({
       user: user._id,
       institution: req.user.institution,
@@ -174,7 +297,7 @@ exports.createStudent = async (req, res, next) => {
       studentId: finalStudentId,
 
       dateOfBirth: dateOfBirth || null,
-      gender: (gender === 'male' || gender === 'পুরুষ') ? 'পুরুষ' : (gender === 'female' || gender === 'মহিলা') ? 'মহিলা' : '',
+      gender: finalGender,
       bloodGroup: bloodGroup || '',
       residentialStatus: residentialStatus || '',
       hifzProgramType: hifzProgramType || '',
@@ -210,24 +333,25 @@ exports.createStudent = async (req, res, next) => {
         academicYear: academicYearId,
         classLevel: classLevelId,
         section: sectionId,
-        rollNumber: finalRollNumber,
+        rollNumber: String(finalRollNumber),
         startDate: admissionDate || new Date(),
         createdBy: req.user._id,
       });
 
       student.currentEnrollment = enrollment._id;
       await student.save();
+      await Student.update(
+        { currentEnrollment: enrollment._id },
+        { where: { _id: student._id } }
+      );
     }
 
-    const populatedStudent = await Student.findById(student._id)
+    const rawStudent = await Student.findById(student._id)
       .populate('user', 'firstName lastName email phone fullName')
-      .populate({
-        path: 'currentEnrollment',
-        populate: [
-          { path: 'classLevel', select: 'name code monthlyFee admissionFee sessionFee examFee' },
-          { path: 'section', select: 'name' },
-        ],
-      });
+      .populate('institution', 'name code')
+      .populate('branch', 'name code');
+
+    const populatedStudent = await populateStudentEnrollments(rawStudent);
 
     ApiResponse.created(res, { student: populatedStudent }, 'ছাত্র/ছাত্রী সফলভাবে তৈরি হয়েছে');
   } catch (error) {
@@ -287,7 +411,35 @@ exports.updateStudent = async (req, res, next) => {
 
     if (req.body.gender !== undefined) {
       const g = req.body.gender;
-      updates.gender = (g === 'male' || g === 'পুরুষ') ? 'পুরুষ' : (g === 'female' || g === 'মহিলা') ? 'মহিলা' : '';
+      updates.gender = (g === 'female' || g === 'মহিলা') ? 'female' : 'male';
+    }
+
+    // Academic enrollment updates (academicYear, classLevel, section, rollNumber)
+    const { classLevelId, sectionId, academicYearId, rollNumber } = req.body;
+    if (classLevelId || sectionId || academicYearId || (rollNumber !== undefined && rollNumber !== '')) {
+      const enrUpdates = {};
+      if (classLevelId) enrUpdates.classLevel = classLevelId;
+      if (sectionId) enrUpdates.section = sectionId;
+      if (academicYearId) enrUpdates.academicYear = academicYearId;
+      if (rollNumber !== undefined && rollNumber !== '') enrUpdates.rollNumber = String(rollNumber);
+      enrUpdates.updatedBy = req.user._id;
+
+      if (student.currentEnrollment) {
+        await StudentEnrollment.update(enrUpdates, { where: { _id: student.currentEnrollment } });
+      } else {
+        const newEnrollment = await StudentEnrollment.create({
+          student: student._id,
+          institution: req.user.institution,
+          branch: student.branch || req.user.branch,
+          academicYear: academicYearId || '',
+          classLevel: classLevelId || '',
+          section: sectionId || 'ক',
+          rollNumber: rollNumber ? String(rollNumber) : '1',
+          startDate: new Date(),
+          createdBy: req.user._id,
+        });
+        updates.currentEnrollment = newEnrollment._id;
+      }
     }
 
     if (req.body.branchId !== undefined) {
@@ -297,27 +449,25 @@ exports.updateStudent = async (req, res, next) => {
       await User.findByIdAndUpdate(student.user, { branch: branchVal });
       // Update current Enrollment branch
       if (student.currentEnrollment) {
-        const StudentEnrollment = require('../models/StudentEnrollment');
         await StudentEnrollment.findByIdAndUpdate(student.currentEnrollment, { branch: branchVal });
       }
     }
 
     updates.updatedBy = req.user._id;
 
-    const updated = await Student.findByIdAndUpdate(req.params.id, updates, {
+    await Student.findByIdAndUpdate(req.params.id, updates, {
       new: true,
       runValidators: true,
-    })
-      .populate('user', 'firstName lastName email phone fullName')
-      .populate({
-        path: 'currentEnrollment',
-        populate: [
-          { path: 'classLevel', select: 'name code monthlyFee admissionFee sessionFee examFee' },
-          { path: 'section', select: 'name' },
-        ],
-      });
+    });
 
-    ApiResponse.success(res, { student: updated }, 'ছাত্র/ছাত্রীর তথ্য আপডেট হয়েছে');
+    const rawUpdated = await Student.findById(req.params.id)
+      .populate('user', 'firstName lastName email phone photo username fullName')
+      .populate('institution', 'name code')
+      .populate('branch', 'name code');
+
+    const populatedUpdated = await populateStudentEnrollments(rawUpdated);
+
+    ApiResponse.success(res, { student: populatedUpdated }, 'ছাত্র/ছাত্রীর তথ্য আপডেট হয়েছে');
   } catch (error) {
     next(error);
   }
