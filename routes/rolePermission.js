@@ -9,8 +9,8 @@ router.use(protect);
 // My permissions
 router.get('/me', rolePermissionController.getMyPermissions);
 
-// Super admin only routes
-router.use(authorize('super_admin'));
+// Super admin & co-super admin routes
+router.use(authorize('super_admin', 'co_super_admin', 'admin'));
 router.get('/', rolePermissionController.getAllPermissions);
 router.put('/:role', rolePermissionController.updateRolePermissions);
 

@@ -9,11 +9,11 @@ router.use(protect);
 router
   .route('/')
   .get(
-    authorize('super_admin', 'admin', 'principal', 'vice_principal', 'teacher', 'guardian', 'student'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'vice_principal', 'teacher', 'hifz_teacher', 'guardian', 'student'),
     attendanceController.getAttendance
   )
   .post(
-    authorize('super_admin', 'admin', 'principal', 'vice_principal', 'teacher'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'vice_principal', 'teacher', 'hifz_teacher'),
     attendanceController.markAttendance
   );
 
