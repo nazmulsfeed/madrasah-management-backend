@@ -47,11 +47,12 @@ exports.updateRolePermissions = async (req, res, next) => {
     const updates = req.body; // should be an object of permission keys
 
     let rolePerm = await RolePermission.findOne({ where: { role } });
+    let currentPerms = {};
 
     if (!rolePerm) {
       rolePerm = await RolePermission.create({ role, permissions: updates });
     } else {
-      let currentPerms = rolePerm.permissions;
+      currentPerms = rolePerm.permissions;
       if (typeof currentPerms === 'string') {
         try { currentPerms = JSON.parse(currentPerms); } catch (e) { currentPerms = {}; }
       }
