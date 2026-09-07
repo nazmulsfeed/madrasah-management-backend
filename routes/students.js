@@ -34,6 +34,12 @@ router
     studentController.createStudent
   );
 
+router.get(
+  '/:id/show-password',
+  authorize('super_admin', 'co_super_admin', 'admin'),
+  studentController.getStudentPassword
+);
+
 router
   .route('/:id')
   .get(studentController.getStudent)

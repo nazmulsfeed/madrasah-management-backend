@@ -44,21 +44,6 @@ router.get('/', authorize('super_admin', 'admin'), async (req, res, next) => {
   }
 });
 
-// @desc    ব্যবহারকারীর বিস্তারিত
-// @route   GET /api/v1/users/:id
-router.get('/:id', authorize('super_admin', 'admin'), async (req, res, next) => {
-  try {
-    const user = await User.findById(req.params.id)
-      .populate('institution', 'name code')
-      .populate('branch', 'name code');
-
-    if (!user) return ApiResponse.notFound(res, 'ব্যবহারকারী পাওয়া যায়নি');
-    ApiResponse.success(res, { user });
-  } catch (error) {
-    next(error);
-  }
-});
-
 // @desc    ব্যবহারকারীর পাসওয়ার্ড দেখুন (শুধুমাত্র সুপার অ্যাডমিন, কো-সুপার অ্যাডমিন ও অ্যাডমিন)
 // @route   GET /api/v1/users/:id/show-password
 router.get('/:id/show-password', authorize('super_admin', 'co_super_admin', 'admin'), async (req, res, next) => {
@@ -74,6 +59,21 @@ router.get('/:id/show-password', authorize('super_admin', 'co_super_admin', 'adm
       firstName: user.firstName,
       lastName: user.lastName
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @desc    ব্যবহারকারীর বিস্তারিত
+// @route   GET /api/v1/users/:id
+router.get('/:id', authorize('super_admin', 'co_super_admin', 'admin'), async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id)
+      .populate('institution', 'name code')
+      .populate('branch', 'name code');
+
+    if (!user) return ApiResponse.notFound(res, 'ব্যবহারকারী পাওয়া যায়নি');
+    ApiResponse.success(res, { user });
   } catch (error) {
     next(error);
   }

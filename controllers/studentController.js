@@ -265,7 +265,7 @@ exports.getStudents = async (req, res, next) => {
 exports.getStudent = async (req, res, next) => {
   try {
     const student = await Student.findById(req.params.id)
-      .populate('user', 'firstName lastName email phone photo username fullName')
+      .populate('user', '_id firstName lastName email phone photo username fullName')
       .populate('institution', 'name code')
       .populate('branch', 'name code');
 
@@ -1137,6 +1137,33 @@ exports.updateClassSubjects = async (req, res, next) => {
     }
 
     ApiResponse.success(res, null, 'শ্রেণি ভিত্তিক বিষয় সফলভাবে আপডেট করা হয়েছে');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    ছাত্র/ছাত্রীর পাসওয়ার্ড দেখুন (শুধুমাত্র সুপার অ্যাডমিন, কো-সুপার অ্যাডমিন ও অ্যাডমিন)
+// @route   GET /api/v1/students/:id/show-password
+exports.getStudentPassword = async (req, res, next) => {
+  try {
+    const student = await Student.findById(req.params.id);
+    if (!student) {
+      return ApiResponse.notFound(res, 'ছাত্র/ছাত্রী পাওয়া যায়নি');
+    }
+
+    const userId = student.user && typeof student.user === 'object' ? student.user._id : student.user;
+    const user = await User.findOne({ where: { _id: userId } });
+    if (!user) {
+      return ApiResponse.notFound(res, 'ব্যবহারকারী অ্যাকাউন্ট পাওয়া যায়নি');
+    }
+
+    const plainPassword = user.plainPassword || '';
+    ApiResponse.success(res, {
+      plainPassword,
+      userId: user._id,
+      username: user.username,
+      studentId: student.studentId
+    });
   } catch (error) {
     next(error);
   }
