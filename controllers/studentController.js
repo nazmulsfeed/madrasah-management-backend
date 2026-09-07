@@ -245,7 +245,7 @@ exports.getStudents = async (req, res, next) => {
 
     const total = await Student.countDocuments(filter);
     const students = await Student.find(filter)
-      .populate('user', 'firstName lastName email phone photo fullName')
+      .populate('user', 'firstName lastName email phone photo username fullName')
       .populate('institution', 'name code')
       .populate('branch', 'name code')
       .sort({ createdAt: -1 })
