@@ -88,6 +88,10 @@ exports.getMyPermissions = async (req, res, next) => {
     if (req.user.userType === 'super_admin') {
       const allPerms = {};
       allPermissionKeys.forEach(k => allPerms[k] = true);
+      // Inject legacy permissions for frontend compatibility
+      Object.keys(require('../utils/permissions').legacyToGranularMap).forEach(legacyKey => {
+        allPerms[legacyKey] = true;
+      });
       return ApiResponse.success(res, allPerms);
     }
 
@@ -117,6 +121,15 @@ exports.getMyPermissions = async (req, res, next) => {
           permissions[key] = true;
         }
       });
+    }
+
+    // Inject legacy permissions if they have the required granular permissions
+    const { legacyToGranularMap } = require('../utils/permissions');
+    for (const [legacyKey, granularKeys] of Object.entries(legacyToGranularMap)) {
+      // If the user has any of the mapped granular keys, grant the legacy key for frontend UI
+      if (granularKeys.some(key => permissions[key])) {
+        permissions[legacyKey] = true;
+      }
     }
 
     ApiResponse.success(res, permissions);
