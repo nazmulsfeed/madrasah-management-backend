@@ -59,7 +59,7 @@ exports.login = async (req, res, next) => {
     await user.save({ validateBeforeSave: false });
 
     let permissions = {};
-    const isSuperOrCoSuper = user.userType === 'super_admin' || user.userType === 'co_super_admin' || user.adminRole === 'co_super_admin';
+    const isSuperOrCoSuper = user.userType === 'super_admin' || user.userType === 'co_super_admin' || user.adminRole === 'co_super_admin' || user.adminRole === 'admin' || user.userType === 'admin';
     if (isSuperOrCoSuper) {
       permissions = {
         can_view_homework: true, can_create_homework: true, can_edit_homework: true, can_delete_homework: true,
@@ -95,12 +95,14 @@ exports.login = async (req, res, next) => {
       token,
       user: {
         id: user._id,
+        _id: user._id,
         username: user.username,
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
         fullName: user.fullName,
         userType: user.userType,
+        adminRole: user.adminRole || '',
         photo: user.photo,
         institution: user.institution,
         branch: user.branch,
@@ -163,7 +165,7 @@ exports.getMe = async (req, res, next) => {
       .populate('branch', 'name code');
 
     let permissions = {};
-    const isSuperOrCoSuper = user.userType === 'super_admin' || user.userType === 'co_super_admin' || user.adminRole === 'co_super_admin';
+    const isSuperOrCoSuper = user.userType === 'super_admin' || user.userType === 'co_super_admin' || user.adminRole === 'co_super_admin' || user.adminRole === 'admin' || user.userType === 'admin';
     if (isSuperOrCoSuper) {
       permissions = {
         can_view_homework: true, can_create_homework: true, can_edit_homework: true, can_delete_homework: true,
