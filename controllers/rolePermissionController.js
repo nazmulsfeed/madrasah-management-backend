@@ -1,5 +1,8 @@
 const RolePermission = require('../models/RolePermission');
 const ApiResponse = require('../utils/apiResponse');
+const { clearPermissionCache } = require('../middleware/rbac');
+const { defaultRolePermissions, allPermissionKeys } = require('../utils/permissions');
+const { logAction } = require('../middleware/audit');
 
 // @desc    Get all role permissions
 // @route   GET /api/v1/permissions
@@ -12,8 +15,23 @@ exports.getAllPermissions = async (req, res, next) => {
       if (typeof item.permissions === 'string') {
         try { item.permissions = JSON.parse(item.permissions); } catch (e) {}
       }
+      // Merge with defaults
+      const roleDefaults = defaultRolePermissions[item.role] || {};
+      item.permissions = { ...roleDefaults, ...(item.permissions || {}) };
       return item;
     });
+
+    // Ensure all defined roles have at least their default permissions returned
+    const rolesWithDbEntries = result.map(r => r.role);
+    Object.keys(defaultRolePermissions).forEach(role => {
+      if (!rolesWithDbEntries.includes(role)) {
+        result.push({
+          role,
+          permissions: defaultRolePermissions[role]
+        });
+      }
+    });
+
     ApiResponse.success(res, result);
   } catch (error) {
     next(error);
@@ -37,7 +55,7 @@ exports.updateRolePermissions = async (req, res, next) => {
       if (typeof currentPerms === 'string') {
         try { currentPerms = JSON.parse(currentPerms); } catch (e) { currentPerms = {}; }
       }
-      // Filter out integer index keys if any previous corruption happened
+      
       const cleanPerms = {};
       if (currentPerms && typeof currentPerms === 'object') {
         Object.keys(currentPerms).forEach(k => {
@@ -45,9 +63,14 @@ exports.updateRolePermissions = async (req, res, next) => {
         });
       }
       rolePerm.permissions = { ...cleanPerms, ...updates };
-      rolePerm.changed('permissions', true); // Force update for JSON column
+      rolePerm.changed('permissions', true);
       await rolePerm.save();
     }
+
+    // Invalidate cache for this role
+    clearPermissionCache(role);
+
+    await logAction(req, 'Permission', 'update', `Updated permissions for role: ${role}`, null, currentPerms, rolePerm.permissions);
 
     ApiResponse.success(res, rolePerm, `${role} এর পারমিশন আপডেট করা হয়েছে`);
   } catch (error) {
@@ -60,38 +83,11 @@ exports.updateRolePermissions = async (req, res, next) => {
 // @access  Private (Logged in users)
 exports.getMyPermissions = async (req, res, next) => {
   try {
-    // Super Admin & Co-Super Admin & Admin get all permissions by default
-    const isSuperOrCoSuper = req.user.userType === 'super_admin' || req.user.userType === 'co_super_admin' || req.user.adminRole === 'co_super_admin' || req.user.adminRole === 'admin' || req.user.userType === 'admin';
-    if (isSuperOrCoSuper) {
-      return ApiResponse.success(res, {
-        can_view_homework: true,
-        can_create_homework: true,
-        can_edit_homework: true,
-        can_delete_homework: true,
-        can_view_attendance: true,
-        can_mark_attendance: true,
-        can_view_exams: true,
-        can_manage_exams: true,
-        can_view_finance: true,
-        can_manage_finance: true,
-        can_view_users: true,
-        can_manage_users: true,
-        can_view_notice: true,
-        can_manage_notice: true,
-        can_grade_exams: true,
-        can_add_syllabus: true,
-        can_communicate_parents: true,
-        can_take_live_class: true,
-        can_view_reports: true,
-        can_manage_hifz: true,
-        can_view_students: true,
-        can_view_all_attendance: true,
-        can_view_all_homework: true,
-        can_use_messaging: true,
-        can_manage_hostel: true,
-        can_view_library: true,
-        can_view_settings: true,
-      });
+    // Super Admin gets all permissions
+    if (req.user.userType === 'super_admin') {
+      const allPerms = {};
+      allPermissionKeys.forEach(k => allPerms[k] = true);
+      return ApiResponse.success(res, allPerms);
     }
 
     const rolesToCheck = [req.user.userType];
@@ -100,20 +96,26 @@ exports.getMyPermissions = async (req, res, next) => {
     const rolePerms = await RolePermission.findAll({ where: { role: rolesToCheck } });
     const permissions = {};
     
-    for (const rp of rolePerms) {
-      if (rp.permissions) {
-        let permObj = rp.permissions;
+    for (const role of rolesToCheck) {
+      const rp = rolePerms.find(p => p.role === role);
+      let permObj = {};
+      if (rp && rp.permissions) {
+        permObj = rp.permissions;
         if (typeof permObj === 'string') {
-          try { permObj = JSON.parse(permObj); } catch (e) {}
-        }
-        if (permObj && typeof permObj === 'object') {
-          Object.keys(permObj).forEach(key => {
-            if (permObj[key] === true || permObj[key] === 'true') {
-              permissions[key] = true;
-            }
-          });
+          try { permObj = JSON.parse(permObj); } catch (e) { permObj = {}; }
         }
       }
+
+      // Merge defaults
+      const defaults = defaultRolePermissions[role] || {};
+      const mergedPerms = { ...defaults, ...(permObj || {}) };
+
+      // Apply to user permissions
+      Object.keys(mergedPerms).forEach(key => {
+        if (mergedPerms[key] === true || mergedPerms[key] === 'true') {
+          permissions[key] = true;
+        }
+      });
     }
 
     ApiResponse.success(res, permissions);

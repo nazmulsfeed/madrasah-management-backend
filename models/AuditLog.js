@@ -1,45 +1,59 @@
-const mongoose = require('mongoose');
+const { Model, DataTypes } = require('sequelize');
+const sequelize = require('../config/db');
 
-const auditLogSchema = new mongoose.Schema({
+class AuditLog extends Model {}
+
+AuditLog.init({
+  _id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
   institution: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Institution',
-    required: true
+    type: DataTypes.STRING,
+    allowNull: true
   },
   user: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    type: DataTypes.STRING, // User ID or username
+    allowNull: false
   },
   action: {
-    type: String,
-    enum: ['create', 'update', 'delete', 'verify', 'approve', 'reject'],
-    required: true
+    type: DataTypes.STRING, // e.g., 'create', 'update', 'delete', 'promote', 'permission_change'
+    allowNull: false
   },
   module: {
-    type: String, // e.g., 'Voucher', 'Income', 'Payment', 'Invoice', 'Account'
-    required: true
+    type: DataTypes.STRING, // e.g., 'Role', 'Permission', 'Payment'
+    allowNull: false
   },
   documentId: {
-    type: mongoose.Schema.Types.ObjectId, // ID of the affected document
-    required: true
+    type: DataTypes.STRING, // Affected ID
+    allowNull: true
   },
   description: {
-    type: String,
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   previousData: {
-    type: mongoose.Schema.Types.Mixed, // JSON representation of previous state
-    default: null
+    type: DataTypes.JSON,
+    allowNull: true
   },
   currentData: {
-    type: mongoose.Schema.Types.Mixed, // JSON representation of current state
-    default: null
+    type: DataTypes.JSON,
+    allowNull: true
+  },
+  ipAddress: {
+    type: DataTypes.STRING,
+    allowNull: true
   }
-}, { timestamps: true });
+}, {
+  sequelize,
+  modelName: 'AuditLog',
+  tableName: 'auditlogs',
+  timestamps: true,
+  indexes: [
+    { fields: ['institution', 'module', 'action'] },
+    { fields: ['createdAt'] }
+  ]
+});
 
-// Index for faster queries
-auditLogSchema.index({ institution: 1, module: 1, action: 1 });
-auditLogSchema.index({ createdAt: -1 });
-
-module.exports = mongoose.model('AuditLog', auditLogSchema);
+module.exports = AuditLog;

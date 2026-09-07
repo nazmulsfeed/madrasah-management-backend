@@ -1,5 +1,39 @@
 const ApiResponse = require('../utils/apiResponse');
+const RolePermission = require('../models/RolePermission');
+const { defaultRolePermissions, legacyToGranularMap } = require('../utils/permissions');
 
+// Simple in-memory cache for permissions
+let permissionCache = new Map();
+
+const clearPermissionCache = (role) => {
+  if (role) {
+    permissionCache.delete(role);
+  } else {
+    permissionCache.clear();
+  }
+};
+
+const getUserTypeLabel = (type) => {
+  const labels = {
+    super_admin: 'সুপার অ্যাডমিন',
+    co_super_admin: 'কো-সুপার অ্যাডমিন',
+    admin: 'অ্যাডমিন',
+    principal: 'প্রিন্সিপাল',
+    vice_principal: 'ভাইস প্রিন্সিপাল',
+    teacher: 'শিক্ষক',
+    hifz_teacher: 'হিফজ শিক্ষক',
+    accountant: 'হিসাবরক্ষক',
+    cashier: 'ক্যাশিয়ার',
+    admission_officer: 'ভর্তি কর্মকর্তা',
+    hostel_manager: 'হোস্টেল ম্যানেজার',
+    library_manager: 'লাইব্রেরি ম্যানেজার',
+    student: 'ছাত্র/ছাত্রী',
+    guardian: 'অভিভাবক',
+  };
+  return labels[type] || type;
+};
+
+// Legacy role-based authorization (gradually deprecate this)
 const authorize = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {
@@ -19,56 +53,14 @@ const authorize = (...roles) => {
   };
 };
 
-const RolePermission = require('../models/RolePermission');
-
-const getUserTypeLabel = (type) => {
-  const labels = {
-    super_admin: 'সুপার অ্যাডমিন',
-    co_super_admin: 'কো-সুপার অ্যাডমিন',
-    admin: 'অ্যাডমিন',
-    principal: 'প্রিন্সিপাল',
-    vice_principal: 'ভাইস প্রিন্সিপাল',
-    teacher: 'শিক্ষক',
-    hifz_teacher: 'হিফজ শিক্ষক',
-    accountant: 'হিসাবরক্ষক',
-    admission_officer: 'ভর্তি কর্মকর্তা',
-    hostel_manager: 'হোস্টেল ম্যানেজার',
-    library_manager: 'লাইব্রেরি ম্যানেজার',
-    student: 'ছাত্র/ছাত্রী',
-    guardian: 'অভিভাবক',
-  };
-  return labels[type] || type;
-};
-
-const defaultRolePermissions = {
-  teacher: {
-    can_view_homework: true, can_view_all_homework: true, can_create_homework: true, can_edit_homework: true, can_delete_homework: true,
-    can_view_attendance: true, can_view_all_attendance: true, can_mark_attendance: true,
-    can_view_exams: true, can_view_notice: true, can_manage_notice: true,
-    can_grade_exams: true, can_add_syllabus: true, can_communicate_parents: true, can_take_live_class: true, can_use_messaging: true,
-    can_view_students: true, can_view_library: true
-  },
-  hifz_teacher: {
-    can_view_homework: true, can_view_all_homework: true, can_create_homework: true, can_edit_homework: true, can_delete_homework: true,
-    can_view_attendance: true, can_view_all_attendance: true, can_mark_attendance: true,
-    can_view_exams: true, can_view_notice: true, can_manage_notice: true,
-    can_grade_exams: true, can_add_syllabus: true, can_communicate_parents: true, can_take_live_class: true, can_use_messaging: true,
-    can_manage_hifz: true, can_view_students: true, can_view_library: true
-  }
-};
-
 const checkPermission = (permissionKey) => {
   return async (req, res, next) => {
     if (!req.user) {
       return ApiResponse.unauthorized(res, 'অনুগ্রহ করে লগ ইন করুন');
     }
 
-    const isSuperOrCoSuper = 
-      req.user.userType === 'super_admin' || 
-      req.user.userType === 'co_super_admin' ||
-      req.user.adminRole === 'co_super_admin';
-
-    if (isSuperOrCoSuper) {
+    // Super Admin has full system access, bypasses all checks
+    if (req.user.userType === 'super_admin') {
       return next();
     }
 
@@ -76,21 +68,69 @@ const checkPermission = (permissionKey) => {
       const rolesToCheck = [req.user.userType];
       if (req.user.adminRole) rolesToCheck.push(req.user.adminRole);
 
-      const rolePerms = await RolePermission.findAll({ where: { role: rolesToCheck } });
-      
+      // Check cache first for performance
+      let userPermissions = {};
+      let cacheMiss = false;
+
+      for (const role of rolesToCheck) {
+        if (!permissionCache.has(role)) {
+          cacheMiss = true;
+          break;
+        }
+      }
+
+      if (cacheMiss) {
+        // Fetch from DB
+        const rolePerms = await RolePermission.findAll({ where: { role: rolesToCheck } });
+        
+        for (const role of rolesToCheck) {
+          const rp = rolePerms.find(p => p.role === role);
+          let perms = {};
+          
+          if (rp) {
+             perms = rp.permissions;
+             if (typeof perms === 'string') {
+               try { perms = JSON.parse(perms); } catch (e) { perms = {}; }
+             }
+          }
+          
+          // Merge with defaults if not in DB
+          const defaults = defaultRolePermissions[role] || {};
+          const mergedPerms = { ...defaults, ...(perms || {}) };
+          
+          permissionCache.set(role, mergedPerms);
+        }
+      }
+
+      // Consolidate permissions from all roles the user has
       let hasExplicitPermission = false;
       let hasExplicitDenial = false;
 
-      for (const rp of rolePerms) {
-        let perms = rp.permissions;
-        if (typeof perms === 'string') {
-          try { perms = JSON.parse(perms); } catch (e) {}
-        }
-        if (perms && typeof perms === 'object') {
+      // Handle legacy keys mapping
+      let keysToCheck = [permissionKey];
+      // Reverse lookup: if checking granular, does the legacy permission allow it?
+      // Actually, it's better to just check the requested key. If the system is requesting a legacy key, we check the legacy key.
+      
+      for (const role of rolesToCheck) {
+        const perms = permissionCache.get(role);
+        
+        if (perms) {
+          // Direct check
           if (perms[permissionKey] === true || perms[permissionKey] === 'true') {
             hasExplicitPermission = true;
           } else if (perms[permissionKey] === false || perms[permissionKey] === 'false') {
             hasExplicitDenial = true;
+          }
+
+          // Legacy mapping check if direct check didn't pass
+          if (!hasExplicitPermission) {
+             for (const [legacyKey, granularKeys] of Object.entries(legacyToGranularMap)) {
+               if (granularKeys.includes(permissionKey)) {
+                 if (perms[legacyKey] === true || perms[legacyKey] === 'true') {
+                   hasExplicitPermission = true;
+                 }
+               }
+             }
           }
         }
       }
@@ -106,11 +146,7 @@ const checkPermission = (permissionKey) => {
         );
       }
 
-      const isAllowedByDefault = rolesToCheck.some(r => defaultRolePermissions[r]?.[permissionKey] === true);
-      if (isAllowedByDefault) {
-        return next();
-      }
-
+      // If we reach here, neither allowed nor denied explicitly in DB or Defaults
       return ApiResponse.forbidden(
         res,
         `এই কার্যক্রমের জন্য আপনার (${getUserTypeLabel(req.user.userType)}) অনুমতি নেই`
@@ -121,4 +157,4 @@ const checkPermission = (permissionKey) => {
   };
 };
 
-module.exports = { authorize, checkPermission, getUserTypeLabel };
+module.exports = { authorize, checkPermission, getUserTypeLabel, clearPermissionCache };
