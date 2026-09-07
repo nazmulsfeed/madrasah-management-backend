@@ -60,8 +60,9 @@ exports.updateRolePermissions = async (req, res, next) => {
 // @access  Private (Logged in users)
 exports.getMyPermissions = async (req, res, next) => {
   try {
-    // Super Admin & Co-Super Admin get all permissions by default
-    if (req.user.userType === 'super_admin' || req.user.userType === 'co_super_admin' || req.user.adminRole === 'co_super_admin') {
+    // Super Admin & Co-Super Admin & Admin get all permissions by default
+    const isSuperOrCoSuper = req.user.userType === 'super_admin' || req.user.userType === 'co_super_admin' || req.user.adminRole === 'co_super_admin' || req.user.adminRole === 'admin' || req.user.userType === 'admin';
+    if (isSuperOrCoSuper) {
       return ApiResponse.success(res, {
         can_view_homework: true,
         can_create_homework: true,
@@ -83,6 +84,13 @@ exports.getMyPermissions = async (req, res, next) => {
         can_take_live_class: true,
         can_view_reports: true,
         can_manage_hifz: true,
+        can_view_students: true,
+        can_view_all_attendance: true,
+        can_view_all_homework: true,
+        can_use_messaging: true,
+        can_manage_hostel: true,
+        can_view_library: true,
+        can_view_settings: true,
       });
     }
 
