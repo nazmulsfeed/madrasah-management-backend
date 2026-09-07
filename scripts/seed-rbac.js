@@ -1,10 +1,11 @@
+const path = require('path');
+const dotenv = require('dotenv');
+// Load environment variables before initializing any DB config
+dotenv.config({ path: path.join(__dirname, '../.env') });
+
 const sequelize = require('../config/db');
 const RolePermission = require('../models/RolePermission');
 const { defaultRolePermissions } = require('../utils/permissions');
-const dotenv = require('dotenv');
-
-// Load environment variables
-dotenv.config();
 
 const seedRbac = async () => {
   try {
