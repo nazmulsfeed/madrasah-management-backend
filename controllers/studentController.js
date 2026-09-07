@@ -304,8 +304,17 @@ exports.createStudent = async (req, res, next) => {
       admissionDate,
       branchId,
       residentialStatus,
-      hifzProgramType
+      hifzProgramType,
+      fatherName,
+      motherName,
+      village,
+      nationalIdOrBirthCertNo
     } = req.body;
+
+    // Phone number is required
+    if (!phone || phone.trim() === '') {
+      return ApiResponse.error(res, 'ফোন নম্বর প্রদান আবশ্যক', 400);
+    }
 
     let finalAdmissionNumber = admissionNumber;
     if (!finalAdmissionNumber) {
@@ -314,22 +323,45 @@ exports.createStudent = async (req, res, next) => {
       finalAdmissionNumber = `ADM-${year}-${10001 + count}`;
     }
 
+    // Student ID: 5-digit sequential (10001, 10002, ...)
     let finalStudentId = studentId;
     if (!finalStudentId) {
       const count = await Student.countDocuments({ institution: req.user.institution });
-      const year = new Date().getFullYear();
-      finalStudentId = `ST-${year}-${10001 + count}`;
+      finalStudentId = String(10001 + count);
     }
 
-    const finalUsername = username && username.trim() !== '' ? username.trim() : undefined;
+    // Auto-generate username from firstName + 2-3 digit random number if empty
+    let finalUsername = username && username.trim() !== '' ? username.trim() : null;
+    if (!finalUsername) {
+      if (firstName && firstName.trim() !== '') {
+        const baseName = firstName.trim();
+        let attempts = 0;
+        let generated = null;
+        while (attempts < 20) {
+          const randomDigits = Math.floor(10 + Math.random() * 990); // 2-3 digits (10-999)
+          const candidate = `${baseName}${randomDigits}`;
+          const exists = await User.findOne({ where: { username: candidate } });
+          if (!exists) {
+            generated = candidate;
+            break;
+          }
+          attempts++;
+        }
+        finalUsername = generated || `${baseName}${Date.now() % 10000}`;
+      }
+    }
+
     const finalEmail = email && email.trim() !== '' ? email.trim().toLowerCase() : undefined;
+
+    // Password: use provided password, or phone number as default
+    const finalPassword = (password && password.trim() !== '') ? password.trim() : phone.trim();
 
     // ব্যবহারকারী তৈরি
     const userFields = {
-      password: password || 'madrasah123',
+      password: finalPassword,
       firstName: firstName || '',
       lastName: lastName || '',
-      phone: phone || '',
+      phone: phone.trim(),
       userType: 'student',
       institution: req.user.institution,
       branch: branchId || req.user.branch,
@@ -354,6 +386,10 @@ exports.createStudent = async (req, res, next) => {
       residentialStatus: residentialStatus || '',
       hifzProgramType: hifzProgramType || '',
       admissionDate: admissionDate || new Date(),
+      fatherName: fatherName || '',
+      motherName: motherName || '',
+      village: village || '',
+      nationalIdOrBirthCertNo: nationalIdOrBirthCertNo || '',
       createdBy: req.user._id,
     });
 
@@ -399,7 +435,7 @@ exports.createStudent = async (req, res, next) => {
     }
 
     const rawStudent = await Student.findById(student._id)
-      .populate('user', 'firstName lastName email phone fullName')
+      .populate('user', 'firstName lastName email phone username fullName')
       .populate('institution', 'name code')
       .populate('branch', 'name code');
 
@@ -455,7 +491,7 @@ exports.updateStudent = async (req, res, next) => {
       await userDoc.save();
     }
 
-    const allowedFields = ['dateOfBirth', 'bloodGroup', 'status', 'photo', 'residentialStatus', 'hifzProgramType'];
+    const allowedFields = ['dateOfBirth', 'bloodGroup', 'status', 'photo', 'residentialStatus', 'hifzProgramType', 'fatherName', 'motherName', 'village', 'nationalIdOrBirthCertNo'];
     const updates = {};
     allowedFields.forEach((field) => {
       if (req.body[field] !== undefined) updates[field] = req.body[field];

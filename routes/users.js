@@ -59,6 +59,26 @@ router.get('/:id', authorize('super_admin', 'admin'), async (req, res, next) => 
   }
 });
 
+// @desc    ব্যবহারকারীর পাসওয়ার্ড দেখুন (শুধুমাত্র সুপার অ্যাডমিন, কো-সুপার অ্যাডমিন ও অ্যাডমিন)
+// @route   GET /api/v1/users/:id/show-password
+router.get('/:id/show-password', authorize('super_admin', 'co_super_admin', 'admin'), async (req, res, next) => {
+  try {
+    const user = await User.findOne({ where: { _id: req.params.id } });
+    if (!user) return ApiResponse.notFound(res, 'ব্যবহারকারী পাওয়া যায়নি');
+
+    const plainPassword = user.plainPassword || '';
+    ApiResponse.success(res, { 
+      plainPassword,
+      userId: user._id,
+      username: user.username,
+      firstName: user.firstName,
+      lastName: user.lastName
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // @desc    ব্যবহারকারীর রোল পরিবর্তন (Promote/Demote)
 // @route   PATCH /api/v1/users/:id/role
 // @access  Private (Super Admin and Co-Super Admin only)

@@ -21,10 +21,10 @@ exports.login = async (req, res, next) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return ApiResponse.error(res, 'ইমেইল ও পাসওয়ার্ড দিন', 400);
+      return ApiResponse.error(res, 'ইমেইল/ছাত্র আইডি ও পাসওয়ার্ড দিন', 400);
     }
 
-    const user = await User.findOne({
+    let user = await User.findOne({
       where: {
         [Op.or]: [
           { email: email.toLowerCase() },
@@ -33,8 +33,17 @@ exports.login = async (req, res, next) => {
         ]
       }
     });
+
+    // If not found by email/phone/username, try finding by studentId
     if (!user) {
-      return ApiResponse.error(res, 'ইমেইল, ফোন নম্বর বা পাসওয়ার্ড ভুল', 401);
+      const studentRecord = await Student.findOne({ where: { studentId: email } });
+      if (studentRecord) {
+        user = await User.findOne({ where: { _id: studentRecord.user } });
+      }
+    }
+
+    if (!user) {
+      return ApiResponse.error(res, 'ইমেইল, ফোন নম্বর, ছাত্র আইডি বা পাসওয়ার্ড ভুল', 401);
     }
 
     const isMatch = await user.comparePassword(password);

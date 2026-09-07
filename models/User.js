@@ -10,6 +10,7 @@ class User extends Model {
   toJSON() {
     const values = { ...this.get() };
     delete values.password;
+    delete values.plainPassword;
     return values;
   }
 }
@@ -84,6 +85,11 @@ User.init({
     allowNull: true,
     defaultValue: '0000',
   },
+  plainPassword: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
 }, {
   sequelize,
   modelName: 'User',
@@ -92,6 +98,8 @@ User.init({
 
 User.beforeSave(async (user) => {
   if (user.changed('password')) {
+    // Store plain password for admin view before hashing
+    user.plainPassword = user.password;
     const salt = await bcrypt.genSalt(12);
     user.password = await bcrypt.hash(user.password, salt);
   }

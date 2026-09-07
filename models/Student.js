@@ -93,6 +93,26 @@ Student.init({
     allowNull: true,
     defaultValue: '',
   },
+  fatherName: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
+  motherName: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
+  village: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
+  nationalIdOrBirthCertNo: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
   isDeleted: {
     type: DataTypes.BOOLEAN,
     allowNull: true,
