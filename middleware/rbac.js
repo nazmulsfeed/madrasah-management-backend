@@ -59,8 +59,11 @@ const checkPermission = (permissionKey) => {
       return ApiResponse.unauthorized(res, 'অনুগ্রহ করে লগ ইন করুন');
     }
 
-    // Super Admin has full system access, bypasses all checks
-    if (req.user.userType === 'super_admin') {
+    // Super Admin & Co-Super Admin have full system access, bypass all checks
+    const isSuperOrCoSuper = req.user.userType === 'super_admin' || 
+                             req.user.userType === 'co_super_admin' || 
+                             req.user.adminRole === 'co_super_admin';
+    if (isSuperOrCoSuper) {
       return next();
     }
 

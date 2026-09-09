@@ -122,9 +122,12 @@ exports.createTeacher = async (req, res, next) => {
     ];
     let requestedUserType = req.body.userType;
 
-    // Security check: only super_admin can create a co_super_admin directly
-    if (requestedUserType === 'co_super_admin' && req.user.userType !== 'super_admin') {
-      return ApiResponse.forbidden(res, 'কো-সুপার অ্যাডমিন তৈরি করার অনুমতি শুধুমাত্র সুপার অ্যাডমিনের আছে');
+    // Security check: super_admin or co_super_admin can create a co_super_admin directly
+    const isSuperOrCoSuperUser = req.user.userType === 'super_admin' || 
+                                 req.user.userType === 'co_super_admin' || 
+                                 req.user.adminRole === 'co_super_admin';
+    if (requestedUserType === 'co_super_admin' && !isSuperOrCoSuperUser) {
+      return ApiResponse.forbidden(res, 'কো-সুপার অ্যাডমিন তৈরি করার অনুমতি শুধুমাত্র সুপার অ্যাডমিন এবং কো-সুপার অ্যাডমিনের আছে');
     }
 
     const finalUserType = validUserTypes.includes(requestedUserType) ? requestedUserType : 'teacher';
@@ -224,8 +227,11 @@ exports.updateTeacher = async (req, res, next) => {
         'accountant', 'admission_officer', 'hostel_manager', 'library_manager'
       ];
       if (req.body.userType !== undefined && validUserTypes.includes(req.body.userType)) {
-        if (req.body.userType === 'co_super_admin' && req.user.userType !== 'super_admin') {
-          return ApiResponse.forbidden(res, 'কো-সুপার অ্যাডমিন রোল বরাদ্দ করার অনুমতি শুধুমাত্র সুপার অ্যাডমিনের আছে');
+        const isSuperOrCoSuperUser = req.user.userType === 'super_admin' || 
+                                     req.user.userType === 'co_super_admin' || 
+                                     req.user.adminRole === 'co_super_admin';
+        if (req.body.userType === 'co_super_admin' && !isSuperOrCoSuperUser) {
+          return ApiResponse.forbidden(res, 'কো-সুপার অ্যাডমিন রোল বরাদ্দ করার অনুমতি শুধুমাত্র সুপার অ্যাডমিন এবং কো-সুপার অ্যাডমিনের আছে');
         }
         userDoc.userType = req.body.userType;
         if (req.body.userType === 'admin') {

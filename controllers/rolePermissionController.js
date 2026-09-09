@@ -84,8 +84,11 @@ exports.updateRolePermissions = async (req, res, next) => {
 // @access  Private (Logged in users)
 exports.getMyPermissions = async (req, res, next) => {
   try {
-    // Super Admin gets all permissions
-    if (req.user.userType === 'super_admin') {
+    // Super Admin & Co-Super Admin get all permissions
+    const isSuperOrCoSuper = req.user.userType === 'super_admin' || 
+                             req.user.userType === 'co_super_admin' || 
+                             req.user.adminRole === 'co_super_admin';
+    if (isSuperOrCoSuper) {
       const allPerms = {};
       allPermissionKeys.forEach(k => allPerms[k] = true);
       // Inject legacy permissions for frontend compatibility

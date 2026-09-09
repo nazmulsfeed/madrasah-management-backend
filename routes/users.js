@@ -102,10 +102,11 @@ router.patch('/:id/role', authorize('super_admin', 'co_super_admin'), async (req
       return ApiResponse.error(res, 'সুপার অ্যাডমিনের রোল পরিবর্তন করা সম্ভব নয়', 403);
     }
 
-    const isTargetCoSuper = targetUser.userType === 'co_super_admin' || targetUser.adminRole === 'co_super_admin';
-    const isRequesterSuper = req.user.userType === 'super_admin';
-    if (isTargetCoSuper && !isRequesterSuper) {
-      return ApiResponse.error(res, 'কো-সুপার অ্যাডমিনের রোল পরিবর্তন করার ক্ষমতা শুধুমাত্র সুপার অ্যাডমিনের রয়েছে', 403);
+    const isRequesterAuthorized = req.user.userType === 'super_admin' || 
+                                  req.user.userType === 'co_super_admin' || 
+                                  req.user.adminRole === 'co_super_admin';
+    if (!isRequesterAuthorized) {
+      return ApiResponse.error(res, 'রোল পরিবর্তন করার ক্ষমতা শুধুমাত্র সুপার অ্যাডমিন এবং কো-সুপার অ্যাডমিনের রয়েছে', 403);
     }
 
     const oldRole = targetUser.adminRole || 'none';
@@ -202,7 +203,7 @@ router.get('/db/backup', authorize('super_admin', 'admin'), async (req, res, nex
 
 // @desc    ডাটাবেজ ব্যাকআপ রিস্টোর করুন
 // @route   POST /api/v1/users/db/restore
-router.post('/db/restore', authorize('super_admin'), async (req, res, next) => {
+router.post('/db/restore', authorize('super_admin', 'co_super_admin'), async (req, res, next) => {
   const sequelize = require('../config/db');
   try {
     const backupData = req.body;
@@ -297,7 +298,7 @@ router.post('/db/restore', authorize('super_admin'), async (req, res, next) => {
 
 // @desc    ডাটাবেজ রিসেট করুন
 // @route   POST /api/v1/users/db/reset
-router.post('/db/reset', authorize('super_admin'), async (req, res, next) => {
+router.post('/db/reset', authorize('super_admin', 'co_super_admin'), async (req, res, next) => {
   const sequelize = require('../config/db');
   
   try {
@@ -471,10 +472,10 @@ router.post('/db/reset', authorize('super_admin'), async (req, res, next) => {
   }
 });
 
-// @desc    ডাটাবেজ রিসেট পাসওয়ার্ড পরিবর্তন করুন (superadmin পরিবর্তন করতে পারবে)
+// @desc    ডাটাবেজ রিসেট পাসওয়ার্ড পরিবর্তন করুন (superadmin / co-superadmin পরিবর্তন করতে পারবে)
 // @route   PUT /api/v1/users/db/reset-password
-// @access  Private (Super Admin only)
-router.put('/db/reset-password', authorize('super_admin'), async (req, res, next) => {
+// @access  Private (Super Admin & Co-Super Admin only)
+router.put('/db/reset-password', authorize('super_admin', 'co_super_admin'), async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body;
 

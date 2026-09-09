@@ -67,8 +67,8 @@ router.route('/refunds')
 router.get('/reports/custom', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'accountant'), financeController.getCustomReports);
 
 // Backup & Restore
-router.get('/backup', authorize('super_admin'), financeController.downloadBackup);
-router.post('/restore', authorize('super_admin'), financeController.restoreBackup);
+router.get('/backup', authorize('super_admin', 'co_super_admin'), financeController.downloadBackup);
+router.post('/restore', authorize('super_admin', 'co_super_admin'), financeController.restoreBackup);
 
 router.post('/invoices/generate-monthly', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'accountant'), financeController.generateMonthlyInvoices);
 router.post('/invoices/generate-category', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'accountant'), financeController.generateCategoryInvoices);
