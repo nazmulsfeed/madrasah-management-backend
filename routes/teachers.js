@@ -10,7 +10,7 @@ router
   .route('/')
   .get(teacherController.getTeachers)
   .post(
-    authorize('super_admin', 'admin', 'principal'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'principal'),
     teacherController.createTeacher
   );
 
@@ -18,11 +18,11 @@ router
   .route('/:id')
   .get(teacherController.getTeacher)
   .patch(
-    authorize('super_admin', 'admin', 'principal'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'principal'),
     teacherController.updateTeacher
   )
   .delete(
-    authorize('super_admin', 'admin', 'principal'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'principal'),
     teacherController.deleteTeacher
   );
 

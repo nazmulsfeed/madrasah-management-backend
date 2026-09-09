@@ -11,11 +11,16 @@ exports.getTeachers = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     const staffTypes = [
-      'principal', 'vice_principal', 'teacher', 'hifz_teacher', 
+      'co_super_admin', 'admin', 'principal', 'vice_principal', 'teacher', 'hifz_teacher',
       'accountant', 'admission_officer', 'hostel_manager', 'library_manager'
     ];
 
-    const userFilter = { userType: { $in: staffTypes } };
+    const userFilter = {
+      $or: [
+        { userType: { $in: staffTypes } },
+        { adminRole: { $in: ['co_super_admin', 'admin'] } }
+      ]
+    };
     if (req.user.institution) {
       userFilter.institution = req.user.institution;
     }
@@ -34,18 +39,20 @@ exports.getTeachers = async (req, res, next) => {
         const year = new Date().getFullYear();
         const randomId = Math.floor(100 + Math.random() * 900);
         const employeeId = `STF-${year}-${randomId}-${user._id.toString().slice(-4)}`;
-        
+
         teacher = await Teacher.create({
           user: user._id,
           institution: user.institution,
           branch: user.branch,
           employeeId,
           teacherType: user.userType === 'hifz_teacher' ? 'hifz' : 'regular',
-          designation: user.userType === 'principal' ? 'প্রিন্সিপাল' : 
-                       user.userType === 'vice_principal' ? 'ভাইস প্রিন্সিপাল' :
-                       user.userType === 'accountant' ? 'হিসাবরক্ষক' :
-                       user.userType === 'library_manager' ? 'লাইব্রেরি ম্যানেজার' :
-                       user.userType === 'hostel_manager' ? 'হোস্টেল ম্যানেজার' : 'শিক্ষক',
+          designation: user.userType === 'co_super_admin' ? 'কো-সুপার অ্যাডমিন' :
+            user.userType === 'admin' ? 'অ্যাডমিন' :
+              user.userType === 'principal' ? 'প্রিন্সিপাল' :
+                user.userType === 'vice_principal' ? 'ভাইস প্রিন্সিপাল' :
+                  user.userType === 'accountant' ? 'হিসাবরক্ষক' :
+                    user.userType === 'library_manager' ? 'লাইব্রেরি ম্যানেজার' :
+                      user.userType === 'hostel_manager' ? 'হোস্টেল ম্যানেজার' : 'শিক্ষক',
           joiningDate: user.createdAt || new Date(),
           status: 'active'
         });
@@ -110,10 +117,16 @@ exports.createTeacher = async (req, res, next) => {
 
     // 1. Create User
     const validUserTypes = [
-      'principal', 'vice_principal', 'teacher', 'hifz_teacher', 
+      'co_super_admin', 'admin', 'principal', 'vice_principal', 'teacher', 'hifz_teacher',
       'accountant', 'admission_officer', 'hostel_manager', 'library_manager'
     ];
-    const requestedUserType = req.body.userType;
+    let requestedUserType = req.body.userType;
+
+    // Security check: only super_admin can create a co_super_admin directly
+    if (requestedUserType === 'co_super_admin' && req.user.userType !== 'super_admin') {
+      return ApiResponse.forbidden(res, 'কো-সুপার অ্যাডমিন তৈরি করার অনুমতি শুধুমাত্র সুপার অ্যাডমিনের আছে');
+    }
+
     const finalUserType = validUserTypes.includes(requestedUserType) ? requestedUserType : 'teacher';
 
     const userFields = {
@@ -129,16 +142,31 @@ exports.createTeacher = async (req, res, next) => {
     if (finalEmail) userFields.email = finalEmail;
     if (finalUsername) userFields.username = finalUsername;
 
+    // Automatically set adminRole if userType is admin or co_super_admin
+    if (finalUserType === 'admin') {
+      userFields.adminRole = 'admin';
+    } else if (finalUserType === 'co_super_admin') {
+      userFields.adminRole = 'co_super_admin';
+    }
+
     const user = await User.create(userFields);
 
-    // 2. Create Teacher profile
+    // 2. Create Teacher/Staff profile
+    const defaultDesignation = finalUserType === 'co_super_admin' ? 'কো-সুপার অ্যাডমিন' :
+      finalUserType === 'admin' ? 'অ্যাডমিন' :
+        finalUserType === 'principal' ? 'প্রিন্সিপাল' :
+          finalUserType === 'vice_principal' ? 'ভাইস প্রিন্সিপাল' :
+            finalUserType === 'accountant' ? 'হিসাবরক্ষক' :
+              finalUserType === 'library_manager' ? 'লাইব্রেরি ম্যানেজার' :
+                finalUserType === 'hostel_manager' ? 'হোস্টেল ম্যানেজার' : '';
+
     const teacher = await Teacher.create({
       user: user._id,
       institution: req.user.institution,
       branch: req.user.branch,
       employeeId: finalTeacherId, // required by schema
       teacherType: teacherType || (finalUserType === 'hifz_teacher' ? 'hifz' : 'regular'),
-      designation: req.body.designation || '',
+      designation: req.body.designation || defaultDesignation,
       joiningDate: req.body.joinDate || new Date(),
       qualification: req.body.qualifications || '',
       status: 'active'
@@ -192,11 +220,19 @@ exports.updateTeacher = async (req, res, next) => {
       if (req.body.phone !== undefined) userDoc.phone = req.body.phone;
 
       const validUserTypes = [
-        'principal', 'vice_principal', 'teacher', 'hifz_teacher', 
+        'co_super_admin', 'admin', 'principal', 'vice_principal', 'teacher', 'hifz_teacher',
         'accountant', 'admission_officer', 'hostel_manager', 'library_manager'
       ];
       if (req.body.userType !== undefined && validUserTypes.includes(req.body.userType)) {
+        if (req.body.userType === 'co_super_admin' && req.user.userType !== 'super_admin') {
+          return ApiResponse.forbidden(res, 'কো-সুপার অ্যাডমিন রোল বরাদ্দ করার অনুমতি শুধুমাত্র সুপার অ্যাডমিনের আছে');
+        }
         userDoc.userType = req.body.userType;
+        if (req.body.userType === 'admin') {
+          userDoc.adminRole = 'admin';
+        } else if (req.body.userType === 'co_super_admin') {
+          userDoc.adminRole = 'co_super_admin';
+        }
       }
 
       if (req.body.username !== undefined) {
