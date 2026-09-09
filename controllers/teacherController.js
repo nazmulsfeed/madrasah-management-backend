@@ -136,6 +136,7 @@ exports.createTeacher = async (req, res, next) => {
       firstName: firstName || '',
       lastName: lastName || '',
       phone: phone || '',
+      photo: req.body.photo || '',
       password: (password && password.trim() !== '') ? password.trim() : 'teacher123',
       userType: finalUserType,
       institution: req.user.institution,
@@ -221,6 +222,7 @@ exports.updateTeacher = async (req, res, next) => {
       if (req.body.firstName !== undefined) userDoc.firstName = req.body.firstName;
       if (req.body.lastName !== undefined) userDoc.lastName = req.body.lastName;
       if (req.body.phone !== undefined) userDoc.phone = req.body.phone;
+      if (req.body.photo !== undefined) userDoc.photo = req.body.photo;
 
       const validUserTypes = [
         'co_super_admin', 'admin', 'principal', 'vice_principal', 'teacher', 'hifz_teacher',

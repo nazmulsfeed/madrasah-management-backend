@@ -83,6 +83,7 @@ exports.createGuardian = async (req, res, next) => {
       firstName,
       lastName,
       phone: phone || '',
+      photo: req.body.photo || '',
       password: password || 'guardian123',
       userType: 'guardian',
       institution: req.user.institution,
@@ -149,6 +150,7 @@ exports.updateGuardian = async (req, res, next) => {
       if (req.body.firstName !== undefined) userDoc.firstName = req.body.firstName;
       if (req.body.lastName !== undefined) userDoc.lastName = req.body.lastName;
       if (req.body.phone !== undefined) userDoc.phone = req.body.phone;
+      if (req.body.photo !== undefined) userDoc.photo = req.body.photo;
 
       if (req.body.username !== undefined) {
         if (req.body.username && req.body.username.trim() !== '') {

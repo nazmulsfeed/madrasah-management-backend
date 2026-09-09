@@ -362,6 +362,7 @@ exports.createStudent = async (req, res, next) => {
       firstName: firstName || '',
       lastName: lastName || '',
       phone: phone.trim(),
+      photo: req.body.photo || '',
       userType: 'student',
       institution: req.user.institution,
       branch: branchId || req.user.branch,
@@ -379,6 +380,7 @@ exports.createStudent = async (req, res, next) => {
       branch: branchId || req.user.branch,
       admissionNumber: finalAdmissionNumber,
       studentId: finalStudentId,
+      photo: req.body.photo || '',
 
       dateOfBirth: dateOfBirth || null,
       gender: finalGender,
@@ -462,6 +464,7 @@ exports.updateStudent = async (req, res, next) => {
       if (req.body.firstName !== undefined) userDoc.firstName = req.body.firstName;
       if (req.body.lastName !== undefined) userDoc.lastName = req.body.lastName;
       if (req.body.phone !== undefined) userDoc.phone = req.body.phone;
+      if (req.body.photo !== undefined) userDoc.photo = req.body.photo;
 
       // Only update password when a non-empty value is provided
       if (req.body.password && req.body.password.trim() !== '') {
