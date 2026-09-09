@@ -118,22 +118,34 @@ const checkPermission = (permissionKey) => {
         const perms = permissionCache.get(role);
         
         if (perms) {
-          // Direct check
+          // 1. Direct check
           if (perms[permissionKey] === true || perms[permissionKey] === 'true') {
             hasExplicitPermission = true;
           } else if (perms[permissionKey] === false || perms[permissionKey] === 'false') {
             hasExplicitDenial = true;
           }
 
-          // Legacy mapping check if direct check didn't pass
+          // 2. Check mapping if direct check didn't pass
           if (!hasExplicitPermission) {
-             for (const [legacyKey, granularKeys] of Object.entries(legacyToGranularMap)) {
-               if (granularKeys.includes(permissionKey)) {
-                 if (perms[legacyKey] === true || perms[legacyKey] === 'true') {
-                   hasExplicitPermission = true;
-                 }
-               }
-             }
+            // Case A: System requests a legacy key (e.g., 'can_view_homework'), and role has granular keys (e.g. 'homework.view')
+            if (legacyToGranularMap[permissionKey]) {
+              const mappedGranularKeys = legacyToGranularMap[permissionKey];
+              if (mappedGranularKeys.some(k => perms[k] === true || perms[k] === 'true')) {
+                hasExplicitPermission = true;
+              }
+            }
+
+            // Case B: System requests a granular key (e.g., 'homework.view'), and role has legacy key (e.g. 'can_view_homework')
+            if (!hasExplicitPermission) {
+              for (const [legacyKey, granularKeys] of Object.entries(legacyToGranularMap)) {
+                if (granularKeys.includes(permissionKey)) {
+                  if (perms[legacyKey] === true || perms[legacyKey] === 'true') {
+                    hasExplicitPermission = true;
+                    break;
+                  }
+                }
+              }
+            }
           }
         }
       }
