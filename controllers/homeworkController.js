@@ -82,35 +82,57 @@ exports.getHomeworks = async (req, res, next) => {
       }
 
       if (!hasFullAccess) {
-        let classLevelNames = [];
+        let classLevelValues = [];
         if (userType === 'student') {
-          const student = await Student.findOne({ where: { user: req.user._id } });
-          if (student && student.currentEnrollment) {
-            const enrollment = await StudentEnrollment.findByPk(student.currentEnrollment);
-            if (enrollment) { // Note: might need to fetch classLevel name manually
-               const classLvl = await require('../models/ClassLevel').findByPk(enrollment.classLevel);
-               if (classLvl) classLevelNames = [classLvl.name];
-               else classLevelNames = [enrollment.classLevel];
+          const student = await Student.findOne({ where: { user: req.user._id.toString() } });
+          if (student) {
+            let enrollment = null;
+            if (student.currentEnrollment) {
+              enrollment = await StudentEnrollment.findByPk(student.currentEnrollment);
+            }
+            if (!enrollment) {
+              enrollment = await StudentEnrollment.findOne({
+                where: { student: student._id.toString(), enrollmentStatus: 'active' },
+                order: [['createdAt', 'DESC']]
+              });
+            }
+            if (enrollment) {
+              classLevelValues.push(enrollment.classLevel);
+              const ClassLevel = require('../models/ClassLevel');
+              const classLvl = await ClassLevel.findByPk(enrollment.classLevel);
+              if (classLvl && classLvl.name) {
+                classLevelValues.push(classLvl.name);
+              }
             }
           }
           where.status = 'active';
         } else if (userType === 'guardian') {
-          const guardian = await Guardian.findOne({ where: { user: req.user._id } });
+          const guardian = await Guardian.findOne({ where: { user: req.user._id.toString() } });
           if (guardian && guardian.students && guardian.students.length > 0) {
             const linkedStudentIds = guardian.students.map(s => s.student);
             const students = await Student.findAll({ where: { _id: { [Op.in]: linkedStudentIds } } });
-            const enrollmentIds = students.filter(s => s.currentEnrollment).map(s => s.currentEnrollment);
-            const enrollments = await StudentEnrollment.findAll({ where: { _id: { [Op.in]: enrollmentIds } } });
-            // Simplified: we'll use raw classLevel field from enrollments
-            classLevelNames = [...new Set(enrollments.map(e => e.classLevel).filter(Boolean))];
+            const studentIds = students.map(s => s._id);
+            const enrollments = await StudentEnrollment.findAll({
+              where: {
+                [Op.or]: [
+                  { _id: { [Op.in]: students.map(s => s.currentEnrollment).filter(Boolean) } },
+                  { student: { [Op.in]: studentIds }, enrollmentStatus: 'active' }
+                ]
+              }
+            });
+            const clIds = enrollments.map(e => e.classLevel).filter(Boolean);
+            classLevelValues = [...new Set(clIds)];
+            if (clIds.length > 0) {
+              const ClassLevel = require('../models/ClassLevel');
+              const clObjects = await ClassLevel.findAll({ where: { _id: { [Op.in]: clIds } } });
+              clObjects.forEach(c => { if (c.name) classLevelValues.push(c.name); });
+            }
           }
           where.status = 'active';
         }
 
-        if (classLevelNames.length > 0 && !where.classLevel) {
-          where.classLevel = { [Op.in]: classLevelNames };
-        } else if (classLevelNames.length === 0) {
-          return ApiResponse.paginated(res, [], page, limit, 0);
+        if (classLevelValues.length > 0 && !where.classLevel) {
+          where.classLevel = { [Op.in]: [...new Set(classLevelValues)] };
         }
       }
     } else if (userType === 'student') {
