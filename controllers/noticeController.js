@@ -30,7 +30,9 @@ exports.getNotices = async (req, res, next) => {
   try {
     const where = {};
     if (req.user.userType !== 'super_admin' && req.user.institution) {
-      where.institution = req.user.institution;
+      where.institution = {
+        [Op.or]: [req.user.institution, null, '']
+      };
     }
     
     // Role based filtering

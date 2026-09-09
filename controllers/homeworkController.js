@@ -48,7 +48,9 @@ exports.getHomeworks = async (req, res, next) => {
 
     const where = {};
     if (req.user.userType !== 'super_admin' && req.user.institution) {
-      where.institution = req.user.institution;
+      where.institution = {
+        [Op.or]: [req.user.institution, null, '']
+      };
     }
     
     if (req.query.classLevel) where.classLevel = req.query.classLevel;
