@@ -140,56 +140,7 @@ const PORT = process.env.PORT || 5000;
 const start = async () => {
   await db.connectDB();
   
-  // Apply one-time notice permission and branch corruption fix
-  try {
-    const RolePermission = require('./models/RolePermission');
-    const perms = await RolePermission.findAll({ where: { role: ['teacher', 'hifz_teacher'] } });
-    for (const p of perms) {
-      let permissions = p.permissions;
-      if (typeof permissions === 'string') {
-        try { permissions = JSON.parse(permissions); } catch(e){}
-      }
-      if (permissions && permissions.can_manage_notice === false) {
-        permissions.can_manage_notice = true;
-        p.permissions = permissions;
-        p.changed('permissions', true);
-        await p.save();
-        console.log(`[Migration] Fixed notice permission to true for role: ${p.role}`);
-      }
-    }
-
-    // Fix Branch bug corruption across ALL tables
-    const { Op } = require('sequelize');
-    const correctInstitution = 'আন-নুর-ইসলামিক একাডেমি';
-    const models = db.models;
-    
-    for (const modelName of Object.keys(models)) {
-      const model = models[modelName];
-      if (model.rawAttributes && model.rawAttributes.institution) {
-        try {
-          const [updatedRows] = await model.update(
-            { institution: correctInstitution },
-            {
-              where: {
-                [Op.or]: [
-                  { institution: { [Op.ne]: correctInstitution } },
-                  { institution: null },
-                  { institution: '' }
-                ]
-              }
-            }
-          );
-          if (updatedRows > 0) {
-            console.log(`[Migration] Fixed ${updatedRows} corrupted institution(s) in model ${modelName}`);
-          }
-        } catch (e) {
-          console.error(`[Migration] Error fixing institution in ${modelName}:`, e.message);
-        }
-      }
-    }
-  } catch (error) {
-    console.error('[Migration] Failed to run database migrations:', error.message);
-  }
+  // One-time migrations (notice permission, institution fix) already applied — skipped for fast boot
 
   // Start Monthly Invoice Auto-Scheduler
   const { startInvoiceScheduler } = require('./utils/invoiceScheduler');
