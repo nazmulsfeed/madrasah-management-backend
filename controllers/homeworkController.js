@@ -170,8 +170,19 @@ exports.getHomeworks = async (req, res, next) => {
           where.status = 'active';
         }
 
-        if (classLevelValues.length > 0 && !where.classLevel) {
-          where.classLevel = { [Op.in]: [...new Set(classLevelValues)] };
+        if (classLevelValues.length > 0) {
+          const allowedClasses = [...new Set(classLevelValues)];
+          if (where.classLevel) {
+            // If user passed a classLevel filter, ensure it belongs to their allowed classes
+            if (allowedClasses.includes(where.classLevel)) {
+              where.classLevel = where.classLevel;
+            } else {
+              // Not authorized to view this class, restrict to impossible condition or empty
+              where.classLevel = { [Op.in]: allowedClasses };
+            }
+          } else {
+            where.classLevel = { [Op.in]: allowedClasses };
+          }
         }
       }
     } else if (userType === 'student') {
