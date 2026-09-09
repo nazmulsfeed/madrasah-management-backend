@@ -140,16 +140,6 @@ const PORT = process.env.PORT || 5000;
 const start = async () => {
   await db.connectDB();
   
-  // Auto-upgrade photo and logo columns to LONGTEXT to prevent "Data too long" error
-  try {
-    await db.query("ALTER TABLE `users` MODIFY COLUMN `photo` LONGTEXT;");
-    await db.query("ALTER TABLE `students` MODIFY COLUMN `photo` LONGTEXT;");
-    await db.query("ALTER TABLE `institutions` MODIFY COLUMN `logo` LONGTEXT;");
-    console.log('✅ Photo & logo columns converted to LONGTEXT');
-  } catch (colErr) {
-    console.warn('⚠️ Column alteration warning:', colErr.message);
-  }
-
   // Apply one-time notice permission and branch corruption fix
   try {
     const RolePermission = require('./models/RolePermission');

@@ -47,6 +47,11 @@ Teacher.init({
     type: DataTypes.STRING,
     allowNull: true,
   },
+  designation: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
   status: {
     type: DataTypes.STRING,
     allowNull: true,

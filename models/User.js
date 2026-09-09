@@ -90,6 +90,11 @@ User.init({
     allowNull: true,
     defaultValue: '',
   },
+  profileId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
 }, {
   sequelize,
   modelName: 'User',
