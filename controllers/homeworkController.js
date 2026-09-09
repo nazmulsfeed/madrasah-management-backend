@@ -85,12 +85,29 @@ exports.getHomeworks = async (req, res, next) => {
 
       if (!hasFullAccess) {
         let classLevelValues = [];
+        const ClassLevel = require('../models/ClassLevel');
+
         if (userType === 'student') {
-          const student = await Student.findOne({ where: { user: req.user._id.toString() } });
+          const userIdentifier = req.user._id ? req.user._id.toString() : '';
+          const student = await Student.findOne({
+            where: {
+              [Op.or]: [
+                { user: userIdentifier },
+                ...(req.user.id ? [{ user: req.user.id.toString() }] : [])
+              ]
+            }
+          });
           if (student) {
             let enrollment = null;
             if (student.currentEnrollment) {
-              enrollment = await StudentEnrollment.findByPk(student.currentEnrollment);
+              enrollment = await StudentEnrollment.findOne({
+                where: {
+                  [Op.or]: [
+                    { _id: student.currentEnrollment },
+                    { id: student.currentEnrollment }
+                  ]
+                }
+              });
             }
             if (!enrollment) {
               enrollment = await StudentEnrollment.findOne({
@@ -98,10 +115,17 @@ exports.getHomeworks = async (req, res, next) => {
                 order: [['createdAt', 'DESC']]
               });
             }
-            if (enrollment) {
+            if (enrollment && enrollment.classLevel) {
               classLevelValues.push(enrollment.classLevel);
-              const ClassLevel = require('../models/ClassLevel');
-              const classLvl = await ClassLevel.findByPk(enrollment.classLevel);
+              const classLvl = await ClassLevel.findOne({
+                where: {
+                  [Op.or]: [
+                    { _id: enrollment.classLevel },
+                    { id: enrollment.classLevel },
+                    { name: enrollment.classLevel }
+                  ]
+                }
+              });
               if (classLvl && classLvl.name) {
                 classLevelValues.push(classLvl.name);
               }
@@ -109,7 +133,14 @@ exports.getHomeworks = async (req, res, next) => {
           }
           where.status = 'active';
         } else if (userType === 'guardian') {
-          const guardian = await Guardian.findOne({ where: { user: req.user._id.toString() } });
+          const guardian = await Guardian.findOne({
+            where: {
+              [Op.or]: [
+                { user: req.user._id ? req.user._id.toString() : '' },
+                ...(req.user.id ? [{ user: req.user.id.toString() }] : [])
+              ]
+            }
+          });
           if (guardian && guardian.students && guardian.students.length > 0) {
             const linkedStudentIds = guardian.students.map(s => s.student);
             const students = await Student.findAll({ where: { _id: { [Op.in]: linkedStudentIds } } });
@@ -125,8 +156,14 @@ exports.getHomeworks = async (req, res, next) => {
             const clIds = enrollments.map(e => e.classLevel).filter(Boolean);
             classLevelValues = [...new Set(clIds)];
             if (clIds.length > 0) {
-              const ClassLevel = require('../models/ClassLevel');
-              const clObjects = await ClassLevel.findAll({ where: { _id: { [Op.in]: clIds } } });
+              const clObjects = await ClassLevel.findAll({
+                where: {
+                  [Op.or]: [
+                    { _id: { [Op.in]: clIds } },
+                    { id: { [Op.in]: clIds } }
+                  ]
+                }
+              });
               clObjects.forEach(c => { if (c.name) classLevelValues.push(c.name); });
             }
           }
