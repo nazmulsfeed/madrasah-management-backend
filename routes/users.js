@@ -10,7 +10,7 @@ router.use(protect);
 
 // @desc    সকল ব্যবহারকারীর তালিকা
 // @route   GET /api/v1/users
-router.get('/', authorize('super_admin', 'admin'), async (req, res, next) => {
+router.get('/', authorize('super_admin', 'co_super_admin', 'admin'), async (req, res, next) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 25;
