@@ -232,6 +232,103 @@ exports.receivePayment = async (req, res, next) => {
   }
 };
 
+// @desc    একাধিক ইনভয়েসের জন্য একসাথে পেমেন্ট গ্রহণ (Bulk Payment)
+// @route   POST /api/v1/finance/payments/bulk
+exports.receiveBulkPayment = async (req, res, next) => {
+  try {
+    const { invoiceIds, totalAmount, method, transactionReference, fundAccount, revenueAccount } = req.body;
+
+    if (!invoiceIds || !invoiceIds.length) return ApiResponse.error(res, 'কোনো ইনভয়েস নির্বাচন করা হয়নি', 400);
+
+    const invoices = await Invoice.find({ _id: { $in: invoiceIds } });
+    if (!invoices.length) return ApiResponse.notFound(res, 'ইনভয়েস পাওয়া যায়নি');
+
+    const isMobileBanking = ['bkash', 'rocket', 'nagad'].includes(method);
+    if (isMobileBanking && !transactionReference) {
+      return ApiResponse.error(res, 'মোবাইল ব্যাংকিং পেমেন্টের জন্য ট্রানজেকশন আইডি আবশ্যক', 400);
+    }
+
+    const isStaff = ['super_admin', 'co_super_admin', 'admin', 'principal', 'accountant'].includes(req.user.userType) ||
+      ['co_super_admin', 'admin'].includes(req.user.adminRole);
+    const status = isMobileBanking ? 'pending' : 'success';
+    
+    let remainingAmount = parseFloat(totalAmount);
+    const createdPayments = [];
+
+    for (const invoice of invoices) {
+      if (invoice.status === 'paid' || remainingAmount <= 0) continue;
+
+      const paymentAmount = Math.min(invoice.balance, remainingAmount);
+      const gatewayCharge = isMobileBanking ? paymentAmount * 0.02 : 0;
+      
+      const payment = await Payment.create({
+        institution: req.user.institution,
+        student: invoice.student,
+        invoice: invoice._id,
+        paymentNumber: `PAY-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        amount: paymentAmount,
+        method,
+        transactionReference,
+        feeMonth: invoice.feeCategory || 'মাসিক বেতন',
+        gatewayCharge,
+        advancePaid: 0,
+        balanceAfterPayment: invoice.balance - paymentAmount,
+        receivedBy: status === 'success' && isStaff ? req.user._id : undefined,
+        status,
+        fundAccount,
+        revenueAccount
+      });
+
+      if (status === 'success') {
+        invoice.paidTotal += paymentAmount;
+        invoice.balance -= paymentAmount;
+        invoice.status = invoice.balance <= 0 ? 'paid' : 'partial';
+        await invoice.save();
+
+        if (fundAccount && revenueAccount) {
+          const entries = [
+            { account: fundAccount, debit: paymentAmount, credit: 0 },
+            { account: revenueAccount, debit: 0, credit: paymentAmount }
+          ];
+          await JournalEntry.create({
+            institution: req.user.institution,
+            date: new Date(),
+            reference: payment.paymentNumber,
+            description: `শিক্ষার্থী ফি গ্রহণ: ইনভয়েস ${invoice.invoiceNumber || invoice.title}`,
+            entries
+          });
+          const fundAcc = await Account.findById(fundAccount);
+          if (fundAcc) { fundAcc.balance += paymentAmount; await fundAcc.save(); }
+          const revAcc = await Account.findById(revenueAccount);
+          if (revAcc) { revAcc.balance += paymentAmount; await revAcc.save(); }
+        }
+      }
+
+      createdPayments.push(payment);
+      remainingAmount -= paymentAmount;
+    }
+
+    await auditLogger.logAction(
+      req.user.institution,
+      req.user._id,
+      'create',
+      'Payment',
+      invoices[0]._id, // using first invoice id for log
+      `${invoices.length} টি ইনভয়েসের বিপরীতে ৳${totalAmount} পেমেন্ট ${status === 'pending' ? 'রিকোয়েস্ট জমা দেওয়া হয়েছে (Pending)' : 'গ্রহণ করা হয়েছে'}`,
+      null,
+      { invoices: invoiceIds, totalAmount }
+    );
+
+    const message = status === 'pending'
+      ? 'পেমেন্ট রিকোয়েস্ট সফলভাবে জমা দেওয়া হয়েছে এবং যাচাইকরণের জন্য অপেক্ষাধীন রয়েছে।'
+      : 'পেমেন্ট সফলভাবে গ্রহণ করা হয়েছে।';
+
+    ApiResponse.success(res, { payments: createdPayments }, message);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    অপেক্ষাধীন (Pending) পেমেন্ট রিকোয়েস্ট তালিকা
 // @route   GET /api/v1/finance/payments/pending
 exports.getPendingPayments = async (req, res, next) => {
@@ -812,5 +909,56 @@ exports.restoreBackup = async (req, res, next) => {
     // Note: restoring would normally drop and insert. We'll skip actual DB write here to prevent data loss during test
     // But we'll send a success response
     ApiResponse.success(res, null, 'ডেটাবেস সফলভাবে রিস্টোর করা হয়েছে (Simulation)');
+  } catch (error) { next(error); }
+};
+
+// @desc    Get student finance summary (for student/guardian dashboard)
+// @route   GET /api/v1/finance/my-student-summary
+exports.getMyStudentSummary = async (req, res, next) => {
+  try {
+    let studentIds = [];
+    if (req.user.userType === 'student') {
+      studentIds = [req.user.profileId];
+    } else if (req.user.userType === 'guardian') {
+      const Guardian = require('../models/Guardian');
+      const guardianDoc = await Guardian.findById(req.user.profileId);
+      studentIds = guardianDoc ? guardianDoc.students.map(s => s.student) : [];
+    } else {
+      return ApiResponse.error(res, 'এই রাউটে শুধু ছাত্র বা অভিভাবক প্রবেশ করতে পারবেন', 403);
+    }
+
+    if (!studentIds.length) {
+      return ApiResponse.success(res, {
+        totalDue: 0, totalPaid: 0, upcomingDueDate: null, dueInvoices: 0
+      });
+    }
+
+    const invoices = await Invoice.find({ 
+      institution: req.user.institution, 
+      student: { $in: studentIds } 
+    }).sort({ dueDate: 1 });
+
+    let totalDue = 0;
+    let totalPaid = 0;
+    let dueInvoices = 0;
+    let upcomingDueDate = null;
+
+    invoices.forEach(inv => {
+      totalDue += inv.balance;
+      totalPaid += inv.paidTotal || 0;
+      if (inv.balance > 0) {
+        dueInvoices++;
+        if (!upcomingDueDate || new Date(inv.dueDate) < upcomingDueDate) {
+          upcomingDueDate = new Date(inv.dueDate);
+        }
+      }
+    });
+
+    ApiResponse.success(res, {
+      totalDue,
+      totalPaid,
+      dueInvoices,
+      upcomingDueDate
+    });
   } catch (error) { next(error); }
 };
