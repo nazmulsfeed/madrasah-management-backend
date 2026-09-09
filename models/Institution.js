@@ -28,7 +28,7 @@ Institution.init({
     defaultValue: '',
   },
   logo: {
-    type: DataTypes.TEXT,
+    type: DataTypes.TEXT('long'),
     allowNull: true,
     defaultValue: '',
   },

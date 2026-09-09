@@ -60,7 +60,7 @@ Student.init({
     defaultValue: '',
   },
   photo: {
-    type: DataTypes.TEXT,
+    type: DataTypes.TEXT('long'),
     allowNull: true,
     defaultValue: '',
   },
