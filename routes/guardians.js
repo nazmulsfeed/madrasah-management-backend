@@ -9,26 +9,26 @@ router.use(protect);
 router
   .route('/')
   .get(
-    authorize('super_admin', 'admin', 'principal', 'vice_principal', 'teacher'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'vice_principal', 'teacher'),
     guardianController.getGuardians
   )
   .post(
-    authorize('super_admin', 'admin', 'principal', 'vice_principal'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'vice_principal'),
     guardianController.createGuardian
   );
 
 router
   .route('/:id')
   .get(
-    authorize('super_admin', 'admin', 'principal', 'vice_principal', 'teacher'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'vice_principal', 'teacher'),
     guardianController.getGuardian
   )
   .patch(
-    authorize('super_admin', 'admin', 'principal', 'vice_principal'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'vice_principal'),
     guardianController.updateGuardian
   )
   .delete(
-    authorize('super_admin', 'admin', 'principal', 'vice_principal'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'vice_principal'),
     guardianController.deleteGuardian
   );
 

@@ -33,24 +33,110 @@ const getUserTypeLabel = (type) => {
   return labels[type] || type;
 };
 
-// Legacy role-based authorization (gradually deprecate this)
-const authorize = (...roles) => {
-  return (req, res, next) => {
+// Dynamic role and permission-based authorization
+const authorize = (...rolesOrPermissions) => {
+  return async (req, res, next) => {
     if (!req.user) {
       return ApiResponse.unauthorized(res, 'অনুগ্রহ করে লগ ইন করুন');
     }
 
-    const hasRole = roles.includes(req.user.userType) || (req.user.adminRole && roles.includes(req.user.adminRole));
-
-    if (!hasRole) {
-      return ApiResponse.forbidden(
-        res,
-        `এই কার্যক্রমের জন্য আপনার (${getUserTypeLabel(req.user.userType)}) অনুমতি নেই`
-      );
+    // Super Admin & Co-Super Admin bypass all checks
+    const isSuperOrCoSuper = req.user.userType === 'super_admin' || 
+                             req.user.userType === 'co_super_admin' || 
+                             req.user.adminRole === 'co_super_admin';
+    if (isSuperOrCoSuper) {
+      return next();
     }
 
-    next();
+    const hasRole = rolesOrPermissions.includes(req.user.userType) || 
+                    (req.user.adminRole && rolesOrPermissions.includes(req.user.adminRole));
+
+    if (hasRole) {
+      return next();
+    }
+
+    // If role check didn't pass, evaluate any permission keys provided in the argument list
+    const permissionKeys = rolesOrPermissions.filter(item => item.includes('.') || item.startsWith('can_'));
+    for (const key of permissionKeys) {
+      const allowed = await evaluateUserPermission(req.user, key);
+      if (allowed) {
+        return next();
+      }
+    }
+
+    return ApiResponse.forbidden(
+      res,
+      `এই কার্যক্রমের জন্য আপনার (${getUserTypeLabel(req.user.userType)}) অনুমতি নেই`
+    );
   };
+};
+
+// Helper to evaluate if a user has a specific permission (with cache & mapping)
+const evaluateUserPermission = async (user, permissionKey) => {
+  try {
+    const rolesToCheck = [user.userType];
+    if (user.adminRole) rolesToCheck.push(user.adminRole);
+
+    let cacheMiss = false;
+    for (const role of rolesToCheck) {
+      if (!permissionCache.has(role)) {
+        cacheMiss = true;
+        break;
+      }
+    }
+
+    if (cacheMiss) {
+      const rolePerms = await RolePermission.findAll({ where: { role: rolesToCheck } });
+      for (const role of rolesToCheck) {
+        const rp = rolePerms.find(p => p.role === role);
+        let perms = {};
+        if (rp) {
+          perms = rp.permissions;
+          if (typeof perms === 'string') {
+            try { perms = JSON.parse(perms); } catch (e) { perms = {}; }
+          }
+        }
+        const defaults = defaultRolePermissions[role] || {};
+        const mergedPerms = { ...defaults, ...(perms || {}) };
+        permissionCache.set(role, mergedPerms);
+      }
+    }
+
+    let hasExplicitPermission = false;
+    for (const role of rolesToCheck) {
+      const perms = permissionCache.get(role);
+      if (perms) {
+        if (perms[permissionKey] === true || perms[permissionKey] === 'true') {
+          hasExplicitPermission = true;
+          break;
+        }
+
+        // Granular <-> Legacy mapping check
+        if (legacyToGranularMap[permissionKey]) {
+          const mappedKeys = legacyToGranularMap[permissionKey];
+          if (mappedKeys.some(k => perms[k] === true || perms[k] === 'true')) {
+            hasExplicitPermission = true;
+            break;
+          }
+        }
+
+        for (const [legacyKey, granularKeys] of Object.entries(legacyToGranularMap)) {
+          if (granularKeys.includes(permissionKey)) {
+            if (perms[legacyKey] === true || perms[legacyKey] === 'true') {
+              hasExplicitPermission = true;
+              break;
+            }
+          }
+        }
+        if (hasExplicitPermission) break;
+      }
+    }
+
+    return hasExplicitPermission;
+  } catch (err) {
+    console.error('Error evaluating user permission:', err);
+    return false;
+  }
 };
 
 const checkPermission = (permissionKey) => {

@@ -8,29 +8,29 @@ router.use(protect);
 
 router.get('/stats', studentController.getStudentStats);
 router.get('/classes', studentController.getClassLevels);
-router.post('/classes', authorize('super_admin', 'admin', 'principal'), studentController.createClassLevel);
-router.patch('/classes/:id', authorize('super_admin', 'admin', 'principal'), studentController.updateClassLevel);
-router.delete('/classes/:id', authorize('super_admin', 'admin', 'principal'), studentController.deleteClassLevel);
+router.post('/classes', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'class.create'), studentController.createClassLevel);
+router.patch('/classes/:id', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'class.update'), studentController.updateClassLevel);
+router.delete('/classes/:id', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'class.delete'), studentController.deleteClassLevel);
 router.get('/sections', studentController.getSections);
 router.get('/subjects', studentController.getSubjects);
 router.get('/academic-years', studentController.getAcademicYears);
-router.post('/academic-years', authorize('super_admin', 'admin', 'principal'), studentController.createAcademicYear);
-router.patch('/academic-years/:id', authorize('super_admin', 'admin', 'principal'), studentController.updateAcademicYear);
-router.delete('/academic-years/:id', authorize('super_admin', 'admin', 'principal'), studentController.deleteAcademicYear);
+router.post('/academic-years', authorize('super_admin', 'co_super_admin', 'admin', 'principal'), studentController.createAcademicYear);
+router.patch('/academic-years/:id', authorize('super_admin', 'co_super_admin', 'admin', 'principal'), studentController.updateAcademicYear);
+router.delete('/academic-years/:id', authorize('super_admin', 'co_super_admin', 'admin', 'principal'), studentController.deleteAcademicYear);
 router.get('/promotion-candidates', studentController.getPromotionCandidates);
 router.get('/next-roll', studentController.getNextRollNumber);
 router.get('/branches', studentController.getBranches);
-router.post('/promote', authorize('super_admin', 'admin', 'principal'), studentController.promoteStudents);
-router.post('/subjects', authorize('super_admin', 'admin', 'principal'), studentController.createSubject);
-router.patch('/subjects/:id', authorize('super_admin', 'admin', 'principal'), studentController.updateSubject);
-router.delete('/subjects/:id', authorize('super_admin', 'admin', 'principal'), studentController.deleteSubject);
-router.post('/class-subjects', authorize('super_admin', 'admin', 'principal'), studentController.updateClassSubjects);
+router.post('/promote', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'student.promote'), studentController.promoteStudents);
+router.post('/subjects', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'subject.create'), studentController.createSubject);
+router.patch('/subjects/:id', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'subject.update'), studentController.updateSubject);
+router.delete('/subjects/:id', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'subject.delete'), studentController.deleteSubject);
+router.post('/class-subjects', authorize('super_admin', 'co_super_admin', 'admin', 'principal'), studentController.updateClassSubjects);
 
 router
   .route('/')
   .get(studentController.getStudents)
   .post(
-    authorize('super_admin', 'admin', 'principal', 'admission_officer'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'admission_officer', 'student.create'),
     studentController.createStudent
   );
 
@@ -44,11 +44,11 @@ router
   .route('/:id')
   .get(studentController.getStudent)
   .patch(
-    authorize('super_admin', 'admin', 'principal', 'vice_principal'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'vice_principal', 'student.update'),
     studentController.updateStudent
   )
   .delete(
-    authorize('super_admin', 'admin'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'student.delete'),
     studentController.deleteStudent
   );
 

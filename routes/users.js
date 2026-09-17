@@ -89,7 +89,12 @@ router.patch('/:id/role', authorize('super_admin', 'co_super_admin'), async (req
       return ApiResponse.error(res, 'নতুন রোল (newRole) প্রদান করা আবশ্যক', 400);
     }
 
-    if (newRole !== '' && !['admin', 'co_super_admin'].includes(newRole)) {
+    const allowedRoles = [
+      '', 'co_super_admin', 'admin', 'principal', 'vice_principal',
+      'teacher', 'hifz_teacher', 'accountant', 'cashier',
+      'admission_officer', 'hostel_manager', 'library_manager'
+    ];
+    if (!allowedRoles.includes(newRole)) {
       return ApiResponse.error(res, 'ভুল রোল নির্বাচন করা হয়েছে', 400);
     }
 
