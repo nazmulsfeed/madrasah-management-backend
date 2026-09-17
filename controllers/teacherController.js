@@ -10,6 +10,10 @@ exports.getTeachers = async (req, res, next) => {
     const limit = parseInt(req.query.limit) || 50;
     const skip = (page - 1) * limit;
 
+    const isSuperOrCoSuper = req.user.userType === 'super_admin' || 
+                             req.user.userType === 'co_super_admin' || 
+                             req.user.adminRole === 'co_super_admin';
+
     const staffTypes = [
       'co_super_admin', 'admin', 'principal', 'vice_principal', 'teacher', 'hifz_teacher',
       'accountant', 'admission_officer', 'hostel_manager', 'library_manager'
@@ -21,8 +25,8 @@ exports.getTeachers = async (req, res, next) => {
         { adminRole: { $in: ['co_super_admin', 'admin'] } }
       ]
     };
-    if (req.user.institution) {
-      userFilter.institution = req.user.institution;
+    if (!isSuperOrCoSuper && req.user.institution) {
+      userFilter.institution = { $in: [req.user.institution, null, ''] };
     }
 
     const totalUsers = await User.countDocuments(userFilter);
@@ -33,48 +37,59 @@ exports.getTeachers = async (req, res, next) => {
     const teachersList = [];
 
     for (const user of users) {
-      let teacher = await Teacher.findOne({ user: user._id });
-      if (!teacher) {
-        // Automatically create a missing Teacher profile to sync data
-        const year = new Date().getFullYear();
-        const randomId = Math.floor(100 + Math.random() * 900);
-        const employeeId = `STF-${year}-${randomId}-${user._id.toString().slice(-4)}`;
+      try {
+        let teacher = await Teacher.findOne({ user: user._id });
+        if (!teacher) {
+          // Automatically create a missing Teacher profile to sync data
+          const year = new Date().getFullYear();
+          const randomId = Math.floor(100 + Math.random() * 900);
+          const employeeId = `STF-${year}-${randomId}-${user._id.toString().slice(-4)}`;
 
-        teacher = await Teacher.create({
-          user: user._id,
-          institution: user.institution,
-          branch: user.branch,
-          employeeId,
+          teacher = await Teacher.create({
+            user: user._id,
+            institution: user.institution,
+            branch: user.branch,
+            employeeId,
+            teacherType: user.userType === 'hifz_teacher' ? 'hifz' : 'regular',
+            designation: user.userType === 'co_super_admin' ? 'কো-সুপার অ্যাডমিন' :
+              user.userType === 'admin' ? 'অ্যাডমিন' :
+                user.userType === 'principal' ? 'প্রিন্সিপাল' :
+                  user.userType === 'vice_principal' ? 'ভাইস প্রিন্সিপাল' :
+                    user.userType === 'accountant' ? 'হিসাবরক্ষক' :
+                      user.userType === 'library_manager' ? 'লাইব্রেরি ম্যানেজার' :
+                        user.userType === 'hostel_manager' ? 'হোস্টেল ম্যানেজার' : 'শিক্ষক',
+            joiningDate: user.createdAt || new Date(),
+            status: 'active'
+          });
+
+          // Link profileId back to User
+          user.profileId = teacher._id;
+          await user.save({ validateBeforeSave: false });
+        }
+
+        // Populate user manually
+        const teacherObj = (teacher && teacher.toObject) ? teacher.toObject() : (teacher && teacher.toJSON ? teacher.toJSON() : { ...teacher });
+        teacherObj.user = user && user.toJSON ? user.toJSON() : user;
+
+        // Apply query filters
+        if (req.query.teacherType && teacher.teacherType !== req.query.teacherType) {
+          continue;
+        }
+        if (req.query.status && teacher.status !== req.query.status) {
+          continue;
+        }
+
+        teachersList.push(teacherObj);
+      } catch (userErr) {
+        console.error('Error processing teacher record for user:', user._id, userErr);
+        teachersList.push({
+          _id: user._id,
+          user: user && user.toJSON ? user.toJSON() : user,
+          designation: user.adminRole === 'co_super_admin' ? 'কো-সুপার অ্যাডমিন' : (user.userType === 'admin' ? 'অ্যাডমিন' : 'শিক্ষক'),
           teacherType: user.userType === 'hifz_teacher' ? 'hifz' : 'regular',
-          designation: user.userType === 'co_super_admin' ? 'কো-সুপার অ্যাডমিন' :
-            user.userType === 'admin' ? 'অ্যাডমিন' :
-              user.userType === 'principal' ? 'প্রিন্সিপাল' :
-                user.userType === 'vice_principal' ? 'ভাইস প্রিন্সিপাল' :
-                  user.userType === 'accountant' ? 'হিসাবরক্ষক' :
-                    user.userType === 'library_manager' ? 'লাইব্রেরি ম্যানেজার' :
-                      user.userType === 'hostel_manager' ? 'হোস্টেল ম্যানেজার' : 'শিক্ষক',
-          joiningDate: user.createdAt || new Date(),
           status: 'active'
         });
-
-        // Link profileId back to User
-        user.profileId = teacher._id;
-        await user.save({ validateBeforeSave: false });
       }
-
-      // Populate user manually
-      const teacherObj = teacher.toObject();
-      teacherObj.user = user;
-
-      // Apply query filters
-      if (req.query.teacherType && teacher.teacherType !== req.query.teacherType) {
-        continue;
-      }
-      if (req.query.status && teacher.status !== req.query.status) {
-        continue;
-      }
-
-      teachersList.push(teacherObj);
     }
 
     ApiResponse.paginated(res, teachersList, page, limit, totalUsers);
