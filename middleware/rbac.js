@@ -2,14 +2,18 @@ const ApiResponse = require('../utils/apiResponse');
 const RolePermission = require('../models/RolePermission');
 const { defaultRolePermissions, legacyToGranularMap } = require('../utils/permissions');
 
-// Simple in-memory cache for permissions
+// Simple in-memory cache for permissions with 30s TTL
 let permissionCache = new Map();
+let cacheTimestamps = new Map();
+const CACHE_TTL = 30 * 1000;
 
 const clearPermissionCache = (role) => {
   if (role) {
     permissionCache.delete(role);
+    cacheTimestamps.delete(role);
   } else {
     permissionCache.clear();
+    cacheTimestamps.clear();
   }
 };
 
@@ -78,8 +82,9 @@ const evaluateUserPermission = async (user, permissionKey) => {
     if (user.adminRole) rolesToCheck.push(user.adminRole);
 
     let cacheMiss = false;
+    const now = Date.now();
     for (const role of rolesToCheck) {
-      if (!permissionCache.has(role)) {
+      if (!permissionCache.has(role) || (now - (cacheTimestamps.get(role) || 0)) > CACHE_TTL) {
         cacheMiss = true;
         break;
       }
@@ -99,6 +104,7 @@ const evaluateUserPermission = async (user, permissionKey) => {
         const defaults = defaultRolePermissions[role] || {};
         const mergedPerms = { ...defaults, ...(perms || {}) };
         permissionCache.set(role, mergedPerms);
+        cacheTimestamps.set(role, now);
       }
     }
 
@@ -106,6 +112,11 @@ const evaluateUserPermission = async (user, permissionKey) => {
     for (const role of rolesToCheck) {
       const perms = permissionCache.get(role);
       if (perms) {
+        // If explicitly set to false, do NOT allow via legacy fallback
+        if (perms[permissionKey] === false || perms[permissionKey] === 'false') {
+          continue;
+        }
+
         if (perms[permissionKey] === true || perms[permissionKey] === 'true') {
           hasExplicitPermission = true;
           break;

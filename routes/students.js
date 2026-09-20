@@ -28,9 +28,9 @@ router.post('/class-subjects', authorize('super_admin', 'co_super_admin', 'admin
 
 router
   .route('/')
-  .get(studentController.getStudents)
+  .get(authorize('super_admin', 'co_super_admin', 'student.view'), studentController.getStudents)
   .post(
-    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'admission_officer', 'student.create'),
+    authorize('super_admin', 'co_super_admin', 'student.create'),
     studentController.createStudent
   );
 
@@ -42,13 +42,13 @@ router.get(
 
 router
   .route('/:id')
-  .get(studentController.getStudent)
+  .get(authorize('super_admin', 'co_super_admin', 'student.view'), studentController.getStudent)
   .patch(
-    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'vice_principal', 'student.update'),
+    authorize('super_admin', 'co_super_admin', 'student.update'),
     studentController.updateStudent
   )
   .delete(
-    authorize('super_admin', 'co_super_admin', 'admin', 'student.delete'),
+    authorize('super_admin', 'co_super_admin', 'student.delete'),
     studentController.deleteStudent
   );
 
