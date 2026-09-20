@@ -245,7 +245,7 @@ exports.getStudents = async (req, res, next) => {
 
     const total = await Student.countDocuments(filter);
     const students = await Student.find(filter)
-      .populate('user', 'firstName lastName email phone photo username fullName')
+      .populate('user', 'firstName lastName firstNameEn lastNameEn email phone photo username fullName')
       .populate('institution', 'name code')
       .populate('branch', 'name code')
       .sort({ createdAt: -1 })
@@ -265,7 +265,7 @@ exports.getStudents = async (req, res, next) => {
 exports.getStudent = async (req, res, next) => {
   try {
     const student = await Student.findById(req.params.id)
-      .populate('user', '_id firstName lastName email phone photo username fullName')
+      .populate('user', '_id firstName lastName firstNameEn lastNameEn email phone photo username fullName')
       .populate('institution', 'name code')
       .populate('branch', 'name code');
 
@@ -288,6 +288,8 @@ exports.createStudent = async (req, res, next) => {
     const {
       firstName,
       lastName,
+      firstNameEn,
+      lastNameEn,
       username,
       email,
       phone,
@@ -330,11 +332,14 @@ exports.createStudent = async (req, res, next) => {
       finalStudentId = String(10001 + count);
     }
 
-    // Auto-generate username from firstName + 2-3 digit random number if empty
+    // Auto-generate username from English name (firstNameEn) or fallback to Bengali firstName
     let finalUsername = username && username.trim() !== '' ? username.trim() : null;
     if (!finalUsername) {
-      if (firstName && firstName.trim() !== '') {
-        const baseName = firstName.trim();
+      // Prefer English name for username generation
+      const baseName = (firstNameEn && firstNameEn.trim() !== '') 
+        ? firstNameEn.trim() 
+        : (firstName && firstName.trim() !== '' ? firstName.trim() : null);
+      if (baseName) {
         let attempts = 0;
         let generated = null;
         while (attempts < 20) {
@@ -361,6 +366,8 @@ exports.createStudent = async (req, res, next) => {
       password: finalPassword,
       firstName: firstName || '',
       lastName: lastName || '',
+      firstNameEn: firstNameEn || '',
+      lastNameEn: lastNameEn || '',
       phone: phone.trim(),
       photo: req.body.photo || '',
       userType: 'student',
@@ -437,7 +444,7 @@ exports.createStudent = async (req, res, next) => {
     }
 
     const rawStudent = await Student.findById(student._id)
-      .populate('user', 'firstName lastName email phone username fullName')
+      .populate('user', 'firstName lastName firstNameEn lastNameEn email phone username fullName')
       .populate('institution', 'name code')
       .populate('branch', 'name code');
 
@@ -463,6 +470,8 @@ exports.updateStudent = async (req, res, next) => {
     if (userDoc) {
       if (req.body.firstName !== undefined) userDoc.firstName = req.body.firstName;
       if (req.body.lastName !== undefined) userDoc.lastName = req.body.lastName;
+      if (req.body.firstNameEn !== undefined) userDoc.firstNameEn = req.body.firstNameEn;
+      if (req.body.lastNameEn !== undefined) userDoc.lastNameEn = req.body.lastNameEn;
       if (req.body.phone !== undefined) userDoc.phone = req.body.phone;
       if (req.body.photo !== undefined) userDoc.photo = req.body.photo;
 
@@ -552,7 +561,7 @@ exports.updateStudent = async (req, res, next) => {
     });
 
     const rawUpdated = await Student.findById(req.params.id)
-      .populate('user', 'firstName lastName email phone photo username fullName')
+      .populate('user', 'firstName lastName firstNameEn lastNameEn email phone photo username fullName')
       .populate('institution', 'name code')
       .populate('branch', 'name code');
 

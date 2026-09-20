@@ -95,6 +95,16 @@ User.init({
     allowNull: true,
     defaultValue: '',
   },
+  firstNameEn: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
+  lastNameEn: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
 }, {
   sequelize,
   modelName: 'User',
