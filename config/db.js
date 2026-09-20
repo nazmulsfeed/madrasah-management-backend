@@ -103,6 +103,22 @@ const connectDB = async () => {
     } catch (syncErr) {
       console.error('⚠️ ডাটাবেস সিঙ্ক ব্যর্থ (সার্ভার চালু থাকবে):', syncErr.message);
     }
+
+    // Auto-migrate newly added columns safely to users table
+    try {
+      const [colsFirst] = await sequelize.query("SHOW COLUMNS FROM `users` LIKE 'firstNameEn'");
+      if (!colsFirst || colsFirst.length === 0) {
+        await sequelize.query("ALTER TABLE `users` ADD COLUMN `firstNameEn` VARCHAR(255) NULL DEFAULT ''");
+        console.log("✅ Added firstNameEn column to users table");
+      }
+      const [colsLast] = await sequelize.query("SHOW COLUMNS FROM `users` LIKE 'lastNameEn'");
+      if (!colsLast || colsLast.length === 0) {
+        await sequelize.query("ALTER TABLE `users` ADD COLUMN `lastNameEn` VARCHAR(255) NULL DEFAULT ''");
+        console.log("✅ Added lastNameEn column to users table");
+      }
+    } catch (colErr) {
+      console.error("⚠️ Error auto-adding firstNameEn/lastNameEn columns:", colErr.message);
+    }
   } catch (error) {
     console.error(`❌ MySQL সংযোগ ব্যর্থ: ${error.message}`);
     process.exit(1);
