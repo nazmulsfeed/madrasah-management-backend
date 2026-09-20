@@ -163,7 +163,9 @@ class SequelizeQueryBuilder {
           as: assocName
         };
         if (attributes) {
-          includeObj.attributes = attributes.filter(attr => attr !== 'fullName');
+          const cleanAttrs = attributes.filter(attr => attr !== 'fullName');
+          if (!cleanAttrs.includes('_id')) cleanAttrs.push('_id');
+          includeObj.attributes = cleanAttrs;
         }
         this.options.include.push(includeObj);
       }

@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const Student = require('../models/Student');
 const StudentEnrollment = require('../models/StudentEnrollment');
 const User = require('../models/User');
@@ -465,74 +466,120 @@ exports.updateStudent = async (req, res, next) => {
       return ApiResponse.notFound(res, 'ছাত্র/ছাত্রী পাওয়া যায়নি');
     }
 
-    // Update User fields — always select +password so pre-save hash hook works
-    const userDoc = await User.findById(student.user).select('+password');
+    const userId = (student.user && typeof student.user === 'object') ? student.user._id : student.user;
+    const userDoc = userId ? await User.findById(userId).select('+password') : null;
+
     if (userDoc) {
-      if (req.body.firstName !== undefined) userDoc.firstName = req.body.firstName;
-      if (req.body.lastName !== undefined) userDoc.lastName = req.body.lastName;
-      if (req.body.firstNameEn !== undefined) userDoc.firstNameEn = req.body.firstNameEn;
-      if (req.body.lastNameEn !== undefined) userDoc.lastNameEn = req.body.lastNameEn;
-      if (req.body.phone !== undefined) userDoc.phone = req.body.phone;
-      if (req.body.photo !== undefined) userDoc.photo = req.body.photo;
+      if (req.body.firstName !== undefined) userDoc.firstName = req.body.firstName || '';
+      if (req.body.lastName !== undefined) userDoc.lastName = req.body.lastName || '';
+      if (req.body.firstNameEn !== undefined) userDoc.firstNameEn = req.body.firstNameEn || '';
+      if (req.body.lastNameEn !== undefined) userDoc.lastNameEn = req.body.lastNameEn || '';
+      if (req.body.phone !== undefined) userDoc.phone = req.body.phone ? req.body.phone.trim() : '';
+      if (req.body.photo !== undefined) userDoc.photo = req.body.photo || '';
+      if (req.body.branchId !== undefined) userDoc.branch = req.body.branchId || null;
 
       // Only update password when a non-empty value is provided
       if (req.body.password && req.body.password.trim() !== '') {
         userDoc.password = req.body.password.trim();
       }
 
-      // Username — sparse unique: use $unset to properly clear
+      // Username — sparse unique: check duplicate & set null if empty
       if (req.body.username !== undefined) {
-        if (req.body.username && req.body.username.trim() !== '') {
-          userDoc.username = req.body.username.trim();
+        const trimmedUsername = req.body.username ? req.body.username.trim() : '';
+        if (trimmedUsername !== '') {
+          const existing = await User.findOne({
+            where: {
+              username: trimmedUsername,
+              _id: { [Op.ne]: userDoc._id }
+            }
+          });
+          if (existing) {
+            return ApiResponse.error(res, 'এই ব্যবহারকারীর নাম (Username) ইতিমধ্যে ব্যবহৃত হয়েছে', 400);
+          }
+          userDoc.username = trimmedUsername;
         } else {
-          await User.updateOne({ _id: userDoc._id }, { $unset: { username: 1 } });
-          userDoc.set({ username: undefined });
+          userDoc.username = null;
         }
       }
 
-      // Email — sparse unique: use $unset to properly clear
+      // Email — sparse unique: check duplicate & set null if empty
       if (req.body.email !== undefined) {
-        if (req.body.email && req.body.email.trim() !== '') {
-          userDoc.email = req.body.email.trim().toLowerCase();
+        const trimmedEmail = req.body.email ? req.body.email.trim().toLowerCase() : '';
+        if (trimmedEmail !== '') {
+          const existing = await User.findOne({
+            where: {
+              email: trimmedEmail,
+              _id: { [Op.ne]: userDoc._id }
+            }
+          });
+          if (existing) {
+            return ApiResponse.error(res, 'এই ইমেইল ঠিকানা ইতিমধ্যে অন্য কারো জন্য ব্যবহৃত হয়েছে', 400);
+          }
+          userDoc.email = trimmedEmail;
         } else {
-          await User.updateOne({ _id: userDoc._id }, { $unset: { email: 1 } });
-          userDoc.set({ email: undefined });
+          userDoc.email = null;
         }
       }
 
       await userDoc.save();
     }
 
-    const allowedFields = ['dateOfBirth', 'bloodGroup', 'status', 'photo', 'residentialStatus', 'hifzProgramType', 'fatherName', 'motherName', 'village', 'nationalIdOrBirthCertNo'];
+    const allowedFields = ['bloodGroup', 'status', 'photo', 'residentialStatus', 'hifzProgramType', 'fatherName', 'motherName', 'village', 'nationalIdOrBirthCertNo'];
     const updates = {};
     allowedFields.forEach((field) => {
       if (req.body[field] !== undefined) updates[field] = req.body[field];
     });
+
+    // Date of birth: ensure empty string is never saved to MySQL DATE column
+    if (req.body.dateOfBirth !== undefined) {
+      updates.dateOfBirth = (req.body.dateOfBirth && typeof req.body.dateOfBirth === 'string' && req.body.dateOfBirth.trim() !== '')
+        ? req.body.dateOfBirth.trim()
+        : null;
+    }
 
     if (req.body.gender !== undefined) {
       const g = req.body.gender;
       updates.gender = (g === 'female' || g === 'মহিলা') ? 'female' : 'male';
     }
 
+    if (req.body.branchId !== undefined) {
+      updates.branch = req.body.branchId || null;
+    }
+
     // Academic enrollment updates (academicYear, classLevel, section, rollNumber)
     const { classLevelId, sectionId, academicYearId, rollNumber } = req.body;
+    let curEnrId = (student.currentEnrollment && typeof student.currentEnrollment === 'object')
+      ? student.currentEnrollment._id
+      : student.currentEnrollment;
+
+    if (!curEnrId) {
+      const existingEnr = await StudentEnrollment.findOne({
+        where: { student: student._id, enrollmentStatus: 'active' }
+      });
+      if (existingEnr) {
+        curEnrId = existingEnr._id;
+        updates.currentEnrollment = curEnrId;
+      }
+    }
+
     if (classLevelId || sectionId || academicYearId || (rollNumber !== undefined && rollNumber !== '')) {
       const enrUpdates = {};
       if (classLevelId) enrUpdates.classLevel = classLevelId;
       if (sectionId) enrUpdates.section = sectionId;
       if (academicYearId) enrUpdates.academicYear = academicYearId;
       if (rollNumber !== undefined && rollNumber !== '') enrUpdates.rollNumber = String(rollNumber);
+      if (updates.branch !== undefined) enrUpdates.branch = updates.branch;
       enrUpdates.updatedBy = req.user._id;
 
-      if (student.currentEnrollment) {
-        await StudentEnrollment.update(enrUpdates, { where: { _id: student.currentEnrollment } });
-      } else {
+      if (curEnrId) {
+        await StudentEnrollment.update(enrUpdates, { where: { _id: curEnrId } });
+      } else if (classLevelId && academicYearId) {
         const newEnrollment = await StudentEnrollment.create({
           student: student._id,
           institution: req.user.institution,
-          branch: student.branch || req.user.branch,
-          academicYear: academicYearId || '',
-          classLevel: classLevelId || '',
+          branch: updates.branch || student.branch || req.user.branch,
+          academicYear: academicYearId,
+          classLevel: classLevelId,
           section: sectionId || 'ক',
           rollNumber: rollNumber ? String(rollNumber) : '1',
           startDate: new Date(),
@@ -540,17 +587,8 @@ exports.updateStudent = async (req, res, next) => {
         });
         updates.currentEnrollment = newEnrollment._id;
       }
-    }
-
-    if (req.body.branchId !== undefined) {
-      const branchVal = req.body.branchId || null;
-      updates.branch = branchVal;
-      // Update User branch
-      await User.findByIdAndUpdate(student.user, { branch: branchVal });
-      // Update current Enrollment branch
-      if (student.currentEnrollment) {
-        await StudentEnrollment.findByIdAndUpdate(student.currentEnrollment, { branch: branchVal });
-      }
+    } else if (updates.branch !== undefined && curEnrId) {
+      await StudentEnrollment.update({ branch: updates.branch }, { where: { _id: curEnrId } });
     }
 
     updates.updatedBy = req.user._id;
@@ -561,7 +599,7 @@ exports.updateStudent = async (req, res, next) => {
     });
 
     const rawUpdated = await Student.findById(req.params.id)
-      .populate('user', 'firstName lastName firstNameEn lastNameEn email phone photo username fullName')
+      .populate('user', '_id firstName lastName firstNameEn lastNameEn email phone photo username fullName')
       .populate('institution', 'name code')
       .populate('branch', 'name code');
 
@@ -569,6 +607,7 @@ exports.updateStudent = async (req, res, next) => {
 
     ApiResponse.success(res, { student: populatedUpdated }, 'ছাত্র/ছাত্রীর তথ্য আপডেট হয়েছে');
   } catch (error) {
+    console.error('❌ updateStudent Error:', error);
     next(error);
   }
 };

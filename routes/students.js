@@ -28,27 +28,27 @@ router.post('/class-subjects', authorize('super_admin', 'co_super_admin', 'admin
 
 router
   .route('/')
-  .get(authorize('super_admin', 'co_super_admin', 'student.view'), studentController.getStudents)
+  .get(authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'student.view'), studentController.getStudents)
   .post(
-    authorize('super_admin', 'co_super_admin', 'student.create'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'student.create'),
     studentController.createStudent
   );
 
 router.get(
   '/:id/show-password',
-  authorize('super_admin', 'co_super_admin', 'admin'),
+  authorize('super_admin', 'co_super_admin', 'admin', 'principal'),
   studentController.getStudentPassword
 );
 
 router
   .route('/:id')
-  .get(authorize('super_admin', 'co_super_admin', 'student.view'), studentController.getStudent)
+  .get(authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'student.view'), studentController.getStudent)
   .patch(
-    authorize('super_admin', 'co_super_admin', 'student.update'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'student.update'),
     studentController.updateStudent
   )
   .delete(
-    authorize('super_admin', 'co_super_admin', 'student.delete'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'student.delete'),
     studentController.deleteStudent
   );
 
