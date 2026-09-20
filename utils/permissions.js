@@ -271,6 +271,13 @@ const permissionCategories = [
       { key: 'system.settings.update', label: 'Update Settings' },
       { key: 'messaging.use', label: 'Use Messaging' }
     ]
+  },
+  {
+    category: 'Profile & Account Settings',
+    permissions: [
+      { key: 'profile.photo.update', label: 'Update Profile Photo (প্রোফাইল ছবি পরিবর্তন)' },
+      { key: 'profile.info.update', label: 'Update Personal Info (ব্যক্তিগত তথ্য পরিবর্তন)' }
+    ]
   }
 ];
 
@@ -356,10 +363,12 @@ const defaultRolePermissions = {
     'library.view', 'library.manage', 'notice.view'
   ]),
   student: getPermissionsForKeys([
-    'homework.view', 'exam.view', 'notice.view', 'payment.view', 'invoice.view', 'receipt.view'
+    'homework.view', 'exam.view', 'notice.view', 'payment.view', 'invoice.view', 'receipt.view',
+    'profile.photo.update', 'profile.info.update'
   ]),
   guardian: getPermissionsForKeys([
-    'student.view', 'homework.view', 'exam.view', 'notice.view', 'payment.view', 'invoice.view', 'receipt.view'
+    'student.view', 'homework.view', 'exam.view', 'notice.view', 'payment.view', 'invoice.view', 'receipt.view',
+    'profile.photo.update', 'profile.info.update'
   ])
 };
 

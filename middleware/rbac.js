@@ -269,4 +269,4 @@ const checkPermission = (permissionKey) => {
   };
 };
 
-module.exports = { authorize, checkPermission, getUserTypeLabel, clearPermissionCache };
+module.exports = { authorize, checkPermission, getUserTypeLabel, clearPermissionCache, evaluateUserPermission };

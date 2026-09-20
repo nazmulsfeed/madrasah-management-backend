@@ -234,6 +234,32 @@ exports.getMe = async (req, res, next) => {
 // @route   PATCH /api/v1/auth/me
 exports.updateMe = async (req, res, next) => {
   try {
+    const isSuperOrCoSuper = req.user.userType === 'super_admin' || 
+                             req.user.userType === 'co_super_admin' || 
+                             req.user.adminRole === 'co_super_admin';
+
+    // If updating photo, check profile.photo.update permission for student/guardian/restricted roles
+    if (req.body.photo !== undefined && !isSuperOrCoSuper) {
+      const { evaluateUserPermission } = require('../middleware/rbac');
+      if (typeof evaluateUserPermission === 'function') {
+        const canUpdatePhoto = await evaluateUserPermission(req.user, 'profile.photo.update');
+        if (!canUpdatePhoto) {
+          return ApiResponse.forbidden(res, 'প্রোফাইল ছবি পরিবর্তনের অনুমতি আপনার অ্যাকাউন্টের জন্য বন্ধ রাখা হয়েছে');
+        }
+      }
+    }
+
+    // If updating name/phone, check profile.info.update permission for student/guardian/restricted roles
+    if ((req.body.firstName !== undefined || req.body.lastName !== undefined || req.body.phone !== undefined) && !isSuperOrCoSuper) {
+      const { evaluateUserPermission } = require('../middleware/rbac');
+      if (typeof evaluateUserPermission === 'function') {
+        const canUpdateInfo = await evaluateUserPermission(req.user, 'profile.info.update');
+        if (!canUpdateInfo) {
+          return ApiResponse.forbidden(res, 'ব্যক্তিগত তথ্য পরিবর্তনের অনুমতি আপনার অ্যাকাউন্টের জন্য বন্ধ রাখা হয়েছে');
+        }
+      }
+    }
+
     const allowedFields = ['firstName', 'lastName', 'phone', 'photo'];
     const updates = {};
     allowedFields.forEach((field) => {
