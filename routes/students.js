@@ -42,7 +42,7 @@ router.get(
 
 router
   .route('/:id')
-  .get(authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'student.view'), studentController.getStudent)
+  .get(authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'student.view', 'student', 'guardian'), studentController.getStudent)
   .patch(
     authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'student.update'),
     studentController.updateStudent

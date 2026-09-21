@@ -195,15 +195,20 @@ exports.getMe = async (req, res, next) => {
       });
     }
     
-    // Check hifz eligibility for students and guardians
+    // Check hifz eligibility and student/guardian identifiers
     let isHifzEligible = false;
+    let studentId = null;
+    let guardianStudents = [];
     
     if (user.userType === 'student') {
       const student = await Student.findOne({ user: user._id });
-      if (student && student.currentEnrollment) {
-        const enrollment = await StudentEnrollment.findById(student.currentEnrollment).populate('classLevel');
-        if (enrollment && enrollment.classLevel && enrollment.classLevel.educationStream === 'hifz') {
-          isHifzEligible = true;
+      if (student) {
+        studentId = student._id;
+        if (student.currentEnrollment) {
+          const enrollment = await StudentEnrollment.findById(student.currentEnrollment).populate('classLevel');
+          if (enrollment && enrollment.classLevel && enrollment.classLevel.educationStream === 'hifz') {
+            isHifzEligible = true;
+          }
         }
       }
     } else if (user.userType === 'guardian') {
@@ -211,6 +216,12 @@ exports.getMe = async (req, res, next) => {
       if (guardian && guardian.students && guardian.students.length > 0) {
         const linkedStudentIds = guardian.students.map(s => s.student);
         const students = await Student.find({ _id: { $in: linkedStudentIds } });
+        guardianStudents = students.map(s => ({
+          _id: s._id,
+          studentId: s.studentId,
+          admissionNumber: s.admissionNumber,
+          user: s.user
+        }));
         
         for (const student of students) {
           if (student.currentEnrollment) {
@@ -224,7 +235,15 @@ exports.getMe = async (req, res, next) => {
       }
     }
 
-    ApiResponse.success(res, { user: { ...user.toJSON(), permissions, isHifzEligible } });
+    ApiResponse.success(res, { 
+      user: { 
+        ...user.toJSON(), 
+        permissions, 
+        isHifzEligible,
+        studentId,
+        guardianStudents
+      } 
+    });
   } catch (error) {
     next(error);
   }

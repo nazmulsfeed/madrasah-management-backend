@@ -265,6 +265,9 @@ exports.getStudents = async (req, res, next) => {
 // @route   GET /api/v1/students/:id
 exports.getStudent = async (req, res, next) => {
   try {
+    const isSuperOrAdmin = ['super_admin', 'co_super_admin', 'admin', 'principal'].includes(req.user.userType) ||
+                           ['co_super_admin', 'admin', 'principal'].includes(req.user.adminRole);
+
     const student = await Student.findById(req.params.id)
       .populate('user', '_id firstName lastName firstNameEn lastNameEn email phone photo username fullName')
       .populate('institution', 'name code')
@@ -272,6 +275,34 @@ exports.getStudent = async (req, res, next) => {
 
     if (!student) {
       return ApiResponse.notFound(res, 'ছাত্র/ছাত্রী পাওয়া যায়নি');
+    }
+
+    // Role-based privacy protection:
+    // If student: can only view own profile
+    if (req.user.userType === 'student') {
+      const studentUser = student.user?._id || student.user;
+      if (String(studentUser) !== String(req.user._id)) {
+        return ApiResponse.forbidden(res, 'আপনি শুধুমাত্র আপনার নিজের প্রোফাইল দেখতে পারবেন');
+      }
+    }
+
+    // If guardian: can only view linked children's profile
+    if (req.user.userType === 'guardian') {
+      const Guardian = require('../models/Guardian');
+      let guardianDoc = null;
+      if (req.user.profileId) {
+        guardianDoc = await Guardian.findById(req.user.profileId);
+      }
+      if (!guardianDoc) {
+        guardianDoc = await Guardian.findOne({ user: req.user._id });
+      }
+      const allowedStudentIds = guardianDoc && Array.isArray(guardianDoc.students)
+        ? guardianDoc.students.map(s => String(s.student || s))
+        : [];
+
+      if (!allowedStudentIds.includes(String(student._id))) {
+        return ApiResponse.forbidden(res, 'আপনি শুধুমাত্র আপনার নিজের সন্তানের প্রোফাইল দেখতে পারবেন');
+      }
     }
 
     const populatedStudent = await populateStudentEnrollments(student);
