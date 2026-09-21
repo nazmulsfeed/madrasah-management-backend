@@ -15,7 +15,7 @@ exports.getAllPermissions = async (req, res, next) => {
       if (typeof item.permissions === 'string') {
         try { item.permissions = JSON.parse(item.permissions); } catch (e) {}
       }
-      // Merge with defaults
+      // Merge with defaults: DB settings take precedence over defaults
       const roleDefaults = defaultRolePermissions[item.role] || {};
       item.permissions = { ...roleDefaults, ...(item.permissions || {}) };
       return item;
@@ -27,7 +27,7 @@ exports.getAllPermissions = async (req, res, next) => {
       if (!rolesWithDbEntries.includes(role)) {
         result.push({
           role,
-          permissions: defaultRolePermissions[role]
+          permissions: { ...defaultRolePermissions[role] }
         });
       }
     });
@@ -114,7 +114,7 @@ exports.getMyPermissions = async (req, res, next) => {
         }
       }
 
-      // Merge defaults
+      // Merge defaults: DB settings override defaults
       const defaults = defaultRolePermissions[role] || {};
       const mergedPerms = { ...defaults, ...(permObj || {}) };
 
@@ -122,6 +122,8 @@ exports.getMyPermissions = async (req, res, next) => {
       Object.keys(mergedPerms).forEach(key => {
         if (mergedPerms[key] === true || mergedPerms[key] === 'true') {
           permissions[key] = true;
+        } else if (mergedPerms[key] === false || mergedPerms[key] === 'false') {
+          permissions[key] = false;
         }
       });
     }
