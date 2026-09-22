@@ -100,6 +100,38 @@ exports.globalSearch = async (req, res) => {
     });
     const matchedUserIds = Array.from(matchedUserMap.keys());
 
+    // Lookup students from matching guardians (e.g. searching guardian phone or name)
+    let guardianStudentIds = [];
+    if (matchedUserIds.length > 0) {
+      try {
+        const Guardian = require('../models/Guardian');
+        const matchedGuardians = await Guardian.findAll({
+          where: {
+            user: { [Op.in]: matchedUserIds },
+          },
+          attributes: ['students'],
+          raw: true,
+        });
+        matchedGuardians.forEach(g => {
+          let arr = g.students;
+          if (typeof arr === 'string') {
+            try { arr = JSON.parse(arr); } catch (_) { arr = []; }
+          }
+          if (Array.isArray(arr)) {
+            arr.forEach(item => {
+              if (typeof item === 'string') {
+                guardianStudentIds.push(item);
+              } else if (item && typeof item === 'object') {
+                const sid = item.student || item.studentId || item._id || item.id;
+                if (sid) guardianStudentIds.push(String(typeof sid === 'object' ? (sid._id || sid.id) : sid));
+              }
+            });
+          }
+        });
+        guardianStudentIds = [...new Set(guardianStudentIds)];
+      } catch (_) {}
+    }
+
     // 2. SEARCH STUDENTS
     const studentOrConditions = [
       { studentId: new RegExp(rawQuery, 'i') },
@@ -120,6 +152,9 @@ exports.globalSearch = async (req, res) => {
     }
     if (matchedUserIds.length > 0) {
       studentOrConditions.push({ user: { $in: matchedUserIds } });
+    }
+    if (guardianStudentIds.length > 0) {
+      studentOrConditions.push({ _id: { $in: guardianStudentIds } });
     }
 
     const students = await Student.find({

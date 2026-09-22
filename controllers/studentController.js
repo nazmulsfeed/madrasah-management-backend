@@ -273,22 +273,28 @@ exports.getStudents = async (req, res, next) => {
           const Guardian = require('../models/Guardian');
           const matchedGuardians = await Guardian.findAll({
             where: {
-              institution: req.user.institution,
               user: { [Op.in]: userIds },
             },
             attributes: ['students'],
             raw: true,
           });
           matchedGuardians.forEach(g => {
-            if (Array.isArray(g.students)) {
-              guardianStudentIds.push(...g.students);
-            } else if (typeof g.students === 'string') {
-              try {
-                const parsed = JSON.parse(g.students);
-                if (Array.isArray(parsed)) guardianStudentIds.push(...parsed);
-              } catch (_) {}
+            let arr = g.students;
+            if (typeof arr === 'string') {
+              try { arr = JSON.parse(arr); } catch (_) { arr = []; }
+            }
+            if (Array.isArray(arr)) {
+              arr.forEach(item => {
+                if (typeof item === 'string') {
+                  guardianStudentIds.push(item);
+                } else if (item && typeof item === 'object') {
+                  const sid = item.student || item.studentId || item._id || item.id;
+                  if (sid) guardianStudentIds.push(String(typeof sid === 'object' ? (sid._id || sid.id) : sid));
+                }
+              });
             }
           });
+          guardianStudentIds = [...new Set(guardianStudentIds)];
         } catch (_) {}
       }
 
