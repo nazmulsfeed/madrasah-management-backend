@@ -63,6 +63,7 @@ const hostelRoutes = require('./routes/hostel');
 const dashboardRoutes = require('./routes/dashboard');
 const auditLogRoutes = require('./routes/auditLog');
 const madrasahRoutes = require('./routes/madrasah');
+const searchRoutes = require('./routes/search');
 
 const app = express();
 
@@ -124,6 +125,7 @@ app.use('/api/v1/books', bookRoutes);
 app.use('/api/v1/hostels', hostelRoutes);
 app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/audit-logs', auditLogRoutes);
+app.use('/api/v1/search', searchRoutes);
 
 
 // ৪০৪ হ্যান্ডলার

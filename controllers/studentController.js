@@ -193,11 +193,51 @@ exports.getStudents = async (req, res, next) => {
       }
     }
     if (req.query.search) {
-      const searchRegex = new RegExp(req.query.search, 'i');
-      filter.$or = [
+      const searchStr = req.query.search.trim();
+      const searchRegex = new RegExp(searchStr, 'i');
+      const searchWords = searchStr.split(/\s+/).filter(Boolean);
+
+      const userConditions = [
+        { firstName: searchRegex },
+        { lastName: searchRegex },
+        { phone: searchRegex },
+        { username: searchRegex },
+      ];
+      if (User.rawAttributes && User.rawAttributes.firstNameEn) {
+        userConditions.push({ firstNameEn: searchRegex });
+      }
+      if (User.rawAttributes && User.rawAttributes.lastNameEn) {
+        userConditions.push({ lastNameEn: searchRegex });
+      }
+
+      // If user typed multi-word name like "মোঃ আব্দুল্লাহ"
+      if (searchWords.length > 1) {
+        searchWords.forEach(word => {
+          const wordRegex = new RegExp(word, 'i');
+          userConditions.push({ firstName: wordRegex }, { lastName: wordRegex });
+        });
+      }
+
+      const matchedUsers = await User.find({
+        institution: req.user.institution,
+        $or: userConditions,
+      }).select('_id');
+
+      const userIds = matchedUsers.map((u) => u._id);
+
+      const orConditions = [
         { admissionNumber: searchRegex },
         { studentId: searchRegex },
+        { fatherName: searchRegex },
+        { motherName: searchRegex },
+        { village: searchRegex },
       ];
+
+      if (userIds.length > 0) {
+        orConditions.push({ user: { $in: userIds } });
+      }
+
+      filter.$or = orConditions;
     }
 
     if (req.query.classLevel || req.query.section || req.query.sections || req.query.academicYear) {
