@@ -37,6 +37,11 @@ StudentAttendance.init({
     type: DataTypes.STRING,
     allowNull: false,
   },
+  branch: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
   markedBy: {
     type: DataTypes.STRING,
     allowNull: true,

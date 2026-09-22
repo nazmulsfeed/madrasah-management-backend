@@ -165,7 +165,32 @@ exports.getStudents = async (req, res, next) => {
       filter.status = req.query.status;
     }
     if (req.query.branch) {
-      filter.branch = req.query.branch;
+      const Branch = require('../models/Branch');
+      const selectedBranchDoc = await Branch.findById(req.query.branch);
+      if (selectedBranchDoc) {
+        if (selectedBranchDoc.name === 'বালক শাখা') {
+          const dualBoys = await Branch.findOne({ institution: req.user.institution, name: 'বালক শাখা + নুরানী' });
+          const branchIds = [selectedBranchDoc._id];
+          if (dualBoys) branchIds.push(dualBoys._id);
+          filter.branch = { $in: branchIds };
+        } else if (selectedBranchDoc.name === 'বালিকা শাখা') {
+          const dualGirls = await Branch.findOne({ institution: req.user.institution, name: 'বালিকা শাখা + নুরানী' });
+          const branchIds = [selectedBranchDoc._id];
+          if (dualGirls) branchIds.push(dualGirls._id);
+          filter.branch = { $in: branchIds };
+        } else if (selectedBranchDoc.name === 'নুরানী শাখা') {
+          const dualBoys = await Branch.findOne({ institution: req.user.institution, name: 'বালক শাখা + নুরানী' });
+          const dualGirls = await Branch.findOne({ institution: req.user.institution, name: 'বালিকা শাখা + নুরানী' });
+          const branchIds = [selectedBranchDoc._id];
+          if (dualBoys) branchIds.push(dualBoys._id);
+          if (dualGirls) branchIds.push(dualGirls._id);
+          filter.branch = { $in: branchIds };
+        } else {
+          filter.branch = req.query.branch;
+        }
+      } else {
+        filter.branch = req.query.branch;
+      }
     }
     if (req.query.search) {
       const searchRegex = new RegExp(req.query.search, 'i');
@@ -489,6 +514,7 @@ exports.createStudent = async (req, res, next) => {
       bloodGroup: bloodGroup || '',
       residentialStatus: residentialStatus || '',
       hifzProgramType: hifzProgramType || '',
+      department: req.body.department || '',
       admissionDate: admissionDate || new Date(),
       fatherName: fatherName || '',
       motherName: motherName || '',
@@ -618,7 +644,7 @@ exports.updateStudent = async (req, res, next) => {
       await userDoc.save();
     }
 
-    const allowedFields = ['bloodGroup', 'status', 'photo', 'residentialStatus', 'hifzProgramType', 'fatherName', 'motherName', 'village', 'nationalIdOrBirthCertNo'];
+    const allowedFields = ['bloodGroup', 'status', 'photo', 'residentialStatus', 'hifzProgramType', 'department', 'fatherName', 'motherName', 'village', 'nationalIdOrBirthCertNo'];
     const updates = {};
     allowedFields.forEach((field) => {
       if (req.body[field] !== undefined) updates[field] = req.body[field];
@@ -1351,7 +1377,10 @@ exports.getBranches = async (req, res, next) => {
     // Seed default branches if they don't exist for this institution
     const defaultBranchNames = [
       { name: 'বালক শাখা', code: 'BOYS' },
-      { name: 'বালিকা শাখা', code: 'GIRLS' }
+      { name: 'বালিকা শাখা', code: 'GIRLS' },
+      { name: 'নুরানী শাখা', code: 'NOORANI' },
+      { name: 'বালক শাখা + নুরানী', code: 'BOYS_NOORANI' },
+      { name: 'বালিকা শাখা + নুরানী', code: 'GIRLS_NOORANI' }
     ];
 
     let branches = await Branch.find({ institution: req.user.institution });
@@ -1374,7 +1403,10 @@ exports.getBranches = async (req, res, next) => {
       branches = await Branch.find({ institution: req.user.institution });
     }
 
-    ApiResponse.success(res, { branches });
+    // Filter out deprecated 'হিফজ শাখা' so it doesn't appear in dropdowns
+    const activeBranches = branches.filter(b => b.name !== 'হিফজ শাখা');
+
+    ApiResponse.success(res, { branches: activeBranches });
   } catch (error) {
     next(error);
   }

@@ -15,7 +15,7 @@ const getDayRange = (dateStr) => {
 // @route   POST /api/v1/attendance
 exports.markAttendance = async (req, res, next) => {
   try {
-    const { date, dates, classLevel, section, students } = req.body;
+    const { date, dates, classLevel, section, students, branch } = req.body;
 
     // Support single date or multiple dates
     const dateList = Array.isArray(dates) && dates.length > 0 ? dates : (date ? [date] : []);
@@ -39,16 +39,22 @@ exports.markAttendance = async (req, res, next) => {
           student: s.studentId,
           classLevel: s.classLevel || (classLevel !== 'all' ? classLevel : ''),
           section: s.section || (section !== 'all' ? section : '') || '',
+          branch: s.branch || branch || '',
           date: targetDate,
           status: studentStatus,
           remarks: studentRemarks,
           markedBy: req.user._id,
         };
 
+        const updateFilter = { student: record.student, date: targetDate };
+        if (record.branch) {
+          updateFilter.branch = record.branch;
+        }
+
         totalRecords++;
         bulkOps.push({
           updateOne: {
-            filter: { student: record.student, date: targetDate },
+            filter: updateFilter,
             update: { $set: record },
             upsert: true,
           },
@@ -70,7 +76,7 @@ exports.markAttendance = async (req, res, next) => {
 // @route   GET /api/v1/attendance
 exports.getAttendance = async (req, res, next) => {
   try {
-    const { date, startDate, endDate, classLevel, section } = req.query;
+    const { date, startDate, endDate, classLevel, section, branch } = req.query;
 
     const filter = {
       institution: req.user.institution,
@@ -87,6 +93,7 @@ exports.getAttendance = async (req, res, next) => {
 
     if (classLevel && classLevel !== 'all') filter.classLevel = classLevel;
     if (section && section !== 'all') filter.section = section;
+    if (branch && branch !== 'all') filter.branch = branch;
     if (req.query.sections) {
       const secIds = req.query.sections.split(',').filter(Boolean);
       if (secIds.length > 0 && !secIds.includes('all')) {

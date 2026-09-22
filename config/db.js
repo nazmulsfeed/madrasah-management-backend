@@ -116,8 +116,13 @@ const connectDB = async () => {
         await sequelize.query("ALTER TABLE `users` ADD COLUMN `lastNameEn` VARCHAR(255) NULL DEFAULT ''");
         console.log("✅ Added lastNameEn column to users table");
       }
+      const [attCols] = await sequelize.query("SHOW COLUMNS FROM `studentattendances` LIKE 'branch'");
+      if (!attCols || attCols.length === 0) {
+        await sequelize.query("ALTER TABLE `studentattendances` ADD COLUMN `branch` VARCHAR(255) NULL DEFAULT ''");
+        console.log("✅ Added branch column to studentattendances table");
+      }
     } catch (colErr) {
-      console.error("⚠️ Error auto-adding firstNameEn/lastNameEn columns:", colErr.message);
+      console.error("⚠️ Error auto-adding columns:", colErr.message);
     }
   } catch (error) {
     console.error(`❌ MySQL সংযোগ ব্যর্থ: ${error.message}`);
