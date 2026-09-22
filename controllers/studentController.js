@@ -403,12 +403,15 @@ exports.createStudent = async (req, res, next) => {
       const existingStudents = await Student.findAll({
         where: {
           institution: req.user.institution,
-          studentId: { [Op.like]: `${idPrefix}%` }
+          [Op.or]: [
+            { studentId: { [Op.like]: `ANB${currentYear}%` } },
+            { studentId: { [Op.like]: `ANG${currentYear}%` } }
+          ]
         },
         attributes: ['studentId']
       });
       let maxIdNum = 0;
-      const regex = new RegExp(`^${idPrefix}(\\d+)$`);
+      const regex = new RegExp(`^AN[BG]${currentYear}(\\d+)$`);
       existingStudents.forEach(s => {
         const match = s.studentId ? s.studentId.match(regex) : null;
         if (match) {
@@ -417,10 +420,10 @@ exports.createStudent = async (req, res, next) => {
         }
       });
       let nextIdNum = maxIdNum + 1;
-      let candidateId = `${idPrefix}${String(nextIdNum).padStart(3, '0')}`;
+      let candidateId = `${idPrefix}${nextIdNum}`;
       while (await Student.findOne({ where: { studentId: candidateId } })) {
         nextIdNum++;
-        candidateId = `${idPrefix}${String(nextIdNum).padStart(3, '0')}`;
+        candidateId = `${idPrefix}${nextIdNum}`;
       }
       finalStudentId = candidateId;
     }
@@ -1273,17 +1276,20 @@ exports.getNextStudentId = async (req, res, next) => {
     const currentYear = new Date().getFullYear();
     const idPrefix = isFemale ? `ANG${currentYear}` : `ANB${currentYear}`;
 
-    // 1. Next Student ID (ANB2026* / ANG2026*)
+    // 1. Next Student ID (যৌথ সিরিয়াল: ANB${year}1, ANG${year}2 ইত্যাদি)
     const existingStudents = await Student.findAll({
       where: {
         institution: req.user.institution,
-        studentId: { [Op.like]: `${idPrefix}%` }
+        [Op.or]: [
+          { studentId: { [Op.like]: `ANB${currentYear}%` } },
+          { studentId: { [Op.like]: `ANG${currentYear}%` } }
+        ]
       },
       attributes: ['studentId']
     });
 
     let maxIdNum = 0;
-    const regex = new RegExp(`^${idPrefix}(\\d+)$`);
+    const regex = new RegExp(`^AN[BG]${currentYear}(\\d+)$`);
     existingStudents.forEach(s => {
       const match = s.studentId ? s.studentId.match(regex) : null;
       if (match) {
@@ -1293,10 +1299,10 @@ exports.getNextStudentId = async (req, res, next) => {
     });
 
     let nextIdNum = maxIdNum + 1;
-    let candidateId = `${idPrefix}${String(nextIdNum).padStart(3, '0')}`;
+    let candidateId = `${idPrefix}${nextIdNum}`;
     while (await Student.findOne({ where: { studentId: candidateId } })) {
       nextIdNum++;
-      candidateId = `${idPrefix}${String(nextIdNum).padStart(3, '0')}`;
+      candidateId = `${idPrefix}${nextIdNum}`;
     }
 
     // 2. Next Admission Number (ADM-2026-10001...)
