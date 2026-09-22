@@ -19,6 +19,7 @@ router.patch('/academic-years/:id', authorize('super_admin', 'co_super_admin', '
 router.delete('/academic-years/:id', authorize('super_admin', 'co_super_admin', 'admin', 'principal'), studentController.deleteAcademicYear);
 router.get('/promotion-candidates', studentController.getPromotionCandidates);
 router.get('/next-roll', studentController.getNextRollNumber);
+router.get('/next-student-id', studentController.getNextStudentId);
 router.get('/branches', studentController.getBranches);
 router.post('/promote', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'student.promote'), studentController.promoteStudents);
 router.post('/subjects', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'subject.create'), studentController.createSubject);

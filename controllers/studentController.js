@@ -350,18 +350,79 @@ exports.createStudent = async (req, res, next) => {
       return ApiResponse.error(res, 'ফোন নম্বর প্রদান আবশ্যক', 400);
     }
 
-    let finalAdmissionNumber = admissionNumber;
-    if (!finalAdmissionNumber) {
-      const count = await Student.countDocuments({ institution: req.user.institution });
-      const year = new Date().getFullYear();
-      finalAdmissionNumber = `ADM-${year}-${10001 + count}`;
+    const finalGender = (gender === 'female' || gender === 'মহিলা') ? 'female' : 'male';
+    const currentYear = new Date().getFullYear();
+
+    // 1. ভর্তি নম্বর (Admission Number) যাচাইকরণ বা স্বয়ংক্রিয়ভাবে তৈরি
+    let finalAdmissionNumber = admissionNumber && admissionNumber.trim() !== '' ? admissionNumber.trim() : null;
+    if (finalAdmissionNumber) {
+      const existingAdm = await Student.findOne({
+        where: { admissionNumber: finalAdmissionNumber }
+      });
+      if (existingAdm) {
+        return ApiResponse.error(res, 'এই ভর্তি নম্বর (Admission Number) ইতিমধ্যে ব্যবহৃত হয়েছে', 400);
+      }
+    } else {
+      const admPrefix = `ADM-${currentYear}-`;
+      const existingAdms = await Student.findAll({
+        where: {
+          institution: req.user.institution,
+          admissionNumber: { [Op.like]: `${admPrefix}%` }
+        },
+        attributes: ['admissionNumber']
+      });
+      let maxAdm = 10000;
+      existingAdms.forEach(s => {
+        const match = s.admissionNumber ? s.admissionNumber.match(new RegExp(`^${admPrefix}(\\d+)$`)) : null;
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num > maxAdm) maxAdm = num;
+        }
+      });
+      let nextAdm = maxAdm + 1;
+      let candidateAdm = `${admPrefix}${nextAdm}`;
+      while (await Student.findOne({ where: { admissionNumber: candidateAdm } })) {
+        nextAdm++;
+        candidateAdm = `${admPrefix}${nextAdm}`;
+      }
+      finalAdmissionNumber = candidateAdm;
     }
 
-    // Student ID: 5-digit sequential (10001, 10002, ...)
-    let finalStudentId = studentId;
-    if (!finalStudentId) {
-      const count = await Student.countDocuments({ institution: req.user.institution });
-      finalStudentId = String(10001 + count);
+    // 2. ছাত্র আইডি (Student ID) যাচাইকরণ বা স্বয়ংক্রিয়ভাবে তৈরি:
+    // ছাত্র নির্বাচন করলে ANB<year>* এবং ছাত্রী নির্বাচন করলে ANG<year>* রেঞ্জ থেকে তৈরি হবে
+    let finalStudentId = studentId && studentId.trim() !== '' ? studentId.trim() : null;
+    if (finalStudentId) {
+      const existingId = await Student.findOne({
+        where: { studentId: finalStudentId }
+      });
+      if (existingId) {
+        return ApiResponse.error(res, 'এই ছাত্র আইডি (Student ID) ইতিমধ্যে ব্যবহৃত হয়েছে', 400);
+      }
+    } else {
+      const idPrefix = finalGender === 'female' ? `ANG${currentYear}` : `ANB${currentYear}`;
+      const existingStudents = await Student.findAll({
+        where: {
+          institution: req.user.institution,
+          studentId: { [Op.like]: `${idPrefix}%` }
+        },
+        attributes: ['studentId']
+      });
+      let maxIdNum = 0;
+      const regex = new RegExp(`^${idPrefix}(\\d+)$`);
+      existingStudents.forEach(s => {
+        const match = s.studentId ? s.studentId.match(regex) : null;
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num > maxIdNum) maxIdNum = num;
+        }
+      });
+      let nextIdNum = maxIdNum + 1;
+      let candidateId = `${idPrefix}${String(nextIdNum).padStart(3, '0')}`;
+      while (await Student.findOne({ where: { studentId: candidateId } })) {
+        nextIdNum++;
+        candidateId = `${idPrefix}${String(nextIdNum).padStart(3, '0')}`;
+      }
+      finalStudentId = candidateId;
     }
 
     // Auto-generate username from English name (firstNameEn) or fallback to Bengali firstName
@@ -412,7 +473,6 @@ exports.createStudent = async (req, res, next) => {
     const user = await User.create(userFields);
 
     // ছাত্র তৈরি
-    const finalGender = (gender === 'female' || gender === 'মহিলা') ? 'female' : 'male';
     const student = await Student.create({
       user: user._id,
       institution: req.user.institution,
@@ -560,6 +620,54 @@ exports.updateStudent = async (req, res, next) => {
     allowedFields.forEach((field) => {
       if (req.body[field] !== undefined) updates[field] = req.body[field];
     });
+
+    // Permission check for modifying studentId and admissionNumber
+    const isSuperOrCoSuper = req.user.userType === 'super_admin' || 
+                             req.user.userType === 'co_super_admin' || 
+                             req.user.adminRole === 'co_super_admin';
+    const isAdmin = req.user.userType === 'admin' || req.user.adminRole === 'admin';
+    const hasStudentUpdatePerm = req.user.permissions?.['student.update'];
+    const canModifyStudentIdOrAdm = isSuperOrCoSuper || isAdmin || hasStudentUpdatePerm;
+
+    // Student ID update & duplicate check
+    if (req.body.studentId !== undefined && req.body.studentId !== null) {
+      const newStudentId = req.body.studentId.toString().trim();
+      if (newStudentId !== '' && newStudentId !== student.studentId) {
+        if (!canModifyStudentIdOrAdm) {
+          return ApiResponse.forbidden(res, 'ছাত্র আইডি পরিবর্তন করার অনুমতি শুধুমাত্র সুপার অ্যাডমিন ও অ্যাডমিনদের রয়েছে');
+        }
+        const existingWithId = await Student.findOne({
+          where: {
+            studentId: newStudentId,
+            _id: { [Op.ne]: student._id }
+          }
+        });
+        if (existingWithId) {
+          return ApiResponse.error(res, 'এই ছাত্র আইডি (Student ID) ইতিমধ্যে ব্যবহৃত হয়েছে', 400);
+        }
+        updates.studentId = newStudentId;
+      }
+    }
+
+    // Admission Number update & duplicate check
+    if (req.body.admissionNumber !== undefined && req.body.admissionNumber !== null) {
+      const newAdmissionNumber = req.body.admissionNumber.toString().trim();
+      if (newAdmissionNumber !== '' && newAdmissionNumber !== student.admissionNumber) {
+        if (!canModifyStudentIdOrAdm) {
+          return ApiResponse.forbidden(res, 'ভর্তি নম্বর পরিবর্তন করার অনুমতি শুধুমাত্র সুপার অ্যাডমিন ও অ্যাডমিনদের রয়েছে');
+        }
+        const existingWithAdm = await Student.findOne({
+          where: {
+            admissionNumber: newAdmissionNumber,
+            _id: { [Op.ne]: student._id }
+          }
+        });
+        if (existingWithAdm) {
+          return ApiResponse.error(res, 'এই ভর্তি নম্বর (Admission Number) ইতিমধ্যে ব্যবহৃত হয়েছে', 400);
+        }
+        updates.admissionNumber = newAdmissionNumber;
+      }
+    }
 
     // Date of birth: ensure empty string is never saved to MySQL DATE column
     if (req.body.dateOfBirth !== undefined) {
@@ -1151,6 +1259,78 @@ exports.getNextRollNumber = async (req, res, next) => {
     });
 
     ApiResponse.success(res, { nextRollNumber: maxRoll + 1 });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    পরবর্তী ছাত্র/ছাত্রী আইডি এবং ভর্তি নম্বর পান (ছাত্র: ANB2026*, ছাত্রী: ANG2026*)
+// @route   GET /api/v1/students/next-student-id
+exports.getNextStudentId = async (req, res, next) => {
+  try {
+    const { gender } = req.query;
+    const isFemale = (gender === 'female' || gender === 'মহিলা');
+    const currentYear = new Date().getFullYear();
+    const idPrefix = isFemale ? `ANG${currentYear}` : `ANB${currentYear}`;
+
+    // 1. Next Student ID (ANB2026* / ANG2026*)
+    const existingStudents = await Student.findAll({
+      where: {
+        institution: req.user.institution,
+        studentId: { [Op.like]: `${idPrefix}%` }
+      },
+      attributes: ['studentId']
+    });
+
+    let maxIdNum = 0;
+    const regex = new RegExp(`^${idPrefix}(\\d+)$`);
+    existingStudents.forEach(s => {
+      const match = s.studentId ? s.studentId.match(regex) : null;
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxIdNum) maxIdNum = num;
+      }
+    });
+
+    let nextIdNum = maxIdNum + 1;
+    let candidateId = `${idPrefix}${String(nextIdNum).padStart(3, '0')}`;
+    while (await Student.findOne({ where: { studentId: candidateId } })) {
+      nextIdNum++;
+      candidateId = `${idPrefix}${String(nextIdNum).padStart(3, '0')}`;
+    }
+
+    // 2. Next Admission Number (ADM-2026-10001...)
+    const admPrefix = `ADM-${currentYear}-`;
+    const existingAdms = await Student.findAll({
+      where: {
+        institution: req.user.institution,
+        admissionNumber: { [Op.like]: `${admPrefix}%` }
+      },
+      attributes: ['admissionNumber']
+    });
+
+    let maxAdm = 10000;
+    existingAdms.forEach(s => {
+      const match = s.admissionNumber ? s.admissionNumber.match(new RegExp(`^${admPrefix}(\\d+)$`)) : null;
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxAdm) maxAdm = num;
+      }
+    });
+
+    let nextAdm = maxAdm + 1;
+    let candidateAdm = `${admPrefix}${nextAdm}`;
+    while (await Student.findOne({ where: { admissionNumber: candidateAdm } })) {
+      nextAdm++;
+      candidateAdm = `${admPrefix}${nextAdm}`;
+    }
+
+    ApiResponse.success(res, {
+      nextStudentId: candidateId,
+      nextAdmissionNumber: candidateAdm,
+      prefix: idPrefix,
+      year: currentYear
+    });
   } catch (error) {
     next(error);
   }
