@@ -1,3 +1,5 @@
+const { Op } = require('sequelize');
+const sequelize = require('../config/db');
 const Student = require('../models/Student');
 const Teacher = require('../models/Teacher');
 const User = require('../models/User');
@@ -22,33 +24,75 @@ exports.globalSearch = async (req, res) => {
     }
 
     const institutionId = req.user.institution;
-    const searchRegex = new RegExp(rawQuery, 'i');
-    const searchWords = rawQuery.split(/\s+/).filter(Boolean);
+    const bnToEn = { '০':'0', '১':'1', '২':'2', '৩':'3', '৪':'4', '৫':'5', '৬':'6', '৭':'7', '৮':'8', '৯':'9' };
+    const enToBn = { '0':'০', '1':'১', '2':'২', '3':'৩', '4':'৪', '5':'৫', '6':'৬', '7':'৭', '8':'৮', '9':'৯' };
+    const enDigits = rawQuery.replace(/[০-৯]/g, d => bnToEn[d]);
+    const bnDigits = rawQuery.replace(/[0-9]/g, d => enToBn[d]);
+    const cleanDigits = enDigits.replace(/[^0-9]/g, '');
+    const words = rawQuery.split(/\s+/).filter(Boolean);
 
     // 1. MATCH USERS
     const userOrConditions = [
-      { firstName: searchRegex },
-      { lastName: searchRegex },
-      { phone: searchRegex },
-      { username: searchRegex },
+      { firstName: { [Op.like]: `%${rawQuery}%` } },
+      { lastName: { [Op.like]: `%${rawQuery}%` } },
+      { username: { [Op.like]: `%${rawQuery}%` } },
+      { phone: { [Op.like]: `%${rawQuery}%` } },
+      { phone: { [Op.like]: `%${enDigits}%` } },
+      { phone: { [Op.like]: `%${bnDigits}%` } },
+      sequelize.where(
+        sequelize.fn('concat', sequelize.fn('coalesce', sequelize.col('firstName'), ''), ' ', sequelize.fn('coalesce', sequelize.col('lastName'), '')),
+        { [Op.like]: `%${rawQuery}%` }
+      ),
     ];
+
+    if (cleanDigits.length >= 3) {
+      userOrConditions.push(
+        sequelize.where(
+          sequelize.fn('replace', sequelize.fn('replace', sequelize.col('phone'), '-', ''), ' ', ''),
+          { [Op.like]: `%${cleanDigits}%` }
+        )
+      );
+      const bnClean = cleanDigits.replace(/[0-9]/g, d => enToBn[d]);
+      userOrConditions.push(
+        sequelize.where(
+          sequelize.fn('replace', sequelize.fn('replace', sequelize.col('phone'), '-', ''), ' ', ''),
+          { [Op.like]: `%${bnClean}%` }
+        )
+      );
+    }
+
     if (User.rawAttributes && User.rawAttributes.firstNameEn) {
-      userOrConditions.push({ firstNameEn: searchRegex });
+      userOrConditions.push(
+        { firstNameEn: { [Op.like]: `%${rawQuery}%` } },
+        sequelize.where(
+          sequelize.fn('concat', sequelize.fn('coalesce', sequelize.col('firstNameEn'), ''), ' ', sequelize.fn('coalesce', sequelize.col('lastNameEn'), '')),
+          { [Op.like]: `%${rawQuery}%` }
+        )
+      );
     }
     if (User.rawAttributes && User.rawAttributes.lastNameEn) {
-      userOrConditions.push({ lastNameEn: searchRegex });
+      userOrConditions.push({ lastNameEn: { [Op.like]: `%${rawQuery}%` } });
     }
-    if (searchWords.length > 1) {
-      searchWords.forEach(word => {
-        const wordRegex = new RegExp(word, 'i');
-        userOrConditions.push({ firstName: wordRegex }, { lastName: wordRegex });
+
+    if (words.length > 1) {
+      words.forEach(word => {
+        userOrConditions.push(
+          { firstName: { [Op.like]: `%${word}%` } },
+          { lastName: { [Op.like]: `%${word}%` } }
+        );
       });
     }
 
-    const matchedUsers = await User.find({
-      institution: institutionId,
-      $or: userOrConditions,
-    }).select('_id firstName lastName firstNameEn lastNameEn phone username photo');
+    let matchedUsers = [];
+    try {
+      matchedUsers = await User.findAll({
+        where: { [Op.or]: userOrConditions },
+        attributes: ['_id', 'firstName', 'lastName', 'firstNameEn', 'lastNameEn', 'phone', 'username', 'photo'],
+        raw: true,
+      });
+    } catch (uErr) {
+      console.error('User search error in globalSearch:', uErr.message);
+    }
 
     const matchedUserMap = new Map();
     matchedUsers.forEach(u => {
@@ -58,12 +102,22 @@ exports.globalSearch = async (req, res) => {
 
     // 2. SEARCH STUDENTS
     const studentOrConditions = [
-      { studentId: searchRegex },
-      { admissionNumber: searchRegex },
-      { fatherName: searchRegex },
-      { motherName: searchRegex },
-      { village: searchRegex },
+      { studentId: new RegExp(rawQuery, 'i') },
+      { studentId: new RegExp(enDigits, 'i') },
+      { admissionNumber: new RegExp(rawQuery, 'i') },
+      { admissionNumber: new RegExp(enDigits, 'i') },
+      { fatherName: new RegExp(rawQuery, 'i') },
+      { motherName: new RegExp(rawQuery, 'i') },
+      { village: new RegExp(rawQuery, 'i') },
     ];
+    if (words.length > 1) {
+      words.forEach(word => {
+        studentOrConditions.push(
+          { fatherName: new RegExp(word, 'i') },
+          { motherName: new RegExp(word, 'i') }
+        );
+      });
+    }
     if (matchedUserIds.length > 0) {
       studentOrConditions.push({ user: { $in: matchedUserIds } });
     }
@@ -124,9 +178,9 @@ exports.globalSearch = async (req, res) => {
 
     // 3. SEARCH TEACHERS
     const teacherOrConditions = [
-      { designation: searchRegex },
-      { qualification: searchRegex },
-      { employeeId: searchRegex },
+      { designation: new RegExp(rawQuery, 'i') },
+      { qualification: new RegExp(rawQuery, 'i') },
+      { employeeId: new RegExp(rawQuery, 'i') },
     ];
     if (matchedUserIds.length > 0) {
       teacherOrConditions.push({ user: { $in: matchedUserIds } });

@@ -1,4 +1,5 @@
 const { Op } = require('sequelize');
+const sequelize = require('../config/db');
 const Student = require('../models/Student');
 const StudentEnrollment = require('../models/StudentEnrollment');
 const User = require('../models/User');
@@ -194,47 +195,128 @@ exports.getStudents = async (req, res, next) => {
     }
     if (req.query.search) {
       const searchStr = req.query.search.trim();
-      const searchRegex = new RegExp(searchStr, 'i');
-      const searchWords = searchStr.split(/\s+/).filter(Boolean);
+      const bnToEn = { '০':'0', '১':'1', '২':'2', '৩':'3', '৪':'4', '৫':'5', '৬':'6', '৭':'7', '৮':'8', '৯':'9' };
+      const enToBn = { '0':'০', '1':'১', '2':'২', '3':'৩', '4':'৪', '5':'৫', '6':'৬', '7':'৭', '8':'৮', '9':'৯' };
+      const enDigits = searchStr.replace(/[০-৯]/g, d => bnToEn[d]);
+      const bnDigits = searchStr.replace(/[0-9]/g, d => enToBn[d]);
+      const cleanDigits = enDigits.replace(/[^0-9]/g, '');
+      const words = searchStr.split(/\s+/).filter(Boolean);
 
-      const userConditions = [
-        { firstName: searchRegex },
-        { lastName: searchRegex },
-        { phone: searchRegex },
-        { username: searchRegex },
+      // 1. Build User search conditions using native Sequelize Op
+      const userOrConditions = [
+        { firstName: { [Op.like]: `%${searchStr}%` } },
+        { lastName: { [Op.like]: `%${searchStr}%` } },
+        { username: { [Op.like]: `%${searchStr}%` } },
+        { phone: { [Op.like]: `%${searchStr}%` } },
+        { phone: { [Op.like]: `%${enDigits}%` } },
+        { phone: { [Op.like]: `%${bnDigits}%` } },
+        sequelize.where(
+          sequelize.fn('concat', sequelize.fn('coalesce', sequelize.col('firstName'), ''), ' ', sequelize.fn('coalesce', sequelize.col('lastName'), '')),
+          { [Op.like]: `%${searchStr}%` }
+        ),
       ];
+
+      if (cleanDigits.length >= 3) {
+        userOrConditions.push(
+          sequelize.where(
+            sequelize.fn('replace', sequelize.fn('replace', sequelize.col('phone'), '-', ''), ' ', ''),
+            { [Op.like]: `%${cleanDigits}%` }
+          )
+        );
+        const bnClean = cleanDigits.replace(/[0-9]/g, d => enToBn[d]);
+        userOrConditions.push(
+          sequelize.where(
+            sequelize.fn('replace', sequelize.fn('replace', sequelize.col('phone'), '-', ''), ' ', ''),
+            { [Op.like]: `%${bnClean}%` }
+          )
+        );
+      }
+
       if (User.rawAttributes && User.rawAttributes.firstNameEn) {
-        userConditions.push({ firstNameEn: searchRegex });
+        userOrConditions.push(
+          { firstNameEn: { [Op.like]: `%${searchStr}%` } },
+          sequelize.where(
+            sequelize.fn('concat', sequelize.fn('coalesce', sequelize.col('firstNameEn'), ''), ' ', sequelize.fn('coalesce', sequelize.col('lastNameEn'), '')),
+            { [Op.like]: `%${searchStr}%` }
+          )
+        );
       }
       if (User.rawAttributes && User.rawAttributes.lastNameEn) {
-        userConditions.push({ lastNameEn: searchRegex });
+        userOrConditions.push({ lastNameEn: { [Op.like]: `%${searchStr}%` } });
       }
 
-      // If user typed multi-word name like "মোঃ আব্দুল্লাহ"
-      if (searchWords.length > 1) {
-        searchWords.forEach(word => {
-          const wordRegex = new RegExp(word, 'i');
-          userConditions.push({ firstName: wordRegex }, { lastName: wordRegex });
+      if (words.length > 1) {
+        words.forEach(word => {
+          userOrConditions.push(
+            { firstName: { [Op.like]: `%${word}%` } },
+            { lastName: { [Op.like]: `%${word}%` } }
+          );
         });
       }
 
-      const matchedUsers = await User.find({
-        institution: req.user.institution,
-        $or: userConditions,
-      }).select('_id');
+      let userIds = [];
+      try {
+        const matchedUsers = await User.findAll({
+          where: { [Op.or]: userOrConditions },
+          attributes: ['_id'],
+          raw: true,
+        });
+        userIds = matchedUsers.map((u) => u._id).filter(Boolean);
+      } catch (uErr) {
+        console.error('User search error in getStudents:', uErr.message);
+      }
 
-      const userIds = matchedUsers.map((u) => u._id);
+      // Check Guardian model for student references if matching phone or guardian name
+      let guardianStudentIds = [];
+      if (userIds.length > 0) {
+        try {
+          const Guardian = require('../models/Guardian');
+          const matchedGuardians = await Guardian.findAll({
+            where: {
+              institution: req.user.institution,
+              user: { [Op.in]: userIds },
+            },
+            attributes: ['students'],
+            raw: true,
+          });
+          matchedGuardians.forEach(g => {
+            if (Array.isArray(g.students)) {
+              guardianStudentIds.push(...g.students);
+            } else if (typeof g.students === 'string') {
+              try {
+                const parsed = JSON.parse(g.students);
+                if (Array.isArray(parsed)) guardianStudentIds.push(...parsed);
+              } catch (_) {}
+            }
+          });
+        } catch (_) {}
+      }
 
       const orConditions = [
-        { admissionNumber: searchRegex },
-        { studentId: searchRegex },
-        { fatherName: searchRegex },
-        { motherName: searchRegex },
-        { village: searchRegex },
+        { admissionNumber: new RegExp(searchStr, 'i') },
+        { admissionNumber: new RegExp(enDigits, 'i') },
+        { studentId: new RegExp(searchStr, 'i') },
+        { studentId: new RegExp(enDigits, 'i') },
+        { fatherName: new RegExp(searchStr, 'i') },
+        { motherName: new RegExp(searchStr, 'i') },
+        { village: new RegExp(searchStr, 'i') },
       ];
+
+      if (words.length > 1) {
+        words.forEach(word => {
+          orConditions.push(
+            { fatherName: new RegExp(word, 'i') },
+            { motherName: new RegExp(word, 'i') }
+          );
+        });
+      }
 
       if (userIds.length > 0) {
         orConditions.push({ user: { $in: userIds } });
+      }
+
+      if (guardianStudentIds.length > 0) {
+        orConditions.push({ _id: { $in: guardianStudentIds } });
       }
 
       filter.$or = orConditions;
