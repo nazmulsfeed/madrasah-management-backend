@@ -188,7 +188,8 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
     return { success: false, message: 'Invalid deviceUserId' };
   }
 
-  const student = await Student.findOne({
+  // প্রথমে প্রদত্ত প্রতিষ্ঠানে খুঁজবে, না পেলে যেকোনো প্রতিষ্ঠানে খুঁজবে
+  let student = await Student.findOne({
     where: {
       institution: institutionId,
       [Op.or]: [
@@ -200,8 +201,24 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
   });
 
   if (!student) {
+    student = await Student.findOne({
+      where: {
+        [Op.or]: [
+          { deviceUserId: cleanId },
+          { studentId: cleanId },
+          { admissionNumber: cleanId },
+        ],
+      },
+    });
+  }
+
+  if (!student) {
+    console.warn(`[Attendance Punch] Student not found with ID: ${cleanId}`);
     return { success: false, message: `Student not found with ID: ${cleanId}` };
   }
+
+  // ছাত্র যে প্রতিষ্ঠানের অন্তর্ভুক্ত, উপস্থিতি সেই প্রতিষ্ঠানের অধীনেই রেকর্ড হবে
+  const targetInstitutionId = student.institution || institutionId;
 
   // ছাত্রের ইউজার ডাটা (নাম পাওয়ার জন্য)
   const studentUser = await User.findOne({ where: { _id: student.user } });
@@ -224,7 +241,7 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
   if (!attendance) {
     isFirstPunch = true;
     attendance = await StudentAttendance.create({
-      institution: institutionId,
+      institution: targetInstitutionId,
       student: student._id,
       classLevel: enrollment ? enrollment.classLevel : '',
       section: enrollment ? enrollment.section : '',
