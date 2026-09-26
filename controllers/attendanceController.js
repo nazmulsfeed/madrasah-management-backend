@@ -198,6 +198,13 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
 
   const { Op } = require('sequelize');
 
+  // Debug: validate and log punch details
+  if (isNaN(punchDate.getTime())) {
+    console.error('[Punch] INVALID punchDate for input: ' + JSON.stringify(punchTime));
+    return { success: false, message: 'Invalid punchTime could not parse date' };
+  }
+  console.log('[Punch] Source=' + source + ' | ID=' + deviceUserId + ' | BD_Date=' + dateStr + ' | BD_Time=' + timeString + ' | UTC=' + targetDate.toISOString());
+
   // ১. ডিভাইস আইডি বা স্টুডেন্ট আইডি দিয়ে ছাত্র খুঁজে বের করা
   const cleanId = String(deviceUserId || '').trim();
   if (!cleanId) {
@@ -229,9 +236,10 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
   }
 
   if (!student) {
-    console.warn(`[Attendance Punch] Student not found with ID: ${cleanId}`);
+    console.warn(`[Punch] ❌ Student NOT FOUND with ID: "${cleanId}" (institutionId: ${institutionId})`);
     return { success: false, message: `Student not found with ID: ${cleanId}` };
   }
+  console.log(`[Punch] ✅ Student found: ${student.studentId} (_id: ${student._id}, institution: ${student.institution})`);
 
   // ছাত্র যে প্রতিষ্ঠানের অন্তর্ভুক্ত, উপস্থিতি সেই প্রতিষ্ঠানের অধীনেই রেকর্ড হবে
   const targetInstitutionId = student.institution || institutionId;
@@ -258,6 +266,7 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
 
   if (!attendance) {
     isFirstPunch = true;
+    console.log(`[Punch] 🆕 No existing record → Creating new attendance for student ${student._id} on ${dateStr}`);
     attendance = await StudentAttendance.create({
       institution: targetInstitutionId,
       student: student._id,
@@ -274,6 +283,7 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
       source,
       remarks: `বায়োমেট্রিক পাঞ্চ (${source})`,
     });
+    console.log(`[Punch] ✅ Attendance record created with _id: ${attendance._id}`);
   } else {
     // ইতোমধ্যে যে স্ট্যাটাসই থাকুক না কেন, পাঞ্চ করলেই নিশ্চিতভাবে "উপস্থিত" হবে
     const wasNotPresent = attendance.status !== 'present';
