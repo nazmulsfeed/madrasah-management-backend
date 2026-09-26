@@ -24,14 +24,14 @@ router.post(
 
 router.post(
   '/auto-absent-check',
-  authorize('super_admin'),
+  authorize('super_admin', 'co_super_admin', 'admin', 'principal'),
   attendanceController.runAutoAbsentCheck
 );
 
 router
   .route('/biometric-settings')
-  .get(authorize('super_admin'), attendanceController.getBiometricSettings)
-  .patch(authorize('super_admin'), attendanceController.updateBiometricSettings);
+  .get(authorize('super_admin', 'co_super_admin', 'admin', 'principal'), attendanceController.getBiometricSettings)
+  .patch(authorize('super_admin', 'co_super_admin', 'admin', 'principal'), attendanceController.updateBiometricSettings);
 
 router
   .route('/')
