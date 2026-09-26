@@ -772,7 +772,7 @@ exports.updateStudent = async (req, res, next) => {
       await userDoc.save();
     }
 
-    const allowedFields = ['bloodGroup', 'status', 'photo', 'residentialStatus', 'hifzProgramType', 'department', 'fatherName', 'motherName', 'village', 'nationalIdOrBirthCertNo'];
+    const allowedFields = ['bloodGroup', 'status', 'photo', 'residentialStatus', 'hifzProgramType', 'department', 'fatherName', 'motherName', 'village', 'nationalIdOrBirthCertNo', 'deviceUserId'];
     const updates = {};
     allowedFields.forEach((field) => {
       if (req.body[field] !== undefined) updates[field] = req.body[field];

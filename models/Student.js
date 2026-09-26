@@ -36,6 +36,11 @@ Student.init({
     allowNull: false,
     unique: true,
   },
+  deviceUserId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
   currentEnrollment: {
     type: DataTypes.STRING,
     allowNull: true,

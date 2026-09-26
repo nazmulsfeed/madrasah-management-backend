@@ -42,6 +42,20 @@ StudentAttendance.init({
     allowNull: true,
     defaultValue: '',
   },
+  inTime: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
+  punchTime: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  source: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: 'manual', // manual, zkteco, mobile_simulator
+  },
   markedBy: {
     type: DataTypes.STRING,
     allowNull: true,

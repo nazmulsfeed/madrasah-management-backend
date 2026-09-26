@@ -148,6 +148,10 @@ const start = async () => {
   const { startInvoiceScheduler } = require('./utils/invoiceScheduler');
   startInvoiceScheduler();
 
+  // Start Biometric & Attendance Cutoff Auto-Scheduler
+  const { startAttendanceScheduler } = require('./utils/attendanceScheduler');
+  startAttendanceScheduler();
+
   app.listen(PORT, () => {
     console.log(`🚀  সার্ভার চালু হয়েছে পোর্ট ${PORT} এ`);
     console.log(`📍 http://localhost:${PORT}/api/v1/health`);

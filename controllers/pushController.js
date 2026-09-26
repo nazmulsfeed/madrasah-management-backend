@@ -5,14 +5,18 @@ const ApiResponse = require('../utils/apiResponse');
 // @route   POST /api/v1/push/subscribe
 exports.subscribe = async (req, res, next) => {
   try {
-    const { endpoint, keys } = req.body;
+    const { endpoint, keys, userId, studentId } = req.body;
 
     if (!endpoint || !keys) {
       return ApiResponse.error(res, 'endpoint এবং keys আবশ্যক', 400);
     }
 
-    // যদি আগে থেকে সেভ করা থাকে, নতুন করে সেভ না করা
-    await PushSubscription.upsert({ endpoint, keys });
+    const payload = { endpoint, keys };
+    if (userId) payload.userId = String(userId);
+    if (studentId) payload.studentId = String(studentId);
+
+    // যদি আগে থেকে সেভ করা থাকে, আপডেট/আপসার্ট করা
+    await PushSubscription.upsert(payload);
 
     res.status(201).json({ success: true, message: 'নোটিফিকেশন সাবস্ক্রিপশন সফলভাবে সেভ হয়েছে।' });
   } catch (error) {

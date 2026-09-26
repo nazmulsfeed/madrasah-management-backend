@@ -154,3 +154,337 @@ exports.getAttendance = async (req, res, next) => {
     next(error);
   }
 };
+
+// ==========================================
+// ZKTeco & Virtual Android Simulator Engine
+// ==========================================
+
+const { sendTargetedPush } = require('../utils/pushHelper');
+const User = require('../models/User');
+const Institution = require('../models/Institution');
+const StudentEnrollment = require('../models/StudentEnrollment');
+
+/**
+ * স্টুডেন্টের উপস্থিতি পাঞ্চ প্রসেস করে এবং নির্দিষ্ট অভিভাবককে নোটিফিকেশন পাঠায়
+ */
+async function processAttendancePunch({ institutionId, deviceUserId, punchTime, source = 'device' }) {
+  const punchDate = punchTime ? new Date(punchTime) : new Date();
+  const dateStr = punchDate.toISOString().split('T')[0];
+  const targetDate = new Date(dateStr + 'T00:00:00.000Z');
+
+  // সময় ফরম্যাট (১২ ঘন্টা ফরম্যাট, যেমন: 08:30 AM)
+  const timeString = punchDate.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Dhaka',
+  });
+
+  const { Op } = require('sequelize');
+
+  // ১. ডিভাইস আইডি বা স্টুডেন্ট আইডি দিয়ে ছাত্র খুঁজে বের করা
+  const cleanId = String(deviceUserId || '').trim();
+  if (!cleanId) {
+    return { success: false, message: 'Invalid deviceUserId' };
+  }
+
+  const student = await Student.findOne({
+    where: {
+      institution: institutionId,
+      [Op.or]: [
+        { deviceUserId: cleanId },
+        { studentId: cleanId },
+        { admissionNumber: cleanId },
+      ],
+    },
+  });
+
+  if (!student) {
+    return { success: false, message: `Student not found with ID: ${cleanId}` };
+  }
+
+  // ছাত্রের ইউজার ডাটা (নাম পাওয়ার জন্য)
+  const studentUser = await User.findOne({ where: { _id: student.user } });
+  const studentName = studentUser ? (studentUser.fullName || `${studentUser.firstName || ''} ${studentUser.lastName || ''}`.trim() || student.studentId) : student.studentId;
+
+  // ছাত্রের এনরোলমেন্ট ডাটা
+  const enrollment = await StudentEnrollment.findOne({
+    where: { student: student._id, enrollmentStatus: 'active' },
+  });
+
+  // আজকের উপস্থিতি চেক করা
+  let attendance = await StudentAttendance.findOne({
+    where: {
+      student: student._id,
+      date: targetDate,
+    },
+  });
+
+  let isFirstPunch = false;
+  if (!attendance) {
+    isFirstPunch = true;
+    attendance = await StudentAttendance.create({
+      institution: institutionId,
+      student: student._id,
+      classLevel: enrollment ? enrollment.classLevel : '',
+      section: enrollment ? enrollment.section : '',
+      branch: student.branch || '',
+      date: targetDate,
+      status: 'present',
+      inTime: timeString,
+      punchTime: punchDate,
+      source,
+      remarks: `বায়োমেট্রিক পাঞ্চ (${source})`,
+    });
+  } else {
+    // ইতোমধ্যে থাকলে শুধু পাঞ্চ টাইম আপডেট করা (যদি স্ট্যাটাস absent থাকে তবে present করে দেওয়া)
+    if (attendance.status === 'absent') {
+      attendance.status = 'present';
+      attendance.inTime = timeString;
+      attendance.source = source;
+      attendance.remarks = `দেরিতে পাঞ্চ (${source})`;
+      await attendance.save();
+      isFirstPunch = true;
+    }
+  }
+
+  // ২. শুধুমাত্র সংশ্লিষ্ট স্টুডেন্ট/অভিভাবকের ফোনে টার্গেটেড পুশ নোটিফিকেশন পাঠানো
+  if (isFirstPunch) {
+    try {
+      const targetUserIds = [];
+      if (student.user) targetUserIds.push(String(student.user));
+
+      // অভিভাবক খুঁজে বের করা
+      const allGuardians = await Guardian.findAll({ where: { institution: institutionId } });
+      allGuardians.forEach((g) => {
+        if (g.students && Array.isArray(g.students)) {
+          const isLinked = g.students.some((s) => String(s.student) === String(student._id));
+          if (isLinked && g.user) {
+            targetUserIds.push(String(g.user));
+          }
+        }
+      });
+
+      await sendTargetedPush({
+        userIds: targetUserIds,
+        studentIds: [String(student.studentId), String(student._id)],
+        payload: {
+          title: '✅ উপস্থিতি নিশ্চিতকরণ',
+          body: `আসসালামু আলাইকুম, আপনার সন্তান (${studentName}) আজ সকাল ${timeString}-এ মাদরাসায় উপস্থিত হয়েছে।`,
+          url: '/attendance',
+        },
+      });
+    } catch (notifErr) {
+      console.error('[Punch Notif Error]:', notifErr.message);
+    }
+  }
+
+  return {
+    success: true,
+    studentName,
+    studentId: student.studentId,
+    inTime: timeString,
+    status: attendance.status,
+    isFirstPunch,
+  };
+}
+
+// @desc    অ্যান্ড্রয়েড ফোন সিমুলেটর দিয়ে উপস্থিতি টেস্ট (শুধুমাত্র সুপার অ্যাডমিন)
+// @route   POST /api/v1/attendance/device-push-test
+exports.simulateDevicePush = async (req, res, next) => {
+  try {
+    const { deviceUserId, punchTime } = req.body;
+    if (!deviceUserId) {
+      return ApiResponse.error(res, 'ছাত্র আইডি বা বায়োমেট্রিক আইডি দিন', 400);
+    }
+
+    const institutionId = req.user.institution;
+    const result = await processAttendancePunch({
+      institutionId,
+      deviceUserId,
+      punchTime: punchTime || new Date(),
+      source: 'mobile_simulator',
+    });
+
+    if (!result.success) {
+      return ApiResponse.error(res, result.message, 404);
+    }
+
+    ApiResponse.success(res, result, `পাঞ্চ সফল! ${result.studentName}-এর উপস্থিতি ও অভিভাবকের ফোনে নোটিফিকেশন পাঠানো হয়েছে।`);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    ZKTeco MB560-VL আসল ডিভাইসের ADMS লিসেনার রুট
+// @route   ALL /api/v1/attendance/iclock/cdata
+exports.zktecoADMSListener = async (req, res) => {
+  try {
+    const query = req.query || {};
+    const body = req.body || {};
+    const method = req.method;
+
+    console.log(`[ZKTeco ADMS] ${method} Received. Query:`, query);
+
+    // হ্যান্ডশেক অথবা পিং রিকোয়েস্ট (ডিভাইস চালু হলে বা কনফিগারেশন চেক করলে)
+    if (method === 'GET') {
+      res.set('Content-Type', 'text/plain');
+      return res.status(200).send('OK');
+    }
+
+    // পাঞ্চ লগ পুশ (ডিভাইস থেকে POST রিকোয়েস্টে লগ আসে)
+    // ফরম্যাট সাধারণত: SN=SERIAL&table=ATTLOG... ডাটা বডিতে লাইনে লাইনে থাকে
+    let rawData = typeof body === 'string' ? body : JSON.stringify(body);
+    if (req.rawBody) rawData = req.rawBody;
+
+    console.log('[ZKTeco ADMS POST Data]:', rawData);
+
+    // ZKTeco কে রেসপন্স দিতে হবে 'OK'
+    res.set('Content-Type', 'text/plain');
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('[ZKTeco ADMS Error]:', error.message);
+    res.status(200).send('OK');
+  }
+};
+
+// @desc    কাট-অফ টাইম অনুযায়ী অনুপস্থিত স্টুডেন্টদের মার্ক করা ও অভিভাবককে নোটিফিকেশন পাঠানো
+// @route   POST /api/v1/attendance/auto-absent-check
+exports.runAutoAbsentCheck = async (req, res, next) => {
+  try {
+    const institutionId = req.user.institution;
+    const today = new Date();
+    const dateStr = today.toISOString().split('T')[0];
+    const targetDate = new Date(dateStr + 'T00:00:00.000Z');
+
+    // প্রতিষ্ঠানের সকল সক্রিয় ছাত্র বের করা
+    const allStudents = await Student.findAll({
+      where: { institution: institutionId, isDeleted: false, status: 'active' },
+    });
+
+    if (allStudents.length === 0) {
+      return ApiResponse.success(res, { absentCount: 0 }, 'কোন সক্রিয় ছাত্র পাওয়া যায়নি।');
+    }
+
+    // আজকের উপস্থিতি রেকর্ডগুলো আনা
+    const todayAttendances = await StudentAttendance.findAll({
+      where: {
+        institution: institutionId,
+        date: targetDate,
+      },
+    });
+
+    const presentStudentIds = new Set(
+      todayAttendances
+        .filter((a) => a.status === 'present')
+        .map((a) => String(a.student))
+    );
+
+    // যারা প্রেজেন্ট নেই তাদের তালিকা
+    const absentStudents = allStudents.filter((s) => !presentStudentIds.has(String(s._id)));
+    const allGuardians = await Guardian.findAll({ where: { institution: institutionId } });
+
+    let count = 0;
+    for (const student of absentStudents) {
+      // যদি আগে থেকে রেকর্ড না থাকে তবে অনুপস্থিত রেকর্ড তৈরি করা
+      const existingRecord = todayAttendances.find((a) => String(a.student) === String(student._id));
+      if (!existingRecord) {
+        await StudentAttendance.create({
+          institution: institutionId,
+          student: student._id,
+          classLevel: '',
+          section: '',
+          branch: student.branch || '',
+          date: targetDate,
+          status: 'absent',
+          source: 'auto_cron',
+          remarks: 'নির্ধারিত সময় পার হওয়ায় অনুপস্থিত গণ্য',
+        });
+      }
+
+      // স্টুডেন্টের নাম আনা
+      const studentUser = await User.findOne({ where: { _id: student.user } });
+      const studentName = studentUser ? (studentUser.fullName || studentUser.firstName || student.studentId) : student.studentId;
+
+      // অভিভাবকের ইউজার আইডি খুঁজে বের করা
+      const targetUserIds = [];
+      if (student.user) targetUserIds.push(String(student.user));
+
+      allGuardians.forEach((g) => {
+        if (g.students && Array.isArray(g.students)) {
+          const isLinked = g.students.some((s) => String(s.student) === String(student._id));
+          if (isLinked && g.user) {
+            targetUserIds.push(String(g.user));
+          }
+        }
+      });
+
+      // অনুপস্থিতির নোটিফিকেশন পাঠানো
+      try {
+        await sendTargetedPush({
+          userIds: targetUserIds,
+          studentIds: [String(student.studentId), String(student._id)],
+          payload: {
+            title: '⚠️ অনুপস্থিতির নোটিশ',
+            body: `আসসালামু আলাইকুম, আপনার সন্তান (${studentName}) আজ মাদরাসায় অনুপস্থিত রয়েছে।`,
+            url: '/attendance',
+          },
+        });
+      } catch (e) {
+        console.error('Absent push error:', e.message);
+      }
+      count++;
+    }
+
+    ApiResponse.success(
+      res,
+      { totalStudents: allStudents.length, absentCount: count },
+      `${count} জন ছাত্রকে অনুপস্থিত হিসেবে চিহ্নিত করা হয়েছে এবং অভিভাবকদের নোটিফিকেশন পাঠানো হয়েছে।`
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    বায়োমেট্রিক ও কাট-অফ টাইম কনফিগারেশন আনা (শুধুমাত্র সুপার অ্যাডমিন)
+// @route   GET /api/v1/attendance/biometric-settings
+exports.getBiometricSettings = async (req, res, next) => {
+  try {
+    const institution = await Institution.findOne({ where: { _id: req.user.institution } });
+    if (!institution) {
+      return ApiResponse.notFound(res, 'প্রতিষ্ঠান পাওয়া যায়নি');
+    }
+
+    ApiResponse.success(res, {
+      attendanceCutoffTime: institution.attendanceCutoffTime || '09:30',
+      autoAbsentEnabled: institution.autoAbsentEnabled !== false,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    বায়োমেট্রিক ও কাট-অফ টাইম কনফিগারেশন সংরক্ষণ (শুধুমাত্র সুপার অ্যাডমিন)
+// @route   PATCH /api/v1/attendance/biometric-settings
+exports.updateBiometricSettings = async (req, res, next) => {
+  try {
+    const { attendanceCutoffTime, autoAbsentEnabled } = req.body;
+    const institution = await Institution.findOne({ where: { _id: req.user.institution } });
+    if (!institution) {
+      return ApiResponse.notFound(res, 'প্রতিষ্ঠান পাওয়া যায়নি');
+    }
+
+    if (attendanceCutoffTime !== undefined) institution.attendanceCutoffTime = attendanceCutoffTime;
+    if (autoAbsentEnabled !== undefined) institution.autoAbsentEnabled = Boolean(autoAbsentEnabled);
+
+    await institution.save();
+
+    ApiResponse.success(res, {
+      attendanceCutoffTime: institution.attendanceCutoffTime,
+      autoAbsentEnabled: institution.autoAbsentEnabled,
+    }, 'বায়োমেট্রিক ও উপস্থিতি সেটিংস সফলভাবে আপডেট হয়েছে');
+  } catch (error) {
+    next(error);
+  }
+};
+

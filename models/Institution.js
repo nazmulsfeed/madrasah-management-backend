@@ -76,6 +76,16 @@ Institution.init({
     allowNull: true,
     defaultValue: false,
   },
+  attendanceCutoffTime: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '09:30', // HH:mm 24-hr format (e.g. 09:30 = 9:30 AM)
+  },
+  autoAbsentEnabled: {
+    type: DataTypes.BOOLEAN,
+    allowNull: true,
+    defaultValue: true,
+  },
 }, {
   sequelize,
   modelName: 'Institution',

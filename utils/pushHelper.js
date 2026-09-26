@@ -61,4 +61,74 @@ async function broadcastNotification(payload) {
   return results;
 }
 
-module.exports = { broadcastNotification };
+/**
+ * নির্দিষ্ট ইউজার অথবা নির্দিষ্ট ছাত্রের অভিভাবককে পুশ নোটিফিকেশন পাঠায়।
+ * @param {object} params - { userIds: string[], studentIds: string[], payload: { title, body, url } }
+ */
+async function sendTargetedPush({ userIds = [], studentIds = [], payload = {} }) {
+  const results = [];
+  try {
+    const PushSubscription = require('../models/PushSubscription');
+    const { Op } = require('sequelize');
+
+    const cleanUserIds = (userIds || []).filter(Boolean).map(String);
+    const cleanStudentIds = (studentIds || []).filter(Boolean).map(String);
+
+    if (cleanUserIds.length === 0 && cleanStudentIds.length === 0) {
+      return results;
+    }
+
+    const whereConditions = [];
+    if (cleanUserIds.length > 0) {
+      whereConditions.push({ userId: { [Op.in]: cleanUserIds } });
+    }
+    if (cleanStudentIds.length > 0) {
+      whereConditions.push({ studentId: { [Op.in]: cleanStudentIds } });
+    }
+
+    const subscriptions = await PushSubscription.findAll({
+      where: {
+        [Op.or]: whereConditions,
+      },
+    });
+
+    if (subscriptions.length === 0) {
+      console.log('[Push-Targeted] No matching subscriptions found for targets.');
+      return results;
+    }
+
+    const notificationPayload = JSON.stringify({
+      title: payload.title || 'উপস্থিতি আপডেট 🔔',
+      body: payload.body || 'আপনার সন্তানের উপস্থিতি সংক্রান্ত তথ্য।',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      url: payload.url || '/attendance',
+    });
+
+    const sendPromises = subscriptions.map(async (sub) => {
+      const subscription = {
+        endpoint: sub.endpoint,
+        keys: sub.keys,
+      };
+      try {
+        await webpush.sendNotification(subscription, notificationPayload);
+        console.log('[Push-Targeted] ✅ Sent to target:', sub.endpoint.substring(0, 60));
+        results.push({ endpoint: sub.endpoint.substring(0, 60), status: 'success' });
+      } catch (err) {
+        console.error('[Push-Targeted] ❌ Error sending:', err.message);
+        results.push({ endpoint: sub.endpoint.substring(0, 60), status: 'error', message: err.message });
+        if (err.statusCode === 404 || err.statusCode === 410) {
+          await PushSubscription.destroy({ where: { endpoint: sub.endpoint } });
+        }
+      }
+    });
+
+    await Promise.allSettled(sendPromises);
+  } catch (error) {
+    console.error('[Push-Targeted] Error in sendTargetedPush:', error.message);
+  }
+  return results;
+}
+
+module.exports = { broadcastNotification, sendTargetedPush };
+

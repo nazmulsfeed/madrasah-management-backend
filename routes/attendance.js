@@ -4,7 +4,28 @@ const attendanceController = require('../controllers/attendanceController');
 const { protect } = require('../middleware/auth');
 const { authorize } = require('../middleware/rbac');
 
+// ZKTeco ADMS Webhook রুট (ডিভাইস পুশ করবে সরাসরি — কোনো টোকেন ছাড়া)
+router.all('/iclock/cdata', attendanceController.zktecoADMSListener);
+
 router.use(protect);
+
+// সুপার অ্যাডমিন স্পেশাল বায়োমেট্রিক ও সিমুলেটর রাউট (অন্য কেউ এক্সেস পাবে না)
+router.post(
+  '/device-push-test',
+  authorize('super_admin'),
+  attendanceController.simulateDevicePush
+);
+
+router.post(
+  '/auto-absent-check',
+  authorize('super_admin'),
+  attendanceController.runAutoAbsentCheck
+);
+
+router
+  .route('/biometric-settings')
+  .get(authorize('super_admin'), attendanceController.getBiometricSettings)
+  .patch(authorize('super_admin'), attendanceController.updateBiometricSettings);
 
 router
   .route('/')

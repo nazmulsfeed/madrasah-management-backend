@@ -13,6 +13,14 @@ PushSubscription.init({
     type: DataTypes.JSON,
     allowNull: false,
   },
+  userId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  studentId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
 }, {
   sequelize,
   modelName: 'PushSubscription',
