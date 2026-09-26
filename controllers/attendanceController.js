@@ -254,19 +254,19 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
       remarks: `বায়োমেট্রিক পাঞ্চ (${source})`,
     });
   } else {
-    // ইতোমধ্যে থাকলে শুধু পাঞ্চ টাইম আপডেট করা (যদি স্ট্যাটাস absent থাকে তবে present করে দেওয়া)
-    if (attendance.status === 'absent') {
-      attendance.status = 'present';
+    // ইতোমধ্যে যে স্ট্যাটাসই থাকুক না কেন (অনুপস্থিত, নির্ধারিত নয় ইত্যাদি), পাঞ্চ করলেই নিশ্চিতভাবে "উপস্থিত" হবে
+    const wasNotPresent = attendance.status !== 'present';
+    attendance.status = 'present';
+    if (!attendance.inTime || wasNotPresent) {
       attendance.inTime = timeString;
-      attendance.source = source;
-      attendance.remarks = `দেরিতে পাঞ্চ (${source})`;
-      await attendance.save();
+    }
+    attendance.punchTime = punchDate;
+    attendance.source = source;
+    attendance.remarks = wasNotPresent ? `দেরিতে পাঞ্চ (${source})` : attendance.remarks || `বায়োমেট্রিক পাঞ্চ (${source})`;
+    await attendance.save();
+
+    if (wasNotPresent) {
       isFirstPunch = true;
-    } else {
-      attendance.punchTime = punchDate;
-      if (!attendance.inTime) attendance.inTime = timeString;
-      attendance.source = source;
-      await attendance.save();
     }
   }
 
