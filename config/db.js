@@ -8,6 +8,7 @@ const sequelize = new Sequelize(
     host: process.env.DB_HOST || '127.0.0.1',
     port: process.env.DB_PORT || 3306,
     dialect: 'mysql',
+    timezone: '+06:00', // Bangladesh Timezone (UTC+6)
     logging: false, // Set to console.log if debugging SQL queries
     dialectOptions: {
       // Required for MySQL 8.4 caching_sha2_password plugin in local dev

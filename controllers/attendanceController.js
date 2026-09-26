@@ -168,11 +168,27 @@ const StudentEnrollment = require('../models/StudentEnrollment');
  * স্টুডেন্টের উপস্থিতি পাঞ্চ প্রসেস করে এবং নির্দিষ্ট অভিভাবককে নোটিফিকেশন পাঠায়
  */
 async function processAttendancePunch({ institutionId, deviceUserId, punchTime, source = 'device', forcePush = false }) {
-  const punchDate = punchTime ? new Date(punchTime) : new Date();
-  const dateStr = punchDate.toISOString().split('T')[0];
+  let punchDate;
+  if (!punchTime) {
+    punchDate = new Date();
+  } else if (punchTime instanceof Date) {
+    punchDate = punchTime;
+  } else if (typeof punchTime === 'string') {
+    // যদি "YYYY-MM-DD HH:mm:ss" ফরম্যাটে থাকে যাতে টাইমজোন ছাড়া লোকাল টাইম বোঝায়
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(punchTime) && !punchTime.includes('Z') && !/[+-]\d{2}/.test(punchTime)) {
+      punchDate = new Date(punchTime.replace(' ', 'T') + '+06:00');
+    } else {
+      punchDate = new Date(punchTime);
+    }
+  } else {
+    punchDate = new Date(punchTime);
+  }
+
+  // বাংলাদেশের ক্যালেন্ডার তারিখ (YYYY-MM-DD)
+  const dateStr = punchDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' });
   const targetDate = new Date(dateStr + 'T00:00:00.000Z');
 
-  // সময় ফরম্যাট (১২ ঘন্টা ফরম্যাট, যেমন: 08:30 AM)
+  // সময় ফরম্যাট (১২ ঘন্টা ফরম্যাট, যেমন: 08:30 AM — নিশ্চিত বাংলাদেশ সময়)
   const timeString = punchDate.toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
@@ -621,13 +637,12 @@ exports.zktecoADMSListener = async (req, res) => {
         }
 
         if (deviceUserId) {
-          const punchDate = (punchTimeStr && !isNaN(Date.parse(punchTimeStr))) ? new Date(punchTimeStr) : new Date();
-          console.log(`[ZKTeco ADMS] Saving Punch -> User: ${deviceUserId}, Time: ${punchDate.toISOString()}`);
+          console.log(`[ZKTeco ADMS] Saving Punch -> User: ${deviceUserId}, TimeStr: ${punchTimeStr || 'LIVE'}`);
 
           const punchResult = await processAttendancePunch({
             institutionId: defaultInst._id,
             deviceUserId,
-            punchTime: punchDate,
+            punchTime: punchTimeStr || new Date(),
             source: 'zkteco_device',
             forcePush: true,
           });
@@ -655,7 +670,7 @@ exports.runAutoAbsentCheck = async (req, res, next) => {
   try {
     const institutionId = req.user.institution;
     const today = new Date();
-    const dateStr = today.toISOString().split('T')[0];
+    const dateStr = today.toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' });
     const targetDate = new Date(dateStr + 'T00:00:00.000Z');
 
     // প্রতিষ্ঠানের সকল সক্রিয় ছাত্র বের করা

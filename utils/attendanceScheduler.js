@@ -25,7 +25,7 @@ async function checkAndMarkAbsentStudents() {
     const [currentHour, currentMinute] = dhakaTimeStr.split(':').map(Number);
     const currentTotalMinutes = currentHour * 60 + currentMinute;
 
-    const dateStr = now.toISOString().split('T')[0];
+    const dateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' });
     const targetDate = new Date(dateStr + 'T00:00:00.000Z');
 
     const institutions = await Institution.findAll({
