@@ -101,6 +101,11 @@ Institution.init({
     allowNull: true,
     defaultValue: '', // Only send test notifications to this specific student ID during testing
   },
+  outTimePushEnabled: {
+    type: DataTypes.BOOLEAN,
+    allowNull: true,
+    defaultValue: false, // Default false: whether to send push notifications when students punch to exit/leave
+  },
 }, {
   sequelize,
   modelName: 'Institution',

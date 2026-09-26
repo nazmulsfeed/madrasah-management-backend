@@ -47,6 +47,21 @@ StudentAttendance.init({
     allowNull: true,
     defaultValue: '',
   },
+  outTime: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
+  punchCount: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    defaultValue: 0,
+  },
+  punchTimes: {
+    type: DataTypes.TEXT, // JSON array string of times: '["08:15 AM", "04:30 PM"]'
+    allowNull: true,
+    defaultValue: '[]',
+  },
   punchTime: {
     type: DataTypes.DATE,
     allowNull: true,

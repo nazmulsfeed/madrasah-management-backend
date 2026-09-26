@@ -176,6 +176,26 @@ const connectDB = async () => {
         await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `testDeviceUserId` VARCHAR(100) NULL DEFAULT ''");
         console.log("✅ Added testDeviceUserId column to institutions table");
       }
+      const [instOutPushCol] = await sequelize.query("SHOW COLUMNS FROM `institutions` LIKE 'outTimePushEnabled'");
+      if (!instOutPushCol || instOutPushCol.length === 0) {
+        await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `outTimePushEnabled` TINYINT(1) NULL DEFAULT 0");
+        console.log("✅ Added outTimePushEnabled column to institutions table");
+      }
+      const [punchCountCol] = await sequelize.query("SHOW COLUMNS FROM `studentattendances` LIKE 'punchCount'");
+      if (!punchCountCol || punchCountCol.length === 0) {
+        await sequelize.query("ALTER TABLE `studentattendances` ADD COLUMN `punchCount` INT NULL DEFAULT 0");
+        console.log("✅ Added punchCount column to studentattendances table");
+      }
+      const [punchTimesCol] = await sequelize.query("SHOW COLUMNS FROM `studentattendances` LIKE 'punchTimes'");
+      if (!punchTimesCol || punchTimesCol.length === 0) {
+        await sequelize.query("ALTER TABLE `studentattendances` ADD COLUMN `punchTimes` TEXT NULL");
+        console.log("✅ Added punchTimes column to studentattendances table");
+      }
+      const [outTimeCol] = await sequelize.query("SHOW COLUMNS FROM `studentattendances` LIKE 'outTime'");
+      if (!outTimeCol || outTimeCol.length === 0) {
+        await sequelize.query("ALTER TABLE `studentattendances` ADD COLUMN `outTime` VARCHAR(50) NULL DEFAULT ''");
+        console.log("✅ Added outTime column to studentattendances table");
+      }
     } catch (colErr) {
       console.error("⚠️ Error auto-adding columns:", colErr.message);
     }

@@ -238,6 +238,8 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
   });
 
   let isFirstPunch = false;
+  let isOutPunch = false;
+
   if (!attendance) {
     isFirstPunch = true;
     attendance = await StudentAttendance.create({
@@ -249,17 +251,39 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
       date: targetDate,
       status: 'present',
       inTime: timeString,
+      outTime: '',
+      punchCount: 1,
+      punchTimes: JSON.stringify([timeString]),
       punchTime: punchDate,
       source,
       remarks: `বায়োমেট্রিক পাঞ্চ (${source})`,
     });
   } else {
-    // ইতোমধ্যে যে স্ট্যাটাসই থাকুক না কেন (অনুপস্থিত, নির্ধারিত নয় ইত্যাদি), পাঞ্চ করলেই নিশ্চিতভাবে "উপস্থিত" হবে
+    // ইতোমধ্যে যে স্ট্যাটাসই থাকুক না কেন, পাঞ্চ করলেই নিশ্চিতভাবে "উপস্থিত" হবে
     const wasNotPresent = attendance.status !== 'present';
     attendance.status = 'present';
-    if (!attendance.inTime || wasNotPresent) {
-      attendance.inTime = timeString;
+    
+    // পাঞ্চ সংখ্যা ও পাঞ্চ লগ আপডেট করা
+    let timesList = [];
+    try {
+      timesList = attendance.punchTimes ? JSON.parse(attendance.punchTimes) : [];
+      if (!Array.isArray(timesList)) timesList = [];
+    } catch {
+      timesList = [];
     }
+
+    if (!attendance.inTime) {
+      attendance.inTime = timeString;
+      isFirstPunch = true;
+    } else {
+      // এটি দ্বিতীয় বা পরবর্তী পাঞ্চ (আউট-টাইম)
+      attendance.outTime = timeString;
+      isOutPunch = true;
+    }
+
+    timesList.push(timeString);
+    attendance.punchTimes = JSON.stringify(timesList);
+    attendance.punchCount = (attendance.punchCount || 0) + 1;
     attendance.punchTime = punchDate;
     attendance.source = source;
     attendance.remarks = wasNotPresent ? `দেরিতে পাঞ্চ (${source})` : attendance.remarks || `বায়োমেট্রিক পাঞ্চ (${source})`;
@@ -272,106 +296,122 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
 
   // ২. শুধুমাত্র সংশ্লিষ্ট স্টুডেন্ট/অভিভাবকের ফোনে টার্গেটেড পুশ নোটিফিকেশন পাঠানো
   const isSimulator = source === 'mobile_simulator';
-  const shouldAttemptPush = isFirstPunch || isSimulator || forcePush;
 
   let pushResultInfo = { attempted: false, sentCount: 0, subscribersFound: 0, reason: '' };
 
-  if (shouldAttemptPush) {
-    try {
-      const inst = await Institution.findOne({ where: { _id: institutionId } });
-      const pushEnabled = inst ? Boolean(inst.attendancePushNotifEnabled) : false;
-      const testUserIdFilter = inst?.testDeviceUserId ? String(inst.testDeviceUserId).trim() : '';
+  try {
+    const inst = await Institution.findOne({ where: { _id: targetInstitutionId } });
+    const pushEnabled = inst ? Boolean(inst.attendancePushNotifEnabled) : false;
+    const outTimePushEnabled = inst ? Boolean(inst.outTimePushEnabled) : false;
+    const testUserIdFilter = inst?.testDeviceUserId ? String(inst.testDeviceUserId).trim() : '';
 
-      const isTestMatch = testUserIdFilter !== '' && (
-        testUserIdFilter === String(student.studentId) || 
-        testUserIdFilter === String(cleanId) || 
-        testUserIdFilter === String(student.admissionNumber) || 
-        testUserIdFilter === String(student.deviceUserId)
-      );
+    const isTestMatch = testUserIdFilter !== '' && (
+      testUserIdFilter === String(student.studentId) || 
+      testUserIdFilter === String(cleanId) || 
+      testUserIdFilter === String(student.admissionNumber) || 
+      testUserIdFilter === String(student.deviceUserId)
+    );
 
-      const isAllowedForPush = pushEnabled || isTestMatch;
+    const isAllowedForPush = pushEnabled || isTestMatch;
 
-      if (isAllowedForPush) {
-        const targetUserIds = [];
-        if (student.user) targetUserIds.push(String(student.user));
-        if (studentUser && studentUser._id) targetUserIds.push(String(studentUser._id));
-        if (studentUser && studentUser.username) targetUserIds.push(String(studentUser.username));
+    // কোন ধরনের নোটিফিকেশন পাঠানো হবে:
+    // ক) প্রথম পাঞ্চে: উপস্থিতি নোটিফিকেশন
+    // খ) পরবর্তী পাঞ্চে (যদি outTimePushEnabled অন থাকে): প্রস্থান/ছুটি নোটিফিকেশন
+    let shouldSendPush = false;
+    let pushTitle = '✅ উপস্থিতি নিশ্চিতকরণ';
+    let pushBody = `আসসালামু আলাইকুম, (${studentName}) আজ ${timeString}-এ মাদরাসায় উপস্থিত হয়েছে।`;
 
-        // অভিভাবক খুঁজে বের করা
-        const allGuardians = await Guardian.findAll({ where: { institution: institutionId } });
-        allGuardians.forEach((g) => {
-          if (g.students && Array.isArray(g.students)) {
-            const isLinked = g.students.some((s) => String(s.student) === String(student._id));
-            if (isLinked && g.user) {
-              targetUserIds.push(String(g.user));
-            }
+    if (isFirstPunch || isSimulator || forcePush) {
+      shouldSendPush = true;
+    } else if (isOutPunch && outTimePushEnabled) {
+      shouldSendPush = true;
+      pushTitle = '🔔 মাদরাসা ছুটির নোটিশ';
+      pushBody = `আসসালামু আলাইকুম, (${studentName}) আজ ${timeString}-এ মাদরাসা থেকে প্রস্থান/ছুটি নিয়েছে।`;
+    }
+
+    if (isAllowedForPush && shouldSendPush) {
+      const targetUserIds = [];
+      if (student.user) targetUserIds.push(String(student.user));
+      if (studentUser && studentUser._id) targetUserIds.push(String(studentUser._id));
+      if (studentUser && studentUser.username) targetUserIds.push(String(studentUser.username));
+
+      // অভিভাবক খুঁজে বের করা
+      const allGuardians = await Guardian.findAll({ where: { institution: targetInstitutionId } });
+      allGuardians.forEach((g) => {
+        if (g.students && Array.isArray(g.students)) {
+          const isLinked = g.students.some((s) => String(s.student) === String(student._id));
+          if (isLinked && g.user) {
+            targetUserIds.push(String(g.user));
           }
-        });
+        }
+      });
 
-        const targetStudentIdentifiers = [
-          String(student.studentId),
-          String(student._id),
-          String(cleanId),
-          student.admissionNumber ? String(student.admissionNumber) : null,
-          student.deviceUserId ? String(student.deviceUserId) : null,
-        ].filter(Boolean);
+      const targetStudentIdentifiers = [
+        String(student.studentId),
+        String(student._id),
+        String(cleanId),
+        student.admissionNumber ? String(student.admissionNumber) : null,
+        student.deviceUserId ? String(student.deviceUserId) : null,
+      ].filter(Boolean);
 
-        const pushRes = await sendTargetedPush({
-          userIds: Array.from(new Set(targetUserIds)),
-          studentIds: Array.from(new Set(targetStudentIdentifiers)),
-          payload: {
-            title: '✅ উপস্থিতি নিশ্চিতকরণ',
-            body: `আসসালামু আলাইকুম, (${studentName}) আজ ${timeString}-এ মাদরাসায় উপস্থিত হয়েছে।`,
-            url: '/attendance',
-          },
-        });
+      const pushRes = await sendTargetedPush({
+        userIds: Array.from(new Set(targetUserIds)),
+        studentIds: Array.from(new Set(targetStudentIdentifiers)),
+        payload: {
+          title: pushTitle,
+          body: pushBody,
+          url: '/attendance',
+        },
+      });
 
-        const successCount = (pushRes || []).filter(r => r.status === 'success').length;
-        pushResultInfo = {
-          attempted: true,
-          sentCount: successCount,
-          subscribersFound: pushRes ? pushRes.length : 0,
-          reason: successCount > 0 
-            ? `✅ ${successCount} টি ডিভাইসে পুশ নোটিফিকেশন সফলভাবে পৌঁছেছে` 
-            : (pushRes && pushRes.length > 0 
-                ? '⚠️ পুশ ডেলিভারি ত্রুটি (ডিভাইসে পৌঁছায়নি)' 
-                : '⚠️ এই ছাত্র বা অভিভাবকের অ্যাকাউন্টে কোনো ব্রাউজার/ফোনে পুশ নোটিফিকেশন সক্রিয় করা নেই। ফোনে লগইন করে "নোটিফিকেশন চালু করুন" বাটনে ক্লিক করুন।')
-        };
-        console.log(`[Attendance Push] Student: ${studentName}, Result:`, pushResultInfo);
-      } else {
-        pushResultInfo = {
-          attempted: false,
-          sentCount: 0,
-          subscribersFound: 0,
-          reason: 'অভিভাবক পুশ নোটিফিকেশন বন্ধ রাখা আছে এবং টেস্ট আইডি ফিল্টারের সাথে মিলেনি'
-        };
-        console.log(`[Attendance Push] Skipped: push notifications to guardians are OFF in settings.`);
-      }
-    } catch (notifErr) {
-      console.error('[Punch Notif Error]:', notifErr.message);
+      const successCount = (pushRes || []).filter(r => r.status === 'success').length;
       pushResultInfo = {
         attempted: true,
+        sentCount: successCount,
+        subscribersFound: pushRes ? pushRes.length : 0,
+        reason: successCount > 0 
+          ? `✅ ${successCount} টি ডিভাইসে পুশ নোটিফিকেশন সফলভাবে পৌঁছেছে (${pushTitle})` 
+          : (pushRes && pushRes.length > 0 
+              ? '⚠️ পুশ ডেলিভারি ত্রুটি (ডিভাইসে পৌঁছায়নি)' 
+              : '⚠️ এই ছাত্র বা অভিভাবকের অ্যাকাউন্টে কোনো ব্রাউজার/ফোনে পুশ নোটিফিকেশন সক্রিয় করা নেই। ফোনে লগইন করে "নোটিফিকেশন চালু করুন" বাটনে ক্লিক করুন।')
+      };
+    } else {
+      pushResultInfo = {
+        attempted: false,
         sentCount: 0,
         subscribersFound: 0,
-        reason: 'Error: ' + notifErr.message
+        reason: 'অভিভাবক পুশ নোটিফিকেশন বন্ধ রাখা আছে এবং টেস্ট আইডি ফিল্টারের সাথে মিলেনি'
       };
+      console.log(`[Attendance Push] Skipped: push notifications to guardians are OFF in settings.`);
     }
-  } else {
+  } catch (notifErr) {
+    console.error('[Punch Notif Error]:', notifErr.message);
     pushResultInfo = {
-      attempted: false,
+      attempted: true,
       sentCount: 0,
       subscribersFound: 0,
-      reason: 'আজকে ইতোমধ্যে প্রথম পাঞ্চ সম্পন্ন হয়েছে'
+      reason: 'Error: ' + notifErr.message
     };
+  }
+
+  let parsedTimes = [];
+  try {
+    parsedTimes = attendance.punchTimes ? JSON.parse(attendance.punchTimes) : [];
+  } catch {
+    parsedTimes = [];
   }
 
   return {
     success: true,
     studentName,
     studentId: student.studentId,
-    inTime: timeString,
+    inTime: attendance.inTime || timeString,
+    outTime: attendance.outTime || '',
+    punchCount: attendance.punchCount || 1,
+    punchTimes: parsedTimes,
     status: attendance.status,
     isFirstPunch,
+    isOutPunch,
     pushResultInfo,
   };
 }
@@ -729,6 +769,7 @@ exports.getBiometricSettings = async (req, res, next) => {
       autoAbsentEnabled: Boolean(institution.autoAbsentEnabled),
       biometricAttendanceEnabled: Boolean(institution.biometricAttendanceEnabled),
       attendancePushNotifEnabled: Boolean(institution.attendancePushNotifEnabled),
+      outTimePushEnabled: Boolean(institution.outTimePushEnabled),
       testDeviceUserId: institution.testDeviceUserId || '',
     });
   } catch (error) {
@@ -745,6 +786,7 @@ exports.updateBiometricSettings = async (req, res, next) => {
       autoAbsentEnabled, 
       biometricAttendanceEnabled, 
       attendancePushNotifEnabled, 
+      outTimePushEnabled,
       testDeviceUserId 
     } = req.body;
 
@@ -757,6 +799,7 @@ exports.updateBiometricSettings = async (req, res, next) => {
     if (autoAbsentEnabled !== undefined) institution.autoAbsentEnabled = Boolean(autoAbsentEnabled);
     if (biometricAttendanceEnabled !== undefined) institution.biometricAttendanceEnabled = Boolean(biometricAttendanceEnabled);
     if (attendancePushNotifEnabled !== undefined) institution.attendancePushNotifEnabled = Boolean(attendancePushNotifEnabled);
+    if (outTimePushEnabled !== undefined) institution.outTimePushEnabled = Boolean(outTimePushEnabled);
     if (testDeviceUserId !== undefined) institution.testDeviceUserId = String(testDeviceUserId).trim();
 
     await institution.save();
@@ -766,6 +809,7 @@ exports.updateBiometricSettings = async (req, res, next) => {
       autoAbsentEnabled: institution.autoAbsentEnabled,
       biometricAttendanceEnabled: institution.biometricAttendanceEnabled,
       attendancePushNotifEnabled: institution.attendancePushNotifEnabled,
+      outTimePushEnabled: institution.outTimePushEnabled,
       testDeviceUserId: institution.testDeviceUserId,
     }, 'বায়োমেট্রিক ও উপস্থিতি কন্ট্রোল প্যানেল সেটিংস সফলভাবে আপডেট হয়েছে');
   } catch (error) {
