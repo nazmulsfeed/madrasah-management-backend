@@ -93,13 +93,12 @@ app.use((req, res, next) => {
   next();
 });
 
-// বডি পার্সার (সব রাউটের পূর্বে থাকতে হবে)
-const parseRawText = express.text({ type: ['text/*', 'application/octet-stream', 'text/plain', '*/*'] });
-app.use(parseRawText);
+// বডি পার্সার (স্ট্যান্ডার্ড JSON ও URL-encoded পূর্বে থাকতে হবে)
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// ZKTeco hardware native root route support (/iclock/cdata)
+// ZKTeco hardware native root route support (/iclock/cdata) - শুধুমাত্র iclock রুটের জন্য raw text পার্সার
+const parseRawText = express.text({ type: ['text/*', 'application/octet-stream', 'text/plain', '*/*'] });
 const attendanceController = require('./controllers/attendanceController');
 app.all('/iclock/cdata', parseRawText, attendanceController.zktecoADMSListener);
 app.all('/api/v1/attendance/iclock/cdata', parseRawText, attendanceController.zktecoADMSListener);
