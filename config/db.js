@@ -158,8 +158,23 @@ const connectDB = async () => {
       }
       const [instAutoAbsCol] = await sequelize.query("SHOW COLUMNS FROM `institutions` LIKE 'autoAbsentEnabled'");
       if (!instAutoAbsCol || instAutoAbsCol.length === 0) {
-        await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `autoAbsentEnabled` TINYINT(1) NULL DEFAULT 1");
+        await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `autoAbsentEnabled` TINYINT(1) NULL DEFAULT 0");
         console.log("✅ Added autoAbsentEnabled column to institutions table");
+      }
+      const [instBioCol] = await sequelize.query("SHOW COLUMNS FROM `institutions` LIKE 'biometricAttendanceEnabled'");
+      if (!instBioCol || instBioCol.length === 0) {
+        await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `biometricAttendanceEnabled` TINYINT(1) NULL DEFAULT 0");
+        console.log("✅ Added biometricAttendanceEnabled column to institutions table");
+      }
+      const [instPushCol] = await sequelize.query("SHOW COLUMNS FROM `institutions` LIKE 'attendancePushNotifEnabled'");
+      if (!instPushCol || instPushCol.length === 0) {
+        await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `attendancePushNotifEnabled` TINYINT(1) NULL DEFAULT 0");
+        console.log("✅ Added attendancePushNotifEnabled column to institutions table");
+      }
+      const [instTestCol] = await sequelize.query("SHOW COLUMNS FROM `institutions` LIKE 'testDeviceUserId'");
+      if (!instTestCol || instTestCol.length === 0) {
+        await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `testDeviceUserId` VARCHAR(100) NULL DEFAULT ''");
+        console.log("✅ Added testDeviceUserId column to institutions table");
       }
     } catch (colErr) {
       console.error("⚠️ Error auto-adding columns:", colErr.message);

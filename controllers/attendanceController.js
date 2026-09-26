@@ -248,32 +248,46 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
     }
   }
 
-  // ২. শুধুমাত্র সংশ্লিষ্ট স্টুডেন্ট/অভিভাবকের ফোনে টার্গেটেড পুশ নোটিফিকেশন পাঠানো
+  // ২. শুধুমাত্র সংশ্লিষ্ট স্টুডেন্ট/অভিভাবকের ফোনে টার্গেটেড পুশ নোটিফিকেশন পাঠানো (যদি অ্যাডমিন সেটিংস অন রাখেন)
   if (isFirstPunch) {
     try {
-      const targetUserIds = [];
-      if (student.user) targetUserIds.push(String(student.user));
+      const inst = await Institution.findOne({ where: { _id: institutionId } });
+      const pushEnabled = inst ? Boolean(inst.attendancePushNotifEnabled) : false;
+      const testUserIdFilter = inst?.testDeviceUserId ? String(inst.testDeviceUserId).trim() : '';
 
-      // অভিভাবক খুঁজে বের করা
-      const allGuardians = await Guardian.findAll({ where: { institution: institutionId } });
-      allGuardians.forEach((g) => {
-        if (g.students && Array.isArray(g.students)) {
-          const isLinked = g.students.some((s) => String(s.student) === String(student._id));
-          if (isLinked && g.user) {
-            targetUserIds.push(String(g.user));
+      // নোটিফিকেশন তখনই যাবে যদি:
+      // ১) পুশ নোটিফিকেশন অন থাকে, অথবা
+      // ২) টেস্ট ফিল্টারে এই ছাত্রের আইডি নির্দিষ্ট করে দেওয়া থাকে (যাতে অন্য কোনো অভিভাবকের কাছে না যায়)
+      const isAllowedForPush = pushEnabled || (testUserIdFilter !== '' && (testUserIdFilter === String(student.studentId) || testUserIdFilter === String(cleanId)));
+
+      if (isAllowedForPush) {
+        const targetUserIds = [];
+        if (student.user) targetUserIds.push(String(student.user));
+
+        // অভিভাবক খুঁজে বের করা
+        const allGuardians = await Guardian.findAll({ where: { institution: institutionId } });
+        allGuardians.forEach((g) => {
+          if (g.students && Array.isArray(g.students)) {
+            const isLinked = g.students.some((s) => String(s.student) === String(student._id));
+            if (isLinked && g.user) {
+              targetUserIds.push(String(g.user));
+            }
           }
-        }
-      });
+        });
 
-      await sendTargetedPush({
-        userIds: targetUserIds,
-        studentIds: [String(student.studentId), String(student._id)],
-        payload: {
-          title: '✅ উপস্থিতি নিশ্চিতকরণ',
-          body: `আসসালামু আলাইকুম, আপনার সন্তান (${studentName}) আজ সকাল ${timeString}-এ মাদরাসায় উপস্থিত হয়েছে।`,
-          url: '/attendance',
-        },
-      });
+        await sendTargetedPush({
+          userIds: targetUserIds,
+          studentIds: [String(student.studentId), String(student._id)],
+          payload: {
+            title: '✅ উপস্থিতি নিশ্চিতকরণ (পরীক্ষামূলক)',
+            body: `আসসালামু আলাইকুম, আপনার সন্তান (${studentName}) আজ সকাল ${timeString}-এ মাদরাসায় উপস্থিত হয়েছে।`,
+            url: '/attendance',
+          },
+        });
+        console.log(`[Attendance Push] Notification sent for student: ${studentName}`);
+      } else {
+        console.log(`[Attendance Push] Skipped: push notifications to guardians are OFF in settings.`);
+      }
     } catch (notifErr) {
       console.error('[Punch Notif Error]:', notifErr.message);
     }
@@ -317,11 +331,10 @@ exports.simulateDevicePush = async (req, res, next) => {
 };
 
 // @desc    ZKTeco MB560-VL আসল ডিভাইসের ADMS লিসেনার রুট
-// @route   ALL /api/v1/attendance/iclock/cdata
+// @route   ALL /api/v1/attendance/iclock/cdata এবং /iclock/cdata
 exports.zktecoADMSListener = async (req, res) => {
   try {
     const query = req.query || {};
-    const body = req.body || {};
     const method = req.method;
 
     console.log(`[ZKTeco ADMS] ${method} Received. Query:`, query);
@@ -333,17 +346,46 @@ exports.zktecoADMSListener = async (req, res) => {
     }
 
     // পাঞ্চ লগ পুশ (ডিভাইস থেকে POST রিকোয়েস্টে লগ আসে)
-    // ফরম্যাট সাধারণত: SN=SERIAL&table=ATTLOG... ডাটা বডিতে লাইনে লাইনে থাকে
-    let rawData = typeof body === 'string' ? body : JSON.stringify(body);
+    // ফরম্যাট সাধারণত: 1\t2026-09-27 08:30:15\t0\t1 ... বা query table=ATTLOG
+    let rawData = '';
+    if (typeof req.body === 'string') {
+      rawData = req.body;
+    } else if (req.body && typeof req.body === 'object') {
+      rawData = JSON.stringify(req.body);
+    }
     if (req.rawBody) rawData = req.rawBody;
 
     console.log('[ZKTeco ADMS POST Data]:', rawData);
 
-    // ZKTeco কে রেসপন্স দিতে হবে 'OK'
+    // যদি ডিভাইস ডাটা পাঠায়, তবে ডিফল্ট প্রতিষ্ঠান দিয়ে লগ প্রসেস করা
+    const defaultInst = await Institution.findOne({ where: { status: 'active' } });
+    if (defaultInst) {
+      // লাইন বাই লাইন ডাটা পার্স করা
+      const lines = rawData.split(/\r?\n/).filter(Boolean);
+      for (const line of lines) {
+        // ZKTeco স্ট্যান্ডার্ড ট্যাব বা স্পেস ফরম্যাট: PIN \t CheckTime
+        const parts = line.split('\t');
+        if (parts.length >= 2) {
+          const deviceUserId = parts[0].trim();
+          const punchTimeStr = parts[1].trim();
+          if (deviceUserId && !isNaN(Date.parse(punchTimeStr))) {
+            await processAttendancePunch({
+              institutionId: defaultInst._id,
+              deviceUserId,
+              punchTime: new Date(punchTimeStr),
+              source: 'zkteco_device',
+            });
+          }
+        }
+      }
+    }
+
+    // ZKTeco পুশ প্রোটোকল অবশ্যই 'OK' টেক্সট রেসপন্স আশা করে
     res.set('Content-Type', 'text/plain');
     res.status(200).send('OK');
   } catch (error) {
     console.error('[ZKTeco ADMS Error]:', error.message);
+    res.set('Content-Type', 'text/plain');
     res.status(200).send('OK');
   }
 };
@@ -419,17 +461,25 @@ exports.runAutoAbsentCheck = async (req, res, next) => {
         }
       });
 
-      // অনুপস্থিতির নোটিফিকেশন পাঠানো
+      // অনুপস্থিতির নোটিফিকেশন পাঠানো (যদি পুশ সেটিংস অন থাকে)
       try {
-        await sendTargetedPush({
-          userIds: targetUserIds,
-          studentIds: [String(student.studentId), String(student._id)],
-          payload: {
-            title: '⚠️ অনুপস্থিতির নোটিশ',
-            body: `আসসালামু আলাইকুম, আপনার সন্তান (${studentName}) আজ মাদরাসায় অনুপস্থিত রয়েছে।`,
-            url: '/attendance',
-          },
-        });
+        const inst = await Institution.findOne({ where: { _id: institutionId } });
+        const pushEnabled = inst ? Boolean(inst.attendancePushNotifEnabled) : false;
+        const testUserIdFilter = inst?.testDeviceUserId ? String(inst.testDeviceUserId).trim() : '';
+
+        const isAllowedForPush = pushEnabled || (testUserIdFilter !== '' && (testUserIdFilter === String(student.studentId) || testUserIdFilter === String(student._id)));
+
+        if (isAllowedForPush) {
+          await sendTargetedPush({
+            userIds: targetUserIds,
+            studentIds: [String(student.studentId), String(student._id)],
+            payload: {
+              title: '⚠️ অনুপস্থিতির নোটিশ (পরীক্ষামূলক)',
+              body: `আসসালামু আলাইকুম, আপনার সন্তান (${studentName}) আজ মাদরাসায় অনুপস্থিত রয়েছে।`,
+              url: '/attendance',
+            },
+          });
+        }
       } catch (e) {
         console.error('Absent push error:', e.message);
       }
@@ -457,7 +507,10 @@ exports.getBiometricSettings = async (req, res, next) => {
 
     ApiResponse.success(res, {
       attendanceCutoffTime: institution.attendanceCutoffTime || '09:30',
-      autoAbsentEnabled: institution.autoAbsentEnabled !== false,
+      autoAbsentEnabled: Boolean(institution.autoAbsentEnabled),
+      biometricAttendanceEnabled: Boolean(institution.biometricAttendanceEnabled),
+      attendancePushNotifEnabled: Boolean(institution.attendancePushNotifEnabled),
+      testDeviceUserId: institution.testDeviceUserId || '',
     });
   } catch (error) {
     next(error);
@@ -468,7 +521,14 @@ exports.getBiometricSettings = async (req, res, next) => {
 // @route   PATCH /api/v1/attendance/biometric-settings
 exports.updateBiometricSettings = async (req, res, next) => {
   try {
-    const { attendanceCutoffTime, autoAbsentEnabled } = req.body;
+    const { 
+      attendanceCutoffTime, 
+      autoAbsentEnabled, 
+      biometricAttendanceEnabled, 
+      attendancePushNotifEnabled, 
+      testDeviceUserId 
+    } = req.body;
+
     const institution = await Institution.findOne({ where: { _id: req.user.institution } });
     if (!institution) {
       return ApiResponse.notFound(res, 'প্রতিষ্ঠান পাওয়া যায়নি');
@@ -476,13 +536,19 @@ exports.updateBiometricSettings = async (req, res, next) => {
 
     if (attendanceCutoffTime !== undefined) institution.attendanceCutoffTime = attendanceCutoffTime;
     if (autoAbsentEnabled !== undefined) institution.autoAbsentEnabled = Boolean(autoAbsentEnabled);
+    if (biometricAttendanceEnabled !== undefined) institution.biometricAttendanceEnabled = Boolean(biometricAttendanceEnabled);
+    if (attendancePushNotifEnabled !== undefined) institution.attendancePushNotifEnabled = Boolean(attendancePushNotifEnabled);
+    if (testDeviceUserId !== undefined) institution.testDeviceUserId = String(testDeviceUserId).trim();
 
     await institution.save();
 
     ApiResponse.success(res, {
       attendanceCutoffTime: institution.attendanceCutoffTime,
       autoAbsentEnabled: institution.autoAbsentEnabled,
-    }, 'বায়োমেট্রিক ও উপস্থিতি সেটিংস সফলভাবে আপডেট হয়েছে');
+      biometricAttendanceEnabled: institution.biometricAttendanceEnabled,
+      attendancePushNotifEnabled: institution.attendancePushNotifEnabled,
+      testDeviceUserId: institution.testDeviceUserId,
+    }, 'বায়োমেট্রিক ও উপস্থিতি কন্ট্রোল প্যানেল সেটিংস সফলভাবে আপডেট হয়েছে');
   } catch (error) {
     next(error);
   }

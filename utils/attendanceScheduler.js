@@ -102,15 +102,25 @@ async function checkAndMarkAbsentStudents() {
           });
 
           try {
-            await sendTargetedPush({
-              userIds: targetUserIds,
-              studentIds: [String(student.studentId), String(student._id)],
-              payload: {
-                title: '⚠️ অনুপস্থিতির নোটিশ',
-                body: `আসসালামু আলাইকুম, আপনার সন্তান (${studentName}) আজ মাদরাসায় অনুপস্থিত রয়েছে।`,
-                url: '/attendance',
-              },
-            });
+            const pushEnabled = Boolean(inst.attendancePushNotifEnabled);
+            const testUserIdFilter = inst.testDeviceUserId ? String(inst.testDeviceUserId).trim() : '';
+
+            // শুধুমাত্র তখনই নোটিফিকেশন যাবে যদি:
+            // ১) পুশ নোটিফিকেশন অন থাকে, অথবা
+            // ২) নির্দিষ্ট টেস্ট ছাত্রের আইডির সাথে মেলে
+            const isAllowedForPush = pushEnabled || (testUserIdFilter !== '' && (testUserIdFilter === String(student.studentId) || testUserIdFilter === String(student._id)));
+
+            if (isAllowedForPush) {
+              await sendTargetedPush({
+                userIds: targetUserIds,
+                studentIds: [String(student.studentId), String(student._id)],
+                payload: {
+                  title: '⚠️ অনুপস্থিতির নোটিশ (পরীক্ষামূলক)',
+                  body: `আসসালামু আলাইকুম, আপনার সন্তান (${studentName}) আজ মাদরাসায় অনুপস্থিত রয়েছে।`,
+                  url: '/attendance',
+                },
+              });
+            }
           } catch (pushErr) {
             console.error('[Attendance Scheduler] Push error:', pushErr.message);
           }

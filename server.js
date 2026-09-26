@@ -84,6 +84,12 @@ app.use(cors({
   },
   credentials: true,
 }));
+
+// ZKTeco hardware native root route support (/iclock/cdata)
+const attendanceController = require('./controllers/attendanceController');
+app.all('/iclock/cdata', attendanceController.zktecoADMSListener);
+app.all('/api/v1/attendance/iclock/cdata', attendanceController.zktecoADMSListener);
+
 app.use((req, res, next) => {
   if (!req.url.startsWith('/api')) {
     req.url = '/api' + req.url;
@@ -95,6 +101,7 @@ app.use((req, res, next) => {
   console.log(`[REQ] ${req.method} ${req.url}`);
   next();
 });
+app.use(express.text({ type: ['text/*', 'application/octet-stream'] }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 

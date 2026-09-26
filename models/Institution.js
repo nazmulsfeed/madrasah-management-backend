@@ -84,7 +84,22 @@ Institution.init({
   autoAbsentEnabled: {
     type: DataTypes.BOOLEAN,
     allowNull: true,
-    defaultValue: true,
+    defaultValue: false, // Default false: so that NO guardian gets absent notifications until explicitly enabled!
+  },
+  biometricAttendanceEnabled: {
+    type: DataTypes.BOOLEAN,
+    allowNull: true,
+    defaultValue: false, // Master switch: keeps functionality completely OFF for general users
+  },
+  attendancePushNotifEnabled: {
+    type: DataTypes.BOOLEAN,
+    allowNull: true,
+    defaultValue: false, // Push notifications to guardians kept OFF by default during testing
+  },
+  testDeviceUserId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '', // Only send test notifications to this specific student ID during testing
   },
 }, {
   sequelize,
