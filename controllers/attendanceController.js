@@ -167,7 +167,7 @@ const StudentEnrollment = require('../models/StudentEnrollment');
 /**
  * স্টুডেন্টের উপস্থিতি পাঞ্চ প্রসেস করে এবং নির্দিষ্ট অভিভাবককে নোটিফিকেশন পাঠায়
  */
-async function processAttendancePunch({ institutionId, deviceUserId, punchTime, source = 'device' }) {
+async function processAttendancePunch({ institutionId, deviceUserId, punchTime, source = 'device', forcePush = false }) {
   const punchDate = punchTime ? new Date(punchTime) : new Date();
   const dateStr = punchDate.toISOString().split('T')[0];
   const targetDate = new Date(dateStr + 'T00:00:00.000Z');
@@ -245,24 +245,40 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
       attendance.remarks = `দেরিতে পাঞ্চ (${source})`;
       await attendance.save();
       isFirstPunch = true;
+    } else {
+      attendance.punchTime = punchDate;
+      if (!attendance.inTime) attendance.inTime = timeString;
+      attendance.source = source;
+      await attendance.save();
     }
   }
 
-  // ২. শুধুমাত্র সংশ্লিষ্ট স্টুডেন্ট/অভিভাবকের ফোনে টার্গেটেড পুশ নোটিফিকেশন পাঠানো (যদি অ্যাডমিন সেটিংস অন রাখেন)
-  if (isFirstPunch) {
+  // ২. শুধুমাত্র সংশ্লিষ্ট স্টুডেন্ট/অভিভাবকের ফোনে টার্গেটেড পুশ নোটিফিকেশন পাঠানো
+  const isSimulator = source === 'mobile_simulator';
+  const shouldAttemptPush = isFirstPunch || isSimulator || forcePush;
+
+  let pushResultInfo = { attempted: false, sentCount: 0, subscribersFound: 0, reason: '' };
+
+  if (shouldAttemptPush) {
     try {
       const inst = await Institution.findOne({ where: { _id: institutionId } });
       const pushEnabled = inst ? Boolean(inst.attendancePushNotifEnabled) : false;
       const testUserIdFilter = inst?.testDeviceUserId ? String(inst.testDeviceUserId).trim() : '';
 
-      // নোটিফিকেশন তখনই যাবে যদি:
-      // ১) পুশ নোটিফিকেশন অন থাকে, অথবা
-      // ২) টেস্ট ফিল্টারে এই ছাত্রের আইডি নির্দিষ্ট করে দেওয়া থাকে (যাতে অন্য কোনো অভিভাবকের কাছে না যায়)
-      const isAllowedForPush = pushEnabled || (testUserIdFilter !== '' && (testUserIdFilter === String(student.studentId) || testUserIdFilter === String(cleanId)));
+      const isTestMatch = testUserIdFilter !== '' && (
+        testUserIdFilter === String(student.studentId) || 
+        testUserIdFilter === String(cleanId) || 
+        testUserIdFilter === String(student.admissionNumber) || 
+        testUserIdFilter === String(student.deviceUserId)
+      );
+
+      const isAllowedForPush = pushEnabled || isTestMatch;
 
       if (isAllowedForPush) {
         const targetUserIds = [];
         if (student.user) targetUserIds.push(String(student.user));
+        if (studentUser && studentUser._id) targetUserIds.push(String(studentUser._id));
+        if (studentUser && studentUser.username) targetUserIds.push(String(studentUser.username));
 
         // অভিভাবক খুঁজে বের করা
         const allGuardians = await Guardian.findAll({ where: { institution: institutionId } });
@@ -275,22 +291,61 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
           }
         });
 
-        await sendTargetedPush({
-          userIds: targetUserIds,
-          studentIds: [String(student.studentId), String(student._id)],
+        const targetStudentIdentifiers = [
+          String(student.studentId),
+          String(student._id),
+          String(cleanId),
+          student.admissionNumber ? String(student.admissionNumber) : null,
+          student.deviceUserId ? String(student.deviceUserId) : null,
+        ].filter(Boolean);
+
+        const pushRes = await sendTargetedPush({
+          userIds: Array.from(new Set(targetUserIds)),
+          studentIds: Array.from(new Set(targetStudentIdentifiers)),
           payload: {
-            title: '✅ উপস্থিতি নিশ্চিতকরণ (পরীক্ষামূলক)',
-            body: `আসসালামু আলাইকুম, আপনার সন্তান (${studentName}) আজ সকাল ${timeString}-এ মাদরাসায় উপস্থিত হয়েছে।`,
+            title: '✅ উপস্থিতি নিশ্চিতকরণ',
+            body: `আসসালামু আলাইকুম, (${studentName}) আজ ${timeString}-এ মাদরাসায় উপস্থিত হয়েছে।`,
             url: '/attendance',
           },
         });
-        console.log(`[Attendance Push] Notification sent for student: ${studentName}`);
+
+        const successCount = (pushRes || []).filter(r => r.status === 'success').length;
+        pushResultInfo = {
+          attempted: true,
+          sentCount: successCount,
+          subscribersFound: pushRes ? pushRes.length : 0,
+          reason: successCount > 0 
+            ? `✅ ${successCount} টি ডিভাইসে পুশ নোটিফিকেশন সফলভাবে পৌঁছেছে` 
+            : (pushRes && pushRes.length > 0 
+                ? '⚠️ পুশ ডেলিভারি ত্রুটি (ডিভাইসে পৌঁছায়নি)' 
+                : '⚠️ এই ছাত্র বা অভিভাবকের অ্যাকাউন্টে কোনো ব্রাউজার/ফোনে পুশ নোটিফিকেশন সক্রিয় করা নেই। ফোনে লগইন করে "নোটিফিকেশন চালু করুন" বাটনে ক্লিক করুন।')
+        };
+        console.log(`[Attendance Push] Student: ${studentName}, Result:`, pushResultInfo);
       } else {
+        pushResultInfo = {
+          attempted: false,
+          sentCount: 0,
+          subscribersFound: 0,
+          reason: 'অভিভাবক পুশ নোটিফিকেশন বন্ধ রাখা আছে এবং টেস্ট আইডি ফিল্টারের সাথে মিলেনি'
+        };
         console.log(`[Attendance Push] Skipped: push notifications to guardians are OFF in settings.`);
       }
     } catch (notifErr) {
       console.error('[Punch Notif Error]:', notifErr.message);
+      pushResultInfo = {
+        attempted: true,
+        sentCount: 0,
+        subscribersFound: 0,
+        reason: 'Error: ' + notifErr.message
+      };
     }
+  } else {
+    pushResultInfo = {
+      attempted: false,
+      sentCount: 0,
+      subscribersFound: 0,
+      reason: 'আজকে ইতোমধ্যে প্রথম পাঞ্চ সম্পন্ন হয়েছে'
+    };
   }
 
   return {
@@ -300,6 +355,7 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
     inTime: timeString,
     status: attendance.status,
     isFirstPunch,
+    pushResultInfo,
   };
 }
 
@@ -318,13 +374,126 @@ exports.simulateDevicePush = async (req, res, next) => {
       deviceUserId,
       punchTime: punchTime || new Date(),
       source: 'mobile_simulator',
+      forcePush: true,
     });
 
     if (!result.success) {
       return ApiResponse.error(res, result.message, 404);
     }
 
-    ApiResponse.success(res, result, `পাঞ্চ সফল! ${result.studentName}-এর উপস্থিতি ও অভিভাবকের ফোনে নোটিফিকেশন পাঠানো হয়েছে।`);
+    ApiResponse.success(res, result, `পাঞ্চ সফল! (${result.studentName}) — ${result.pushResultInfo?.reason || ''}`);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    পুশ নোটিফিকেশন ডায়াগনস্টিক ও সরাসরি টেস্ট পাঠানো (শুধুমাত্র সুপার অ্যাডমিন)
+// @route   POST /api/v1/attendance/test-push-diagnostics
+exports.testPushDiagnostics = async (req, res, next) => {
+  try {
+    const { deviceUserId } = req.body;
+    const cleanId = String(deviceUserId || '').trim();
+    if (!cleanId) {
+      return ApiResponse.error(res, 'ছাত্র আইডি দিন', 400);
+    }
+
+    const institutionId = req.user.institution;
+    const { Op } = require('sequelize');
+    const PushSubscription = require('../models/PushSubscription');
+
+    const student = await Student.findOne({
+      where: {
+        institution: institutionId,
+        [Op.or]: [
+          { deviceUserId: cleanId },
+          { studentId: cleanId },
+          { admissionNumber: cleanId },
+        ],
+      },
+    });
+
+    if (!student) {
+      return ApiResponse.error(res, `আইডি ${cleanId} দিয়ে কোনো ছাত্র খুঁজে পাওয়া যায়নি।`, 404);
+    }
+
+    const studentUser = await User.findOne({ where: { _id: student.user } });
+    const studentName = studentUser ? (studentUser.fullName || `${studentUser.firstName || ''} ${studentUser.lastName || ''}`.trim() || student.studentId) : student.studentId;
+
+    const targetUserIds = [];
+    if (student.user) targetUserIds.push(String(student.user));
+    if (studentUser && studentUser._id) targetUserIds.push(String(studentUser._id));
+    if (studentUser && studentUser.username) targetUserIds.push(String(studentUser.username));
+
+    // অভিভাবক
+    const allGuardians = await Guardian.findAll({ where: { institution: institutionId } });
+    allGuardians.forEach((g) => {
+      if (g.students && Array.isArray(g.students)) {
+        const isLinked = g.students.some((s) => String(s.student) === String(student._id));
+        if (isLinked && g.user) {
+          targetUserIds.push(String(g.user));
+        }
+      }
+    });
+
+    const targetStudentIdentifiers = [
+      String(student.studentId),
+      String(student._id),
+      String(cleanId),
+      student.admissionNumber ? String(student.admissionNumber) : null,
+      student.deviceUserId ? String(student.deviceUserId) : null,
+    ].filter(Boolean);
+
+    const cleanUserIds = Array.from(new Set(targetUserIds));
+    const cleanStudentIds = Array.from(new Set(targetStudentIdentifiers));
+
+    const whereConditions = [];
+    if (cleanUserIds.length > 0) {
+      whereConditions.push({ userId: { [Op.in]: cleanUserIds } });
+    }
+    if (cleanStudentIds.length > 0) {
+      whereConditions.push({ studentId: { [Op.in]: cleanStudentIds } });
+    }
+
+    const matchedSubs = await PushSubscription.findAll({
+      where: { [Op.or]: whereConditions },
+    });
+
+    const totalSystemSubs = await PushSubscription.count();
+
+    let pushResults = [];
+    if (matchedSubs.length > 0) {
+      pushResults = await sendTargetedPush({
+        userIds: cleanUserIds,
+        studentIds: cleanStudentIds,
+        payload: {
+          title: '🔔 টেস্ট পুশ সফল!',
+          body: `আসসালামু আলাইকুম! আইডি (${student.studentId}) এর জন্য টেস্ট পুশ নোটিফিকেশন সফলভাবে গৃহীত হয়েছে।`,
+          url: '/attendance',
+        },
+      });
+    }
+
+    const deliveredCount = (pushResults || []).filter(r => r.status === 'success').length;
+
+    ApiResponse.success(res, {
+      student: {
+        id: student._id,
+        studentId: student.studentId,
+        admissionNumber: student.admissionNumber,
+        deviceUserId: student.deviceUserId,
+        name: studentName,
+        userLinked: Boolean(student.user),
+        username: studentUser?.username || null,
+      },
+      diagnostic: {
+        matchedSubscriptionsCount: matchedSubs.length,
+        totalSystemSubscriptions: totalSystemSubs,
+        searchedUserIds: cleanUserIds,
+        searchedStudentIds: cleanStudentIds,
+        pushResults,
+        pushDelivered: deliveredCount,
+      }
+    }, matchedSubs.length > 0 ? `ডায়াগনস্টিক সম্পন্ন: ${matchedSubs.length} টি সাবস্ক্রিপশন পাওয়া গেছে এবং টেস্ট পুশ পাঠানো হয়েছে!` : 'ডায়াগনস্টিক সম্পন্ন: এই আইডির কোনো ফোনে নোটিফিকেশন চালু করা নেই।');
   } catch (error) {
     next(error);
   }

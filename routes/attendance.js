@@ -17,6 +17,12 @@ router.post(
 );
 
 router.post(
+  '/test-push-diagnostics',
+  authorize('super_admin'),
+  attendanceController.testPushDiagnostics
+);
+
+router.post(
   '/auto-absent-check',
   authorize('super_admin'),
   attendanceController.runAutoAbsentCheck
