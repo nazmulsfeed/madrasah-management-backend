@@ -85,25 +85,32 @@ app.use(cors({
   credentials: true,
 }));
 
+// RFC 7230 fix for LiteSpeed / Passenger HTTP/2 POST requests where both Transfer-Encoding and Content-Length are sent
+app.use((req, res, next) => {
+  if (req.headers['transfer-encoding'] && req.headers['content-length']) {
+    delete req.headers['content-length'];
+  }
+  next();
+});
+
+// বডি পার্সার (সব রাউটের পূর্বে থাকতে হবে)
+const parseRawText = express.text({ type: ['text/*', 'application/octet-stream', 'text/plain', '*/*'] });
+app.use(parseRawText);
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
 // ZKTeco hardware native root route support (/iclock/cdata)
 const attendanceController = require('./controllers/attendanceController');
-app.all('/iclock/cdata', attendanceController.zktecoADMSListener);
-app.all('/api/v1/attendance/iclock/cdata', attendanceController.zktecoADMSListener);
+app.all('/iclock/cdata', parseRawText, attendanceController.zktecoADMSListener);
+app.all('/api/v1/attendance/iclock/cdata', parseRawText, attendanceController.zktecoADMSListener);
 
 app.use((req, res, next) => {
   if (!req.url.startsWith('/api')) {
     req.url = '/api' + req.url;
   }
-  // RFC 7230 fix for LiteSpeed / Passenger HTTP/2 POST requests where both Transfer-Encoding and Content-Length are sent
-  if (req.headers['transfer-encoding'] && req.headers['content-length']) {
-    delete req.headers['content-length'];
-  }
   console.log(`[REQ] ${req.method} ${req.url}`);
   next();
 });
-app.use(express.text({ type: ['text/*', 'application/octet-stream'] }));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
 
 // রাউট
 app.get('/api/v1/health', (req, res) => {

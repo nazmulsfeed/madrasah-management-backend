@@ -515,38 +515,71 @@ exports.zktecoADMSListener = async (req, res) => {
     }
 
     // পাঞ্চ লগ পুশ (ডিভাইস থেকে POST রিকোয়েস্টে লগ আসে)
-    // ফরম্যাট সাধারণত: 1\t2026-09-27 08:30:15\t0\t1 ... বা query table=ATTLOG
     let rawData = '';
-    if (typeof req.body === 'string') {
-      rawData = req.body;
-    } else if (req.body && typeof req.body === 'object') {
-      rawData = JSON.stringify(req.body);
+    if (typeof req.body === 'string' && req.body.trim()) {
+      rawData = req.body.trim();
+    } else if (req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0) {
+      if (req.body.data) rawData = String(req.body.data);
+      else rawData = Object.keys(req.body)[0] || JSON.stringify(req.body);
     }
     if (req.rawBody) rawData = req.rawBody;
 
-    console.log('[ZKTeco ADMS POST Data]:', rawData);
+    // Fallback: যদি কোনো কারণে মিডলওয়্যার বডি না ধরে, সরাসরি রিকোয়েস্ট স্ট্রিম রিড করা
+    if (!rawData) {
+      rawData = await new Promise((resolve) => {
+        let buffer = '';
+        req.on('data', (chunk) => { buffer += chunk.toString(); });
+        req.on('end', () => resolve(buffer.trim()));
+        req.on('error', () => resolve(''));
+        if (req.readableEnded) resolve(buffer.trim());
+      });
+    }
 
-    // যদি ডিভাইস ডাটা পাঠায়, তবে ডিফল্ট প্রতিষ্ঠান দিয়ে লগ প্রসেস করা
-    const defaultInst = await Institution.findOne({ where: { status: 'active' } });
-    if (defaultInst) {
-      // লাইন বাই লাইন ডাটা পার্স করা
-      const lines = rawData.split(/\r?\n/).filter(Boolean);
+    console.log('[ZKTeco ADMS POST Raw Data]:', rawData);
+
+    // সক্রিয় প্রতিষ্ঠান খুঁজে বের করা (বা যেকোনো প্রথম প্রতিষ্ঠান)
+    let defaultInst = await Institution.findOne({ where: { status: 'active' } });
+    if (!defaultInst) {
+      defaultInst = await Institution.findOne();
+    }
+
+    if (defaultInst && rawData) {
+      const lines = rawData.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      console.log(`[ZKTeco ADMS] Found ${lines.length} punch line(s). Processing...`);
+
       for (const line of lines) {
-        // ZKTeco স্ট্যান্ডার্ড ট্যাব বা স্পেস ফরম্যাট: PIN \t CheckTime
-        const parts = line.split('\t');
-        if (parts.length >= 2) {
-          const deviceUserId = parts[0].trim();
-          const punchTimeStr = parts[1].trim();
-          if (deviceUserId && !isNaN(Date.parse(punchTimeStr))) {
-            await processAttendancePunch({
-              institutionId: defaultInst._id,
-              deviceUserId,
-              punchTime: new Date(punchTimeStr),
-              source: 'zkteco_device',
-            });
-          }
+        // ZKTeco স্ট্যান্ডার্ড ট্যাব (\t), কমা (,), বা স্পেস ফরম্যাট
+        let parts = line.split('\t');
+        if (parts.length < 2) parts = line.split(',');
+        if (parts.length < 2) parts = line.split(/\s{2,}/);
+
+        let deviceUserId = parts[0]?.trim();
+        let punchTimeStr = parts[1]?.trim();
+
+        // যদি স্পেস দিয়ে আলাদা থাকে (যেমন: "999 2026-09-27 08:30:00 0 1")
+        if (!punchTimeStr && deviceUserId.includes(' ')) {
+          const spaceParts = deviceUserId.split(' ');
+          deviceUserId = spaceParts[0];
+          punchTimeStr = spaceParts.slice(1, 3).join(' ');
+        }
+
+        if (deviceUserId) {
+          const punchDate = (punchTimeStr && !isNaN(Date.parse(punchTimeStr))) ? new Date(punchTimeStr) : new Date();
+          console.log(`[ZKTeco ADMS] Saving Punch -> User: ${deviceUserId}, Time: ${punchDate.toISOString()}`);
+
+          const punchResult = await processAttendancePunch({
+            institutionId: defaultInst._id,
+            deviceUserId,
+            punchTime: punchDate,
+            source: 'zkteco_device',
+            forcePush: true,
+          });
+
+          console.log(`[ZKTeco ADMS] Punch processed result:`, punchResult?.success, punchResult?.studentName);
         }
       }
+    } else {
+      console.warn('[ZKTeco ADMS] No raw data or institution found! RawData was empty.');
     }
 
     // ZKTeco পুশ প্রোটোকল অবশ্যই 'OK' টেক্সট রেসপন্স আশা করে
