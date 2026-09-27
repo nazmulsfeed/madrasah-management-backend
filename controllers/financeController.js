@@ -12,6 +12,7 @@ const ClassLevel = require('../models/ClassLevel');
 const Section = require('../models/Section');
 const Guardian = require('../models/Guardian');
 const User = require('../models/User');
+const Branch = require('../models/Branch');
 const ApiResponse = require('../utils/apiResponse');
 const auditLogger = require('./auditLogController');
 
@@ -53,10 +54,17 @@ async function enrichStudentsMap(institutionId, studentIds) {
   const classLevelIds = enrollments.map(e => e.classLevel).filter(Boolean);
   const sectionIds = enrollments.map(e => e.section).filter(Boolean);
 
-  const [classLevels, sections] = await Promise.all([
+  const [classLevels, sections, branches] = await Promise.all([
     classLevelIds.length > 0 ? ClassLevel.findAll({ where: { _id: { [Op.in]: classLevelIds } } }) : [],
-    sectionIds.length > 0 ? Section.findAll({ where: { _id: { [Op.in]: sectionIds } } }) : []
+    sectionIds.length > 0 ? Section.findAll({ where: { _id: { [Op.in]: sectionIds } } }) : [],
+    Branch.findAll({ where: { institution: institutionId } }).catch(() => [])
   ]);
+
+  const branchMap = {};
+  branches.forEach(b => {
+    branchMap[String(b._id)] = b.name;
+    branchMap[String(b.name)] = b.name;
+  });
 
   const classMap = {};
   classLevels.forEach(c => { classMap[String(c._id)] = c.toJSON ? c.toJSON() : c; });
@@ -78,10 +86,24 @@ async function enrichStudentsMap(institutionId, studentIds) {
   const studentMap = {};
   students.forEach(s => {
     const sJson = s.toJSON ? s.toJSON() : s;
+    const curEnroll = enrollmentMap[String(s.currentEnrollment)] || null;
+    const rawBranch = s.branch || (curEnroll ? curEnroll.branch : null);
+    let resolvedBranchName = '';
+    if (rawBranch) {
+      resolvedBranchName = branchMap[String(rawBranch)] || rawBranch;
+    }
+    if (!resolvedBranchName || resolvedBranchName.trim() === '') {
+      if (s.gender === 'female') resolvedBranchName = 'বালিকা শাখা';
+      else if (s.gender === 'male') resolvedBranchName = 'বালক শাখা';
+      else resolvedBranchName = 'প্রধান শাখা';
+    }
+
     studentMap[String(s._id)] = {
       ...sJson,
+      branchName: resolvedBranchName,
+      branch: resolvedBranchName,
       user: userMap[String(s.user)] || null,
-      currentEnrollment: enrollmentMap[String(s.currentEnrollment)] || null
+      currentEnrollment: curEnroll
     };
   });
 

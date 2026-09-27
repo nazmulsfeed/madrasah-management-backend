@@ -16,6 +16,8 @@ exports.getAccounts = async (req, res, next) => {
 
     let accounts = await Account.find(filter).sort({ code: 1, name: 1 });
 
+    let seededNew = false;
+
     // Auto-seed default asset accounts (Bank & Digital Wallets) if none exist
     const assetCount = await Account.countDocuments({ institution: req.user.institution, type: 'Asset' });
     if (assetCount === 0) {
@@ -37,11 +39,84 @@ exports.getAccounts = async (req, res, next) => {
           isActive: true
         });
       }
-      
+      seededNew = true;
+    }
+
+    // Auto-seed default revenue accounts (Income heads) if none exist
+    const revenueCount = await Account.countDocuments({ institution: req.user.institution, type: 'Revenue' });
+    if (revenueCount === 0) {
+      const defaultRevenues = [
+        { name: 'শিক্ষার্থী মাসিক বেতন আয় (Tuition Fee)', code: '4001', type: 'Revenue' },
+        { name: 'ভর্তি ও সেশন ফি আয় (Admission & Session)', code: '4002', type: 'Revenue' },
+        { name: 'পরীক্ষা ফি আয় (Exam Fee)', code: '4003', type: 'Revenue' },
+        { name: 'বই-খাতা ও শিক্ষা উপকরণ ফি (Books & Supplies)', code: '4004', type: 'Revenue' },
+        { name: 'দান ও সদকা তহবিল (Donation / Sadaqah)', code: '4005', type: 'Revenue' },
+        { name: 'বিবিধ সাধারণ আয় (Miscellaneous Income)', code: '4006', type: 'Revenue' }
+      ];
+
+      for (const rev of defaultRevenues) {
+        await Account.create({
+          institution: req.user.institution,
+          name: rev.name,
+          code: rev.code,
+          type: rev.type,
+          balance: 0,
+          isActive: true
+        });
+      }
+      seededNew = true;
+    }
+
+    if (seededNew) {
       accounts = await Account.find(filter).sort({ code: 1, name: 1 });
     }
 
     ApiResponse.success(res, { accounts });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Seed default accounts (Assets & Revenues)
+// @route   POST /api/v1/accounting/accounts/seed-defaults
+exports.seedDefaultAccounts = async (req, res, next) => {
+  try {
+    const institution = req.user.institution;
+    const defaultAssets = [
+      { name: 'নগদ (Cash)', code: '1001', type: 'Asset' },
+      { name: 'সোনালী ব্যাংক (Bank)', code: '1002', type: 'Asset' },
+      { name: 'বিকাশ (bKash)', code: '1003', type: 'Asset' },
+      { name: 'নগদ (Nagad)', code: '1004', type: 'Asset' },
+      { name: 'রকেট (Rocket)', code: '1005', type: 'Asset' }
+    ];
+
+    const defaultRevenues = [
+      { name: 'শিক্ষার্থী মাসিক বেতন আয় (Tuition Fee)', code: '4001', type: 'Revenue' },
+      { name: 'ভর্তি ও সেশন ফি আয় (Admission & Session)', code: '4002', type: 'Revenue' },
+      { name: 'পরীক্ষা ফি আয় (Exam Fee)', code: '4003', type: 'Revenue' },
+      { name: 'বই-খাতা ও শিক্ষা উপকরণ ফি (Books & Supplies)', code: '4004', type: 'Revenue' },
+      { name: 'দান ও সদকা তহবিল (Donation / Sadaqah)', code: '4005', type: 'Revenue' },
+      { name: 'বিবিধ সাধারণ আয় (Miscellaneous Income)', code: '4006', type: 'Revenue' }
+    ];
+
+    let createdCount = 0;
+    for (const acc of [...defaultAssets, ...defaultRevenues]) {
+      const exists = await Account.findOne({ institution, code: acc.code });
+      if (!exists) {
+        await Account.create({
+          institution,
+          name: acc.name,
+          code: acc.code,
+          type: acc.type,
+          balance: 0,
+          isActive: true
+        });
+        createdCount++;
+      }
+    }
+
+    const accounts = await Account.find({ institution }).sort({ code: 1, name: 1 });
+    ApiResponse.success(res, { message: `${createdCount} টি ডিফল্ট একাউন্ট যুক্ত করা হয়েছে`, accounts });
   } catch (error) {
     next(error);
   }

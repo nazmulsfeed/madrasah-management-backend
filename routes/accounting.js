@@ -11,6 +11,8 @@ router.route('/accounts')
   .get(accountingController.getAccounts)
   .post(accountingController.createAccount);
 
+router.post('/accounts/seed-defaults', accountingController.seedDefaultAccounts);
+
 router.route('/accounts/:id')
   .put(accountingController.updateAccount);
 
