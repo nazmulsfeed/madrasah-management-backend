@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const { sendSMS, sendEmail } = require('../utils/notificationService');
 const Invoice = require('../models/Invoice');
 const Payment = require('../models/Payment');
@@ -5,72 +6,207 @@ const Account = require('../models/Account');
 const JournalEntry = require('../models/JournalEntry');
 const Budget = require('../models/Budget');
 const Asset = require('../models/Asset');
+const Student = require('../models/Student');
+const StudentEnrollment = require('../models/StudentEnrollment');
+const ClassLevel = require('../models/ClassLevel');
+const Section = require('../models/Section');
+const Guardian = require('../models/Guardian');
+const User = require('../models/User');
 const ApiResponse = require('../utils/apiResponse');
 const auditLogger = require('./auditLogController');
+
+// Helper to enrich student and guardian data reliably in Sequelize
+async function enrichStudentsMap(institutionId, studentIds) {
+  if (!studentIds || studentIds.length === 0) return { studentMap: {}, guardianMap: {} };
+
+  const uniqueStudentIds = [...new Set(studentIds.filter(Boolean).map(String))];
+
+  // 1. Fetch Students
+  const students = await Student.findAll({
+    where: { _id: { [Op.in]: uniqueStudentIds } }
+  });
+
+  const userIds = students.map(s => s.user).filter(Boolean);
+  const enrollmentIds = students.map(s => s.currentEnrollment).filter(Boolean);
+
+  // 2. Fetch Student Users
+  const users = userIds.length > 0 ? await User.findAll({
+    where: { _id: { [Op.in]: userIds } },
+    attributes: ['_id', 'firstName', 'lastName', 'phone']
+  }) : [];
+  const userMap = {};
+  users.forEach(u => {
+    userMap[String(u._id)] = {
+      _id: u._id,
+      firstName: u.firstName || '',
+      lastName: u.lastName || '',
+      fullName: `${u.firstName || ''} ${u.lastName || ''}`.trim(),
+      phone: u.phone || ''
+    };
+  });
+
+  // 3. Fetch Enrollments
+  const enrollments = enrollmentIds.length > 0 ? await StudentEnrollment.findAll({
+    where: { _id: { [Op.in]: enrollmentIds } }
+  }) : [];
+
+  const classLevelIds = enrollments.map(e => e.classLevel).filter(Boolean);
+  const sectionIds = enrollments.map(e => e.section).filter(Boolean);
+
+  const [classLevels, sections] = await Promise.all([
+    classLevelIds.length > 0 ? ClassLevel.findAll({ where: { _id: { [Op.in]: classLevelIds } } }) : [],
+    sectionIds.length > 0 ? Section.findAll({ where: { _id: { [Op.in]: sectionIds } } }) : []
+  ]);
+
+  const classMap = {};
+  classLevels.forEach(c => { classMap[String(c._id)] = c.toJSON ? c.toJSON() : c; });
+
+  const sectionMap = {};
+  sections.forEach(s => { sectionMap[String(s._id)] = s.toJSON ? s.toJSON() : s; });
+
+  const enrollmentMap = {};
+  enrollments.forEach(e => {
+    const eJson = e.toJSON ? e.toJSON() : e;
+    enrollmentMap[String(e._id)] = {
+      ...eJson,
+      classLevel: classMap[String(e.classLevel)] || null,
+      section: sectionMap[String(e.section)] || null
+    };
+  });
+
+  // 4. Build studentMap
+  const studentMap = {};
+  students.forEach(s => {
+    const sJson = s.toJSON ? s.toJSON() : s;
+    studentMap[String(s._id)] = {
+      ...sJson,
+      user: userMap[String(s.user)] || null,
+      currentEnrollment: enrollmentMap[String(s.currentEnrollment)] || null
+    };
+  });
+
+  // 5. Fetch Guardians for this institution
+  const guardians = await Guardian.findAll({
+    where: { institution: institutionId, status: 'active' }
+  });
+
+  const guardianUserIds = guardians.map(g => g.user).filter(Boolean);
+  const guardianUsers = guardianUserIds.length > 0 ? await User.findAll({
+    where: { _id: { [Op.in]: guardianUserIds } },
+    attributes: ['_id', 'firstName', 'lastName', 'phone']
+  }) : [];
+  const guardianUserMap = {};
+  guardianUsers.forEach(gu => {
+    guardianUserMap[String(gu._id)] = {
+      name: `${gu.firstName || ''} ${gu.lastName || ''}`.trim() || '—',
+      phone: gu.phone || '—'
+    };
+  });
+
+  const guardianMap = {};
+  guardians.forEach(g => {
+    let sList = [];
+    if (Array.isArray(g.students)) sList = g.students;
+    else if (typeof g.students === 'string') {
+      try { sList = JSON.parse(g.students); } catch (e) { sList = [g.students]; }
+    }
+    const uInfo = guardianUserMap[String(g.user)] || { name: '—', phone: '—' };
+    const gData = {
+      name: uInfo.name,
+      phone: uInfo.phone,
+      relationship: g.relationshipLabel || 'অভিভাবক'
+    };
+
+    sList.forEach(stItem => {
+      let stId = null;
+      if (typeof stItem === 'string') stId = stItem;
+      else if (stItem && typeof stItem === 'object') stId = stItem.student || stItem._id || stItem.studentId;
+      if (stId) {
+        guardianMap[String(stId)] = gData;
+      }
+    });
+  });
+
+  return { studentMap, guardianMap };
+}
 
 // @desc    সকল ইনভয়েস তালিকা
 // @route   GET /api/v1/finance/invoices
 exports.getInvoices = async (req, res, next) => {
   try {
-    const filter = { institution: req.user.institution };
+    const institutionId = req.user.institution;
+    const where = { institution: institutionId };
 
     // If student or guardian, filter invoices for that student
     if (req.user.userType === 'student') {
-      filter.student = req.user.profileId;
+      where.student = req.user.profileId;
     } else if (req.user.userType === 'guardian') {
-      // Find students linked to this guardian
-      const Guardian = require('../models/Guardian');
       const guardianDoc = await Guardian.findById(req.user.profileId);
-      const studentIds = guardianDoc ? guardianDoc.students.map(s => s.student) : [];
-      filter.student = { $in: studentIds };
+      let studentIds = [];
+      if (guardianDoc) {
+        let rawList = [];
+        if (Array.isArray(guardianDoc.students)) rawList = guardianDoc.students;
+        else if (typeof guardianDoc.students === 'string') {
+          try { rawList = JSON.parse(guardianDoc.students); } catch (e) { rawList = [guardianDoc.students]; }
+        }
+        studentIds = rawList.map(s => (typeof s === 'string' ? s : s?.student || s?._id)).filter(Boolean);
+      }
+      where.student = { [Op.in]: studentIds };
     } else if (req.query.student) {
-      filter.student = req.query.student;
+      where.student = req.query.student;
     }
 
-    if (req.query.status) filter.status = req.query.status;
+    if (req.query.status && req.query.status !== 'all') {
+      where.status = req.query.status;
+    }
 
-    const invoices = await Invoice.find(filter)
-      .populate({
-        path: 'student',
-        select: 'studentId currentEnrollment user',
-        populate: [
-          {
-            path: 'user',
-            select: 'firstName lastName fullName'
-          },
-          {
-            path: 'currentEnrollment',
-            populate: [
-              { path: 'classLevel', select: 'name monthlyFee admissionFee sessionFee examFee' },
-              { path: 'section', select: 'name' }
-            ]
-          }
-        ]
-      })
-      .sort({ issueDate: -1 });
+    const invoices = await Invoice.findAll({
+      where,
+      order: [['issueDate', 'DESC']]
+    });
 
-    // For each invoice, fetch associated payments, populate receivedBy, and retrieve guardian details
-    const invoicesWithPayments = await Promise.all(
-      invoices.map(async (inv) => {
-        const payments = await Payment.find({ invoice: inv._id })
-          .populate('receivedBy', 'firstName lastName userType adminRole')
-          .sort({ createdAt: 1 });
+    const invoiceIds = invoices.map(i => i._id);
+    const studentIds = invoices.map(i => i.student);
 
-        const Guardian = require('../models/Guardian');
-        const guardianDoc = await Guardian.findOne({ 'students.student': inv.student?._id })
-          .populate('user', 'firstName lastName phone');
+    // Fetch payments for these invoices in one single query
+    const payments = invoiceIds.length > 0 ? await Payment.findAll({
+      where: { invoice: { [Op.in]: invoiceIds } },
+      order: [['createdAt', 'ASC']]
+    }) : [];
 
-        return {
-          ...inv.toObject(),
-          payments,
-          guardian: guardianDoc ? {
-            name: guardianDoc.user ? `${guardianDoc.user.firstName || ''} ${guardianDoc.user.lastName || ''}`.trim() : '—',
-            phone: guardianDoc.user?.phone || '—',
-            relationship: guardianDoc.relationshipLabel || '—'
-          } : null
-        };
-      })
-    );
+    const paymentUserIds = payments.map(p => p.receivedBy).filter(Boolean);
+    const paymentUsers = paymentUserIds.length > 0 ? await User.findAll({
+      where: { _id: { [Op.in]: paymentUserIds } },
+      attributes: ['_id', 'firstName', 'lastName', 'userType', 'adminRole']
+    }) : [];
+    const paymentUserMap = {};
+    paymentUsers.forEach(pu => { paymentUserMap[String(pu._id)] = pu.toJSON ? pu.toJSON() : pu; });
+
+    const paymentsByInvoice = {};
+    payments.forEach(p => {
+      const pJson = p.toJSON ? p.toJSON() : p;
+      if (p.receivedBy && paymentUserMap[String(p.receivedBy)]) {
+        pJson.receivedBy = paymentUserMap[String(p.receivedBy)];
+      }
+      if (!paymentsByInvoice[p.invoice]) paymentsByInvoice[p.invoice] = [];
+      paymentsByInvoice[p.invoice].push(pJson);
+    });
+
+    // Enrich students and guardians data
+    const { studentMap, guardianMap } = await enrichStudentsMap(institutionId, studentIds);
+
+    const invoicesWithPayments = invoices.map(inv => {
+      const invJson = inv.toJSON ? inv.toJSON() : inv;
+      const stObj = studentMap[String(inv.student)] || null;
+      const gObj = guardianMap[String(inv.student)] || (stObj?.studentId ? guardianMap[String(stObj.studentId)] : null);
+
+      return {
+        ...invJson,
+        student: stObj,
+        payments: paymentsByInvoice[inv._id] || [],
+        guardian: gObj || null
+      };
+    });
 
     ApiResponse.success(res, { invoices: invoicesWithPayments });
   } catch (error) {
@@ -82,7 +218,7 @@ exports.getInvoices = async (req, res, next) => {
 // @route   POST /api/v1/finance/invoices
 exports.createInvoice = async (req, res, next) => {
   try {
-    const { student, title, dueDate, subtotal, discountTotal, discountType, fineTotal } = req.body;
+    const { student, title, feeCategory, dueDate, subtotal, discountTotal, discountType, fineTotal } = req.body;
 
     const payableTotal = (subtotal + (fineTotal || 0)) - (discountTotal || 0);
     const invoiceNumber = `INV-${Date.now()}`;
@@ -92,6 +228,7 @@ exports.createInvoice = async (req, res, next) => {
       student,
       invoiceNumber,
       title,
+      feeCategory: feeCategory || 'সাধারণ ফি',
       dueDate,
       subtotal,
       discountTotal,
@@ -333,49 +470,39 @@ exports.receiveBulkPayment = async (req, res, next) => {
 // @route   GET /api/v1/finance/payments/pending
 exports.getPendingPayments = async (req, res, next) => {
   try {
-    const filter = {
-      institution: req.user.institution,
-      status: 'pending'
-    };
+    const institutionId = req.user.institution;
+    const payments = await Payment.findAll({
+      where: {
+        institution: institutionId,
+        status: 'pending'
+      },
+      order: [['createdAt', 'DESC']]
+    });
 
-    const payments = await Payment.find(filter)
-      .populate({
-        path: 'student',
-        select: 'studentId currentEnrollment user',
-        populate: [
-          {
-            path: 'user',
-            select: 'firstName lastName fullName'
-          },
-          {
-            path: 'currentEnrollment',
-            populate: [
-              { path: 'classLevel', select: 'name monthlyFee admissionFee sessionFee examFee' },
-              { path: 'section', select: 'name' }
-            ]
-          }
-        ]
-      })
-      .populate('invoice', 'invoiceNumber title balance')
-      .sort({ createdAt: -1 });
+    const studentIds = payments.map(p => p.student).filter(Boolean);
+    const invoiceIds = payments.map(p => p.invoice).filter(Boolean);
 
-    const paymentsWithGuardians = await Promise.all(
-      payments.map(async (p) => {
-        const Guardian = require('../models/Guardian');
-        const guardianDoc = await Guardian.findOne({ 'students.student': p.student?._id })
-          .populate('user', 'firstName lastName phone');
-        return {
-          ...p.toObject(),
-          guardian: guardianDoc ? {
-            name: guardianDoc.user ? `${guardianDoc.user.firstName || ''} ${guardianDoc.user.lastName || ''}`.trim() : '—',
-            phone: guardianDoc.user?.phone || '—',
-            relationship: guardianDoc.relationshipLabel || '—'
-          } : null
-        };
-      })
-    );
+    const [invoices, { studentMap, guardianMap }] = await Promise.all([
+      invoiceIds.length > 0 ? Invoice.findAll({ where: { _id: { [Op.in]: invoiceIds } } }) : [],
+      enrichStudentsMap(institutionId, studentIds)
+    ]);
 
-    ApiResponse.success(res, { payments: paymentsWithGuardians });
+    const invoiceMap = {};
+    invoices.forEach(inv => { invoiceMap[String(inv._id)] = inv.toJSON ? inv.toJSON() : inv; });
+
+    const paymentsWithData = payments.map(p => {
+      const pJson = p.toJSON ? p.toJSON() : p;
+      const stObj = studentMap[String(p.student)] || null;
+      const gObj = guardianMap[String(p.student)] || (stObj?.studentId ? guardianMap[String(stObj.studentId)] : null);
+      return {
+        ...pJson,
+        student: stObj,
+        invoice: invoiceMap[String(p.invoice)] || null,
+        guardian: gObj || null
+      };
+    });
+
+    ApiResponse.success(res, { payments: paymentsWithData });
   } catch (error) {
     next(error);
   }
@@ -937,9 +1064,15 @@ exports.getMyStudentSummary = async (req, res, next) => {
     if (req.user.userType === 'student') {
       studentIds = [req.user.profileId];
     } else if (req.user.userType === 'guardian') {
-      const Guardian = require('../models/Guardian');
       const guardianDoc = await Guardian.findById(req.user.profileId);
-      studentIds = guardianDoc ? guardianDoc.students.map(s => s.student) : [];
+      if (guardianDoc) {
+        let rawList = [];
+        if (Array.isArray(guardianDoc.students)) rawList = guardianDoc.students;
+        else if (typeof guardianDoc.students === 'string') {
+          try { rawList = JSON.parse(guardianDoc.students); } catch (e) { rawList = [guardianDoc.students]; }
+        }
+        studentIds = rawList.map(s => (typeof s === 'string' ? s : s?.student || s?._id)).filter(Boolean);
+      }
     } else {
       return ApiResponse.error(res, 'এই রাউটে শুধু ছাত্র বা অভিভাবক প্রবেশ করতে পারবেন', 403);
     }
