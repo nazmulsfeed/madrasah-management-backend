@@ -512,6 +512,23 @@ exports.generateCategoryInvoices = async (req, res, next) => {
   }
 };
 
+// @desc    বকেয়া ফি পরিশোধের তাগিদ নোটিফিকেশন পাঠানো (Send due fee reminder notifications)
+// @route   POST /api/v1/finance/invoices/send-due-reminders
+exports.sendDueReminders = async (req, res, next) => {
+  try {
+    const { forceAllDue } = req.body;
+    const { sendDuePaymentReminders } = require('../utils/invoiceScheduler');
+    const result = await sendDuePaymentReminders(req.user.institution, !!forceAllDue);
+    ApiResponse.success(
+      res,
+      result,
+      `${result.remindersSent} জন অভিভাবকের কাছে বকেয়া পরিশোধের তাগিদ নোটিফিকেশন পাঠানো হয়েছে।`
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
 
 
 // @desc    Get all budgets

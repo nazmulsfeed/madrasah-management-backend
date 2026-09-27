@@ -72,6 +72,7 @@ router.post('/restore', authorize('super_admin', 'co_super_admin'), financeContr
 
 router.post('/invoices/generate-monthly', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'accountant'), financeController.generateMonthlyInvoices);
 router.post('/invoices/generate-category', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'accountant'), financeController.generateCategoryInvoices);
+router.post('/invoices/send-due-reminders', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'accountant'), financeController.sendDueReminders);
 router.post('/payments', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'accountant', 'student', 'guardian'), financeController.receivePayment);
 
 // Payment Verification Routes
