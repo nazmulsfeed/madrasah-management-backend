@@ -2,6 +2,9 @@ const StudentAttendance = require('../models/StudentAttendance');
 const Student = require('../models/Student');
 const Guardian = require('../models/Guardian');
 const RolePermission = require('../models/RolePermission');
+const ClassLevel = require('../models/ClassLevel');
+const Section = require('../models/Section');
+const Branch = require('../models/Branch');
 const ApiResponse = require('../utils/apiResponse');
 
 // Helper: date string থেকে UTC start/end of day তৈরি করা
@@ -869,21 +872,103 @@ exports.getPunchReport = async (req, res, next) => {
     if (branch && branch !== 'all') filter.branch = branch;
     if (studentId) filter.student = studentId;
 
-    const records = await StudentAttendance.find(filter)
-      .populate({
-        path: 'student',
-        select: 'studentId admissionNumber deviceUserId user currentEnrollment branch',
-        populate: [
-          { path: 'user', select: 'fullName firstName lastName' },
-          { path: 'currentEnrollment', populate: [
-            { path: 'classLevel', select: 'name' },
-            { path: 'section', select: 'name' }
-          ]},
-          { path: 'branch', select: 'name' }
-        ]
-      })
-      .sort({ date: 1, student: 1 })
+    const rawRecords = await StudentAttendance.find(filter)
+      .sort({ date: -1, createdAt: -1 })
       .lean();
+
+    const records = rawRecords.map(r => (typeof r.toJSON === 'function' ? r.toJSON() : { ...r }));
+
+    // Gather distinct IDs to batch load associated models
+    const studentIds = [...new Set(records.map(r => r.student).filter(Boolean))];
+    const directClassIds = records.map(r => r.classLevel).filter(Boolean);
+    const directSectionIds = records.map(r => r.section).filter(Boolean);
+    const directBranchIds = records.map(r => r.branch).filter(Boolean);
+
+    // Fetch Students
+    const studentDocs = studentIds.length > 0
+      ? await Student.findAll({ where: { _id: studentIds } })
+      : [];
+    const studentMap = new Map();
+    const userIds = [];
+    const enrollmentIds = [];
+    const studentBranchIds = [];
+
+    studentDocs.forEach(s => {
+      const data = typeof s.toJSON === 'function' ? s.toJSON() : s;
+      studentMap.set(String(data._id), data);
+      if (data.user) userIds.push(data.user);
+      if (data.currentEnrollment) enrollmentIds.push(data.currentEnrollment);
+      if (data.branch) studentBranchIds.push(data.branch);
+    });
+
+    // Check if any student lacks currentEnrollment and lookup active enrollments
+    const studentsWithoutEnrollment = studentDocs
+      .map(s => (typeof s.toJSON === 'function' ? s.toJSON() : s))
+      .filter(s => !s.currentEnrollment)
+      .map(s => s._id);
+
+    let activeEnrollmentsByStudent = [];
+    if (studentsWithoutEnrollment.length > 0) {
+      activeEnrollmentsByStudent = await StudentEnrollment.findAll({
+        where: { student: studentsWithoutEnrollment, enrollmentStatus: 'active' },
+        order: [['createdAt', 'DESC']]
+      });
+    }
+
+    // Fetch Users & Enrollments
+    const allEnrollmentIds = [...new Set(enrollmentIds)];
+    const [userDocs, enrollmentDocs] = await Promise.all([
+      userIds.length > 0 ? User.findAll({ where: { _id: [...new Set(userIds)] } }) : [],
+      allEnrollmentIds.length > 0 ? StudentEnrollment.findAll({ where: { _id: allEnrollmentIds } }) : []
+    ]);
+
+    const userMap = new Map();
+    userDocs.forEach(u => {
+      const d = typeof u.toJSON === 'function' ? u.toJSON() : u;
+      userMap.set(String(d._id), d);
+    });
+
+    const enrollmentMap = new Map();
+    enrollmentDocs.forEach(e => {
+      const d = typeof e.toJSON === 'function' ? e.toJSON() : e;
+      enrollmentMap.set(String(d._id), d);
+    });
+    activeEnrollmentsByStudent.forEach(e => {
+      const d = typeof e.toJSON === 'function' ? e.toJSON() : e;
+      if (!enrollmentMap.has('student_' + d.student)) {
+        enrollmentMap.set('student_' + d.student, d);
+      }
+    });
+
+    // Gather all class, section, branch IDs
+    const allEnrollmentsList = [...enrollmentDocs, ...activeEnrollmentsByStudent].map(e => (typeof e.toJSON === 'function' ? e.toJSON() : e));
+    const allClassIds = [...new Set([...directClassIds, ...allEnrollmentsList.map(e => e.classLevel).filter(Boolean)])];
+    const allSectionIds = [...new Set([...directSectionIds, ...allEnrollmentsList.map(e => e.section).filter(Boolean)])];
+    const allBranchIds = [...new Set([...directBranchIds, ...studentBranchIds])];
+
+    const [classDocs, sectionDocs, branchDocs] = await Promise.all([
+      allClassIds.length > 0 ? ClassLevel.findAll({ where: { _id: allClassIds } }) : [],
+      allSectionIds.length > 0 ? Section.findAll({ where: { _id: allSectionIds } }) : [],
+      allBranchIds.length > 0 ? Branch.findAll({ where: { _id: allBranchIds } }) : []
+    ]);
+
+    const classMap = new Map();
+    classDocs.forEach(c => {
+      const d = typeof c.toJSON === 'function' ? c.toJSON() : c;
+      classMap.set(String(d._id), d.name);
+    });
+
+    const sectionMap = new Map();
+    sectionDocs.forEach(s => {
+      const d = typeof s.toJSON === 'function' ? s.toJSON() : s;
+      sectionMap.set(String(d._id), d.name);
+    });
+
+    const branchMap = new Map();
+    branchDocs.forEach(b => {
+      const d = typeof b.toJSON === 'function' ? b.toJSON() : b;
+      branchMap.set(String(d._id), d.name);
+    });
 
     const enriched = records.map(rec => {
       let punchTimes = [];
@@ -891,6 +976,26 @@ exports.getPunchReport = async (req, res, next) => {
         punchTimes = typeof rec.punchTimes === 'string' ? JSON.parse(rec.punchTimes) : (Array.isArray(rec.punchTimes) ? rec.punchTimes : []);
       } catch { punchTimes = []; }
       const dateStr = rec.date ? new Date(rec.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' }) : '';
+
+      const student = studentMap.get(String(rec.student));
+      const user = student?.user ? userMap.get(String(student.user)) : null;
+      const enrollment = student?.currentEnrollment
+        ? enrollmentMap.get(String(student.currentEnrollment))
+        : (student ? enrollmentMap.get('student_' + student._id) : null);
+
+      const classLevelId = rec.classLevel || enrollment?.classLevel;
+      const className = classLevelId ? (classMap.get(String(classLevelId)) || '') : '';
+
+      const sectionId = rec.section || enrollment?.section;
+      const sectionName = sectionId ? (sectionMap.get(String(sectionId)) || (typeof sectionId === 'string' && sectionId.length < 20 ? sectionId : '')) : '';
+
+      const studentName = user
+        ? (user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim() || student?.studentId || '—')
+        : (student?.studentId || '—');
+
+      const studentDisplayId = student?.studentId || student?.admissionNumber || student?.deviceUserId || '—';
+      const branchName = branchMap.get(String(student?.branch || rec.branch)) || '';
+
       return {
         _id: rec._id,
         date: dateStr,
@@ -901,14 +1006,14 @@ exports.getPunchReport = async (req, res, next) => {
         punchTimes,
         remarks: rec.remarks || '',
         student: {
-          _id: rec.student?._id,
-          studentId: rec.student?.studentId || '',
-          name: rec.student?.user?.fullName || ((rec.student?.user?.firstName || '') + ' ' + (rec.student?.user?.lastName || '')).trim(),
-          deviceUserId: rec.student?.deviceUserId || '',
-          className: rec.student?.currentEnrollment?.classLevel?.name || '',
-          section: rec.student?.currentEnrollment?.section?.name || (typeof rec.student?.currentEnrollment?.section === 'string' ? rec.student?.currentEnrollment?.section : '') || '',
-          branch: rec.student?.branch?.name || '',
-          rollNumber: rec.student?.currentEnrollment?.rollNumber || ''
+          _id: student?._id || rec.student,
+          studentId: studentDisplayId,
+          name: studentName,
+          deviceUserId: student?.deviceUserId || '',
+          className: className,
+          section: sectionName,
+          branch: branchName,
+          rollNumber: enrollment?.rollNumber || ''
         }
       };
     });
@@ -941,21 +1046,55 @@ exports.getAttendanceSummaryReport = async (req, res, next) => {
     if (section && section !== 'all') filter.section = section;
     if (branch && branch !== 'all') filter.branch = branch;
 
-    const records = await StudentAttendance.find(filter)
-      .populate({ path: 'student', select: 'studentId user currentEnrollment branch', populate: [{ path: 'user', select: 'fullName firstName lastName' }, { path: 'currentEnrollment', populate: [{ path: 'classLevel', select: 'name' }] }] })
+    const rawRecords = await StudentAttendance.find(filter)
       .select('date status classLevel section student inTime outTime punchCount punchTimes')
       .lean();
+
+    const records = rawRecords.map(r => (typeof r.toJSON === 'function' ? r.toJSON() : { ...r }));
+
+    // Find all distinct classLevel IDs and student IDs
+    const classIds = [...new Set(records.map(r => r.classLevel).filter(Boolean))];
+    const studentIds = [...new Set(records.filter(r => !r.classLevel).map(r => r.student).filter(Boolean))];
+
+    // If some records don't have classLevel, find from their students' active enrollments
+    const studentClassMap = new Map();
+    if (studentIds.length > 0) {
+      const enrollments = await StudentEnrollment.findAll({
+        where: { student: studentIds, enrollmentStatus: 'active' },
+        attributes: ['student', 'classLevel']
+      });
+      enrollments.forEach(e => {
+        const d = typeof e.toJSON === 'function' ? e.toJSON() : e;
+        if (d.classLevel) {
+          studentClassMap.set(String(d.student), String(d.classLevel));
+          classIds.push(d.classLevel);
+        }
+      });
+    }
+
+    // Fetch class names
+    const uniqueClassIds = [...new Set(classIds)];
+    const classDocs = uniqueClassIds.length > 0
+      ? await ClassLevel.findAll({ where: { _id: uniqueClassIds }, attributes: ['_id', 'name'] })
+      : [];
+    const classNameMap = new Map();
+    classDocs.forEach(c => {
+      const d = typeof c.toJSON === 'function' ? c.toJSON() : c;
+      classNameMap.set(String(d._id), d.name);
+    });
 
     // Group by date then class
     const summaryMap = {};
     records.forEach(rec => {
       const dateStr = rec.date ? new Date(rec.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' }) : 'unknown';
-      const cls = rec.student?.currentEnrollment?.classLevel?.name || rec.classLevel || 'অজানা শ্রেণি';
+      const cId = rec.classLevel || studentClassMap.get(String(rec.student));
+      const clsName = cId ? (classNameMap.get(String(cId)) || 'অজানা শ্রেণি') : 'অজানা শ্রেণি';
+
       if (!summaryMap[dateStr]) summaryMap[dateStr] = {};
-      if (!summaryMap[dateStr][cls]) summaryMap[dateStr][cls] = { total: 0, present: 0, absent: 0, late: 0, on_leave: 0, not_assigned: 0 };
-      summaryMap[dateStr][cls].total++;
+      if (!summaryMap[dateStr][clsName]) summaryMap[dateStr][clsName] = { total: 0, present: 0, absent: 0, late: 0, on_leave: 0, not_assigned: 0 };
+      summaryMap[dateStr][clsName].total++;
       const st = rec.status || 'not_assigned';
-      summaryMap[dateStr][cls][st] = (summaryMap[dateStr][cls][st] || 0) + 1;
+      summaryMap[dateStr][clsName][st] = (summaryMap[dateStr][clsName][st] || 0) + 1;
     });
 
     const summary = [];
