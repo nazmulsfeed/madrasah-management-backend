@@ -255,6 +255,99 @@ exports.createInvoice = async (req, res, next) => {
   }
 };
 
+// @desc    ইনভয়েস এডিট / আপডেট (Super Admin Only)
+// @route   PUT /api/v1/finance/invoices/:id
+exports.updateInvoice = async (req, res, next) => {
+  try {
+    const institution = req.user.institution;
+    const { id } = req.params;
+    const { title, feeCategory, dueDate, subtotal, discountTotal, discountType, fineTotal } = req.body;
+
+    const invoice = await Invoice.findOne({ where: { _id: id, institution } });
+    if (!invoice) return ApiResponse.error(res, 'ইনভয়েস পাওয়া যায়নি', 404);
+
+    const oldData = invoice.toJSON ? invoice.toJSON() : { ...invoice };
+
+    const newSubtotal = subtotal !== undefined ? Number(subtotal) : Number(invoice.subtotal);
+    const newFine = fineTotal !== undefined ? Number(fineTotal) : Number(invoice.fineTotal || 0);
+    const newDiscount = discountTotal !== undefined ? Number(discountTotal) : Number(invoice.discountTotal || 0);
+    const newPayableTotal = Math.max(0, (newSubtotal + newFine) - newDiscount);
+
+    const paidTotal = Number(invoice.paidTotal) || 0;
+    const newBalance = Math.max(0, newPayableTotal - paidTotal);
+
+    let newStatus = 'unpaid';
+    if (newBalance === 0 && paidTotal > 0) {
+      newStatus = 'paid';
+    } else if (paidTotal > 0 && newBalance > 0) {
+      newStatus = 'partial';
+    }
+
+    if (title !== undefined) invoice.title = title;
+    if (feeCategory !== undefined) invoice.feeCategory = feeCategory;
+    if (dueDate !== undefined) invoice.dueDate = dueDate;
+    if (discountType !== undefined) invoice.discountType = discountType;
+    invoice.subtotal = newSubtotal;
+    invoice.fineTotal = newFine;
+    invoice.discountTotal = newDiscount;
+    invoice.payableTotal = newPayableTotal;
+    invoice.balance = newBalance;
+    invoice.status = newStatus;
+
+    await invoice.save();
+
+    await auditLogger.logAction(
+      institution,
+      req.user._id,
+      'update',
+      'Invoice',
+      invoice._id,
+      `ইনভয়েস আপডেট করা হয়েছে: ${invoice.invoiceNumber} (প্রদেয়: ৳${newPayableTotal}, বকেয়া: ৳${newBalance})`,
+      oldData,
+      invoice
+    );
+
+    ApiResponse.success(res, { invoice }, 'ইনভয়েস সফলভাবে আপডেট করা হয়েছে');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    ইনভয়েস ডিলিট (Super Admin Only)
+// @route   DELETE /api/v1/finance/invoices/:id
+exports.deleteInvoice = async (req, res, next) => {
+  try {
+    const institution = req.user.institution;
+    const { id } = req.params;
+
+    const invoice = await Invoice.findOne({ where: { _id: id, institution } });
+    if (!invoice) return ApiResponse.error(res, 'ইনভয়েস পাওয়া যায়নি', 404);
+
+    const associatedPayments = await Payment.findAll({ where: { invoice: id } });
+    if (associatedPayments.length > 0) {
+      await Payment.destroy({ where: { invoice: id } });
+    }
+
+    const invoiceNumber = invoice.invoiceNumber;
+    await Invoice.destroy({ where: { _id: id, institution } });
+
+    await auditLogger.logAction(
+      institution,
+      req.user._id,
+      'delete',
+      'Invoice',
+      id,
+      `ইনভয়েস ডিলিট করা হয়েছে: ${invoiceNumber} (${associatedPayments.length}টি পেমেন্ট রেকর্ড সহ)`,
+      invoice,
+      null
+    );
+
+    ApiResponse.success(res, null, `ইনভয়েস (${invoiceNumber}) সফলভাবে ডিলিট করা হয়েছে`);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    পেমেন্ট গ্রহণ / পেমেন্ট রিকোয়েস্ট সাবমিট
 // @route   POST /api/v1/finance/payments
 exports.receivePayment = async (req, res, next) => {
