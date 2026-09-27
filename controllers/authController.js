@@ -91,6 +91,30 @@ exports.login = async (req, res, next) => {
 
     const token = generateToken(user._id);
 
+    let instData = null;
+    try {
+      const Institution = require('../models/Institution');
+      if (user.institution) {
+        instData = await Institution.findOne({ where: { _id: user.institution } });
+      }
+      if (!instData) {
+        instData = await Institution.findOne();
+      }
+    } catch (e) {}
+
+    const institutionPayload = instData ? {
+      _id: instData._id,
+      name: instData.name,
+      branchName: instData.branchName || 'প্রধান শাখা',
+      code: instData.code,
+      logo: instData.logo,
+      email: instData.email,
+      phone: instData.phone,
+      address: instData.address,
+      website: instData.website,
+      registrationNumber: instData.registrationNumber,
+    } : (user.institution || null);
+
     ApiResponse.success(res, {
       token,
       user: {
@@ -104,7 +128,7 @@ exports.login = async (req, res, next) => {
         userType: user.userType,
         adminRole: user.adminRole || '',
         photo: user.photo,
-        institution: user.institution,
+        institution: institutionPayload,
         branch: user.branch,
         permissions,
       },
@@ -161,7 +185,7 @@ exports.register = async (req, res, next) => {
 exports.getMe = async (req, res, next) => {
   try {
     const user = await User.findById(req.user._id)
-      .populate('institution', 'name code logo')
+      .populate('institution', 'name branchName code logo address phone email')
       .populate('branch', 'name code');
 
     let permissions = {};
@@ -235,9 +259,16 @@ exports.getMe = async (req, res, next) => {
       }
     }
 
+    const userObj = user.toJSON();
+    if (userObj.institution && typeof userObj.institution === 'object') {
+      if (!userObj.institution.branchName) {
+        userObj.institution.branchName = 'প্রধান শাখা';
+      }
+    }
+
     ApiResponse.success(res, { 
       user: { 
-        ...user.toJSON(), 
+        ...userObj, 
         permissions, 
         isHifzEligible,
         studentId,

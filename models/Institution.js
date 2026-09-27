@@ -17,6 +17,11 @@ Institution.init({
     type: DataTypes.STRING,
     allowNull: false,
   },
+  branchName: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: 'প্রধান শাখা',
+  },
   code: {
     type: DataTypes.STRING,
     allowNull: false,

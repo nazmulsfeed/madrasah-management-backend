@@ -128,6 +128,24 @@ router.patch('/:id/role', authorize('super_admin', 'co_super_admin'), async (req
   }
 });
 
+// @desc    প্রতিষ্ঠানের তথ্য পান
+// @route   GET /api/v1/users/institution
+router.get('/institution', async (req, res, next) => {
+  try {
+    const Institution = require('../models/Institution');
+    let institution = null;
+    if (req.user?.institution) {
+      institution = await Institution.findOne({ where: { _id: req.user.institution } });
+    }
+    if (!institution) {
+      institution = await Institution.findOne();
+    }
+    ApiResponse.success(res, { institution: institution || {} });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // @desc    প্রতিষ্ঠানের তথ্য আপডেট করুন
 // @route   PATCH /api/v1/users/institution/update
 router.patch('/institution/update', authorize('super_admin', 'admin', 'principal'), async (req, res, next) => {
@@ -144,9 +162,10 @@ router.patch('/institution/update', authorize('super_admin', 'admin', 'principal
       return ApiResponse.notFound(res, 'প্রতিষ্ঠান পাওয়া যায়নি');
     }
 
-    const { name, code, email, phone, address, website, establishedDate, registrationNumber } = req.body;
+    const { name, branchName, code, email, phone, address, website, establishedDate, registrationNumber } = req.body;
     
     if (name !== undefined) institution.name = name;
+    if (branchName !== undefined) institution.branchName = branchName;
     if (code !== undefined) institution.code = code;
     if (email !== undefined) institution.email = email;
     if (phone !== undefined) institution.phone = phone;
@@ -156,6 +175,16 @@ router.patch('/institution/update', authorize('super_admin', 'admin', 'principal
     if (registrationNumber !== undefined) institution.registrationNumber = registrationNumber;
 
     await institution.save();
+
+    // Keep single Branch table record in sync if one exists
+    try {
+      const Branch = require('../models/Branch');
+      const branchRecord = await Branch.findOne({ where: { institution: institution._id } });
+      if (branchRecord && branchName) {
+        branchRecord.name = branchName;
+        await branchRecord.save();
+      }
+    } catch (bErr) {}
 
     ApiResponse.success(res, { institution }, 'প্রতিষ্ঠানের তথ্য সফলভাবে আপডেট করা হয়েছে');
   } catch (error) {

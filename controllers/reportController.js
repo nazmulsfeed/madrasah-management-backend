@@ -153,8 +153,22 @@ exports.getSummary = async (req, res, next) => {
       .populate('classLevel', 'name');
     log(`recentExams: ${recentExams.length}`);
 
-    log("Sending success response");
+    const Institution = require('../models/Institution');
+    let instRecord = null;
+    try {
+      if (req.user?.institution) {
+        instRecord = await Institution.findOne({ where: { _id: req.user.institution } });
+      }
+      if (!instRecord) {
+        instRecord = await Institution.findOne();
+      }
+    } catch (e) {}
+
     ApiResponse.success(res, {
+      institution: {
+        name: instRecord?.name || 'আন্-নূর ইসলামিক একাডেমি',
+        branchName: instRecord?.branchName || 'প্রধান শাখা',
+      },
       students: {
         total: totalStudents,
         active: activeStudents,
@@ -460,7 +474,22 @@ exports.getFinanceReport = async (req, res, next) => {
       .map(k => ({ teacher: k, totalPaid: teacherSalaryMap[k] }))
       .sort((a, b) => b.totalPaid - a.totalPaid);
 
+    const Institution = require('../models/Institution');
+    let instRecord = null;
+    try {
+      if (req.user?.institution) {
+        instRecord = await Institution.findOne({ where: { _id: req.user.institution } });
+      }
+      if (!instRecord) {
+        instRecord = await Institution.findOne();
+      }
+    } catch (e) {}
+
     ApiResponse.success(res, {
+      institution: {
+        name: instRecord?.name || 'আন্-নূর ইসলামিক একাডেমি',
+        branchName: instRecord?.branchName || 'প্রধান শাখা',
+      },
       daily: { income: todayIncome, expense: todayExpense, surplus: todayIncome - todayExpense },
       monthly: { income: monthIncome, expense: monthExpense, surplus: monthIncome - monthExpense },
       yearly: { income: yearIncome, expense: yearExpense, surplus: yearIncome - yearExpense },

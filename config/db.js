@@ -152,6 +152,11 @@ const connectDB = async () => {
         await sequelize.query("ALTER TABLE `push_subscriptions` ADD COLUMN `studentId` VARCHAR(255) NULL");
         console.log("✅ Added studentId column to push_subscriptions table");
       }
+      const [instBranchCol] = await sequelize.query("SHOW COLUMNS FROM `institutions` LIKE 'branchName'");
+      if (!instBranchCol || instBranchCol.length === 0) {
+        await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `branchName` VARCHAR(255) NULL DEFAULT 'প্রধান শাখা'");
+        console.log("✅ Added branchName column to institutions table");
+      }
       const [instCutoffCol] = await sequelize.query("SHOW COLUMNS FROM `institutions` LIKE 'attendanceCutoffTime'");
       if (!instCutoffCol || instCutoffCol.length === 0) {
         await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `attendanceCutoffTime` VARCHAR(20) NULL DEFAULT '09:30'");
