@@ -842,3 +842,138 @@ exports.updateBiometricSettings = async (req, res, next) => {
   }
 };
 
+// ==========================================
+// Punch / Fingerprint Report API
+// ==========================================
+
+/**
+ * @route   GET /api/v1/attendance/punch-report
+ * @desc    Individual punch log — who punched, when, how many times
+ */
+exports.getPunchReport = async (req, res, next) => {
+  try {
+    const { startDate, endDate, date, classLevel, section, branch, studentId } = req.query;
+    const filter = { institution: req.user.institution };
+
+    if (startDate && endDate) {
+      filter.date = { $gte: new Date(startDate + 'T00:00:00.000Z'), $lte: new Date(endDate + 'T23:59:59.999Z') };
+    } else if (date) {
+      filter.date = { $gte: new Date(date + 'T00:00:00.000Z'), $lte: new Date(date + 'T23:59:59.999Z') };
+    } else {
+      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' });
+      filter.date = { $gte: new Date(todayStr + 'T00:00:00.000Z'), $lte: new Date(todayStr + 'T23:59:59.999Z') };
+    }
+
+    if (classLevel && classLevel !== 'all') filter.classLevel = classLevel;
+    if (section && section !== 'all') filter.section = section;
+    if (branch && branch !== 'all') filter.branch = branch;
+    if (studentId) filter.student = studentId;
+
+    const records = await StudentAttendance.find(filter)
+      .populate({
+        path: 'student',
+        select: 'studentId admissionNumber deviceUserId user currentEnrollment branch',
+        populate: [
+          { path: 'user', select: 'fullName firstName lastName' },
+          { path: 'currentEnrollment', populate: [
+            { path: 'classLevel', select: 'name' },
+            { path: 'section', select: 'name' }
+          ]},
+          { path: 'branch', select: 'name' }
+        ]
+      })
+      .sort({ date: 1, student: 1 })
+      .lean();
+
+    const enriched = records.map(rec => {
+      let punchTimes = [];
+      try {
+        punchTimes = typeof rec.punchTimes === 'string' ? JSON.parse(rec.punchTimes) : (Array.isArray(rec.punchTimes) ? rec.punchTimes : []);
+      } catch { punchTimes = []; }
+      const dateStr = rec.date ? new Date(rec.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' }) : '';
+      return {
+        _id: rec._id,
+        date: dateStr,
+        status: rec.status,
+        inTime: rec.inTime || '',
+        outTime: rec.outTime || '',
+        punchCount: rec.punchCount || punchTimes.length || (rec.inTime ? 1 : 0),
+        punchTimes,
+        remarks: rec.remarks || '',
+        student: {
+          _id: rec.student?._id,
+          studentId: rec.student?.studentId || '',
+          name: rec.student?.user?.fullName || ((rec.student?.user?.firstName || '') + ' ' + (rec.student?.user?.lastName || '')).trim(),
+          deviceUserId: rec.student?.deviceUserId || '',
+          className: rec.student?.currentEnrollment?.classLevel?.name || '',
+          section: rec.student?.currentEnrollment?.section?.name || (typeof rec.student?.currentEnrollment?.section === 'string' ? rec.student?.currentEnrollment?.section : '') || '',
+          branch: rec.student?.branch?.name || '',
+          rollNumber: rec.student?.currentEnrollment?.rollNumber || ''
+        }
+      };
+    });
+
+    ApiResponse.success(res, { records: enriched, total: enriched.length });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @route   GET /api/v1/attendance/summary-report
+ * @desc    Class-wise daily attendance summary
+ */
+exports.getAttendanceSummaryReport = async (req, res, next) => {
+  try {
+    const { startDate, endDate, date, classLevel, section, branch } = req.query;
+    const filter = { institution: req.user.institution };
+
+    if (startDate && endDate) {
+      filter.date = { $gte: new Date(startDate + 'T00:00:00.000Z'), $lte: new Date(endDate + 'T23:59:59.999Z') };
+    } else if (date) {
+      filter.date = { $gte: new Date(date + 'T00:00:00.000Z'), $lte: new Date(date + 'T23:59:59.999Z') };
+    } else {
+      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' });
+      filter.date = { $gte: new Date(todayStr + 'T00:00:00.000Z'), $lte: new Date(todayStr + 'T23:59:59.999Z') };
+    }
+
+    if (classLevel && classLevel !== 'all') filter.classLevel = classLevel;
+    if (section && section !== 'all') filter.section = section;
+    if (branch && branch !== 'all') filter.branch = branch;
+
+    const records = await StudentAttendance.find(filter)
+      .populate({ path: 'student', select: 'studentId user currentEnrollment branch', populate: [{ path: 'user', select: 'fullName firstName lastName' }, { path: 'currentEnrollment', populate: [{ path: 'classLevel', select: 'name' }] }] })
+      .select('date status classLevel section student inTime outTime punchCount punchTimes')
+      .lean();
+
+    // Group by date then class
+    const summaryMap = {};
+    records.forEach(rec => {
+      const dateStr = rec.date ? new Date(rec.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' }) : 'unknown';
+      const cls = rec.student?.currentEnrollment?.classLevel?.name || rec.classLevel || 'অজানা শ্রেণি';
+      if (!summaryMap[dateStr]) summaryMap[dateStr] = {};
+      if (!summaryMap[dateStr][cls]) summaryMap[dateStr][cls] = { total: 0, present: 0, absent: 0, late: 0, on_leave: 0, not_assigned: 0 };
+      summaryMap[dateStr][cls].total++;
+      const st = rec.status || 'not_assigned';
+      summaryMap[dateStr][cls][st] = (summaryMap[dateStr][cls][st] || 0) + 1;
+    });
+
+    const summary = [];
+    Object.entries(summaryMap).sort(([a], [b]) => a.localeCompare(b)).forEach(([date, classes]) => {
+      Object.entries(classes).forEach(([cls, counts]) => {
+        summary.push({ date, classLevel: cls, ...counts });
+      });
+    });
+
+    const totals = { total: 0, present: 0, absent: 0, late: 0, on_leave: 0, not_assigned: 0 };
+    records.forEach(r => {
+      totals.total++;
+      const st = r.status || 'not_assigned';
+      totals[st] = (totals[st] || 0) + 1;
+    });
+
+    ApiResponse.success(res, { summary, totals, recordCount: records.length });
+  } catch (error) {
+    next(error);
+  }
+};

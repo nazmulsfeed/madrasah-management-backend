@@ -33,6 +33,19 @@ router
   .get(authorize('super_admin', 'co_super_admin', 'admin', 'principal'), attendanceController.getBiometricSettings)
   .patch(authorize('super_admin', 'co_super_admin', 'admin', 'principal'), attendanceController.updateBiometricSettings);
 
+
+router.get(
+  '/punch-report',
+  authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'vice_principal'),
+  attendanceController.getPunchReport
+);
+
+router.get(
+  '/summary-report',
+  authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'vice_principal'),
+  attendanceController.getAttendanceSummaryReport
+);
+
 router
   .route('/')
   .get(
