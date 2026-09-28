@@ -24,7 +24,13 @@ async function enrichStudentsMap(institutionId, studentIds) {
 
   // 1. Fetch Students
   const students = await Student.findAll({
-    where: { _id: { [Op.in]: uniqueStudentIds } }
+    where: {
+      [Op.or]: [
+        { _id: { [Op.in]: uniqueStudentIds } },
+        { user: { [Op.in]: uniqueStudentIds } },
+        { studentId: { [Op.in]: uniqueStudentIds } }
+      ]
+    }
   });
 
   const userIds = students.map(s => s.user).filter(Boolean);
@@ -105,6 +111,12 @@ async function enrichStudentsMap(institutionId, studentIds) {
       user: userMap[String(s.user)] || null,
       currentEnrollment: curEnroll
     };
+    if (s.user) {
+      studentMap[String(s.user)] = studentMap[String(s._id)];
+    }
+    if (s.studentId) {
+      studentMap[String(s.studentId)] = studentMap[String(s._id)];
+    }
   });
 
   // 5. Fetch Guardians for this institution
@@ -160,20 +172,61 @@ exports.getInvoices = async (req, res, next) => {
     const where = { institution: institutionId };
 
     // If student or guardian, filter invoices for that student
+    let studentFilterIds = [];
     if (req.user.userType === 'student') {
-      where.student = req.user.profileId;
-    } else if (req.user.userType === 'guardian') {
-      const guardianDoc = await Guardian.findById(req.user.profileId);
-      let studentIds = [];
-      if (guardianDoc) {
-        let rawList = [];
-        if (Array.isArray(guardianDoc.students)) rawList = guardianDoc.students;
-        else if (typeof guardianDoc.students === 'string') {
-          try { rawList = JSON.parse(guardianDoc.students); } catch (e) { rawList = [guardianDoc.students]; }
-        }
-        studentIds = rawList.map(s => (typeof s === 'string' ? s : s?.student || s?._id)).filter(Boolean);
+      let studentDoc = null;
+      if (req.user.profileId) {
+        studentDoc = await Student.findOne({ where: { _id: req.user.profileId } });
       }
-      where.student = { [Op.in]: studentIds };
+      if (!studentDoc) {
+        studentDoc = await Student.findOne({ where: { user: req.user._id } });
+      }
+      if (studentDoc) {
+        studentFilterIds = [studentDoc._id, req.user._id, studentDoc.user, studentDoc.studentId].filter(Boolean);
+        where.student = { [Op.in]: studentFilterIds };
+        // Self-heal profileId on User if not set
+        if (!req.user.profileId) {
+          await User.update({ profileId: studentDoc._id }, { where: { _id: req.user._id } }).catch(() => {});
+        }
+      } else {
+        where.student = req.user._id;
+      }
+    } else if (req.user.userType === 'guardian') {
+      let guardianDoc = null;
+      if (req.user.profileId) {
+        guardianDoc = await Guardian.findOne({ where: { _id: req.user.profileId } });
+      }
+      if (!guardianDoc) {
+        guardianDoc = await Guardian.findOne({ where: { user: req.user._id } });
+      }
+      let studentIds = [];
+      if (guardianDoc && guardianDoc.students) {
+        let rawList = guardianDoc.students;
+        if (typeof rawList === 'string') {
+          try { rawList = JSON.parse(rawList); } catch (e) { rawList = [rawList]; }
+        }
+        if (Array.isArray(rawList)) {
+          studentIds = rawList.map(s => (typeof s === 'string' ? s : s?.student || s?._id)).filter(Boolean);
+        }
+      }
+      if (studentIds.length > 0) {
+        const linkedStudents = await Student.findAll({
+          where: {
+            [Op.or]: [
+              { _id: { [Op.in]: studentIds } },
+              { studentId: { [Op.in]: studentIds } }
+            ]
+          }
+        });
+        const allIds = [...studentIds, ...linkedStudents.map(s => s._id), ...linkedStudents.map(s => s.user).filter(Boolean), ...linkedStudents.map(s => s.studentId).filter(Boolean)];
+        studentFilterIds = [...new Set(allIds)];
+        where.student = { [Op.in]: studentFilterIds };
+        if (!req.user.profileId && guardianDoc) {
+          await User.update({ profileId: guardianDoc._id }, { where: { _id: req.user._id } }).catch(() => {});
+        }
+      } else {
+        return ApiResponse.success(res, { invoices: [] });
+      }
     } else if (req.query.student) {
       where.student = req.query.student;
     }
@@ -191,8 +244,13 @@ exports.getInvoices = async (req, res, next) => {
     const studentIds = invoices.map(i => i.student);
 
     // Fetch payments for these invoices in one single query
-    const payments = invoiceIds.length > 0 ? await Payment.findAll({
-      where: { invoice: { [Op.in]: invoiceIds } },
+    const payments = (invoiceIds.length > 0 || studentFilterIds.length > 0) ? await Payment.findAll({
+      where: {
+        [Op.or]: [
+          ...(invoiceIds.length > 0 ? [{ invoice: { [Op.in]: invoiceIds } }] : []),
+          ...(studentFilterIds.length > 0 ? [{ student: { [Op.in]: studentFilterIds } }] : [])
+        ]
+      },
       order: [['createdAt', 'ASC']]
     }) : [];
 
@@ -1237,16 +1295,51 @@ exports.getMyStudentSummary = async (req, res, next) => {
   try {
     let studentIds = [];
     if (req.user.userType === 'student') {
-      studentIds = [req.user.profileId];
-    } else if (req.user.userType === 'guardian') {
-      const guardianDoc = await Guardian.findById(req.user.profileId);
-      if (guardianDoc) {
-        let rawList = [];
-        if (Array.isArray(guardianDoc.students)) rawList = guardianDoc.students;
-        else if (typeof guardianDoc.students === 'string') {
-          try { rawList = JSON.parse(guardianDoc.students); } catch (e) { rawList = [guardianDoc.students]; }
+      let studentDoc = null;
+      if (req.user.profileId) {
+        studentDoc = await Student.findOne({ where: { _id: req.user.profileId } });
+      }
+      if (!studentDoc) {
+        studentDoc = await Student.findOne({ where: { user: req.user._id } });
+      }
+      if (studentDoc) {
+        studentIds = [studentDoc._id, req.user._id, studentDoc.user, studentDoc.studentId].filter(Boolean);
+        if (!req.user.profileId) {
+          await User.update({ profileId: studentDoc._id }, { where: { _id: req.user._id } }).catch(() => {});
         }
-        studentIds = rawList.map(s => (typeof s === 'string' ? s : s?.student || s?._id)).filter(Boolean);
+      } else {
+        studentIds = [req.user._id];
+      }
+    } else if (req.user.userType === 'guardian') {
+      let guardianDoc = null;
+      if (req.user.profileId) {
+        guardianDoc = await Guardian.findOne({ where: { _id: req.user.profileId } });
+      }
+      if (!guardianDoc) {
+        guardianDoc = await Guardian.findOne({ where: { user: req.user._id } });
+      }
+      if (guardianDoc && guardianDoc.students) {
+        let rawList = guardianDoc.students;
+        if (typeof rawList === 'string') {
+          try { rawList = JSON.parse(rawList); } catch (e) { rawList = [rawList]; }
+        }
+        if (Array.isArray(rawList)) {
+          studentIds = rawList.map(s => (typeof s === 'string' ? s : s?.student || s?._id)).filter(Boolean);
+        }
+        if (studentIds.length > 0) {
+          const linkedStudents = await Student.findAll({
+            where: {
+              [Op.or]: [
+                { _id: { [Op.in]: studentIds } },
+                { studentId: { [Op.in]: studentIds } }
+              ]
+            }
+          });
+          studentIds = [...new Set([...studentIds, ...linkedStudents.map(s => s._id), ...linkedStudents.map(s => s.user).filter(Boolean), ...linkedStudents.map(s => s.studentId).filter(Boolean)])];
+        }
+      }
+      if (!req.user.profileId && guardianDoc) {
+        await User.update({ profileId: guardianDoc._id }, { where: { _id: req.user._id } }).catch(() => {});
       }
     } else {
       return ApiResponse.error(res, 'এই রাউটে শুধু ছাত্র বা অভিভাবক প্রবেশ করতে পারবেন', 403);
@@ -1258,10 +1351,13 @@ exports.getMyStudentSummary = async (req, res, next) => {
       });
     }
 
-    const invoices = await Invoice.find({ 
-      institution: req.user.institution, 
-      student: { $in: studentIds } 
-    }).sort({ dueDate: 1 });
+    const invoices = await Invoice.findAll({ 
+      where: { 
+        institution: req.user.institution, 
+        student: { [Op.in]: studentIds } 
+      },
+      order: [['dueDate', 'ASC']]
+    });
 
     let totalDue = 0;
     let totalPaid = 0;
@@ -1269,11 +1365,13 @@ exports.getMyStudentSummary = async (req, res, next) => {
     let upcomingDueDate = null;
 
     invoices.forEach(inv => {
-      totalDue += inv.balance;
-      totalPaid += inv.paidTotal || 0;
-      if (inv.balance > 0) {
+      const balance = Number(inv.balance) || 0;
+      const paid = Number(inv.paidTotal) || 0;
+      totalDue += balance;
+      totalPaid += paid;
+      if (balance > 0) {
         dueInvoices++;
-        if (!upcomingDueDate || new Date(inv.dueDate) < upcomingDueDate) {
+        if (!upcomingDueDate || (inv.dueDate && new Date(inv.dueDate) < upcomingDueDate)) {
           upcomingDueDate = new Date(inv.dueDate);
         }
       }
