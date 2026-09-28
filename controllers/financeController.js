@@ -242,6 +242,66 @@ exports.createInvoice = async (req, res, next) => {
   try {
     const { student, title, feeCategory, dueDate, subtotal, discountTotal, discountType, fineTotal } = req.body;
 
+    if (!student || !title) {
+      return ApiResponse.error(res, 'শিক্ষার্থী এবং ইনভয়েসের বিবরণ আবশ্যক', 400);
+    }
+
+    const trimmedTitle = String(title).trim();
+
+    // 1. Check exact duplicate invoice title for this student
+    const existingExact = await Invoice.findOne({
+      where: {
+        institution: req.user.institution,
+        student,
+        title: trimmedTitle,
+      }
+    });
+
+    if (existingExact) {
+      return ApiResponse.error(
+        res,
+        `এই শিক্ষার্থীর জন্য ইতিমধ্যে একই ফি ইনভয়েস (${existingExact.invoiceNumber} - "${existingExact.title}") বিদ্যমান রয়েছে। একই ইনভয়েস পুনরায় তৈরি করা যাবে না।`,
+        400
+      );
+    }
+
+    // 2. Monthly Fee Duplicate Check
+    const BENGALI_MONTHS = [
+      'জানুয়ারি', 'ফেব্রুয়ারি', 'মার্চ', 'এপ্রিল', 'মে', 'জুন',
+      'জুলাই', 'আগস্ট', 'সেপ্টেম্বর', 'অক্টোবর', 'নভেম্বর', 'ডিসেম্বর'
+    ];
+
+    if (trimmedTitle.includes('মাসিক বেতন') || (feeCategory && feeCategory.includes('মাসিক বেতন'))) {
+      const referencedMonths = BENGALI_MONTHS.filter(m => trimmedTitle.includes(m));
+      if (referencedMonths.length > 0) {
+        for (const m of referencedMonths) {
+          const existingMonthInvoice = await Invoice.findOne({
+            where: {
+              institution: req.user.institution,
+              student,
+              [Op.and]: [
+                {
+                  [Op.or]: [
+                    { title: { [Op.like]: `%মাসিক বেতন%` } },
+                    { feeCategory: { [Op.like]: `%মাসিক বেতন%` } }
+                  ]
+                },
+                { title: { [Op.like]: `%${m}%` } }
+              ]
+            }
+          });
+
+          if (existingMonthInvoice) {
+            return ApiResponse.error(
+              res,
+              `এই শিক্ষার্থীর জন্য "${m}" মাসের মাসিক বেতনের ইনভয়েস (${existingMonthInvoice.invoiceNumber}) ইতিমধ্যে তৈরি করা হয়েছে। একই মাসের বেতন পুনরায় ইনভয়েস করা যাবে না।`,
+              400
+            );
+          }
+        }
+      }
+    }
+
     const payableTotal = (subtotal + (fineTotal || 0)) - (discountTotal || 0);
     const invoiceNumber = `INV-${Date.now()}`;
 
@@ -249,7 +309,7 @@ exports.createInvoice = async (req, res, next) => {
       institution: req.user.institution,
       student,
       invoiceNumber,
-      title,
+      title: trimmedTitle,
       feeCategory: feeCategory || 'সাধারণ ফি',
       dueDate,
       subtotal,
