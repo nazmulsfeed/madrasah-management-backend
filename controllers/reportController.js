@@ -403,7 +403,7 @@ exports.getFinanceReport = async (req, res, next) => {
     const { Op } = require('sequelize');
 
     const institution = req.user.institution;
-    const instFilter = institution ? { institution } : {};
+    const instFilter = institution ? { [Op.or]: [{ institution }, { institution: null }] } : {};
 
     // Selected Month & Year
     const today = new Date();
@@ -428,10 +428,10 @@ exports.getFinanceReport = async (req, res, next) => {
       studentsRaw,
       instRecord
     ] = await Promise.all([
-      Income.findAll({ where: { ...instFilter, status: 'approved' } }).catch(() => []),
+      Income.findAll({ where: { ...instFilter, status: { [Op.ne]: 'rejected' } } }).catch(() => []),
       IncomeCategory.findAll({ where: instFilter }).catch(() => []),
-      Payment.findAll({ where: { ...instFilter, status: 'success' } }).catch(() => []),
-      Voucher.findAll({ where: { ...instFilter, status: 'approved' } }).catch(() => []),
+      Payment.findAll({ where: { ...instFilter, status: { [Op.ne]: 'failed' } } }).catch(() => []),
+      Voucher.findAll({ where: { ...instFilter, status: { [Op.ne]: 'rejected' } } }).catch(() => []),
       Account.findAll({ where: instFilter }).catch(() => []),
       Invoice.findAll({ where: { ...instFilter, status: { [Op.in]: ['unpaid', 'partial'] } } }).catch(() => []),
       User.findAll({ where: instFilter }).catch(() => []),
@@ -508,7 +508,8 @@ exports.getFinanceReport = async (req, res, next) => {
     let yearExpense = 0;
     let totalLifetimeExpense = 0;
 
-    const categoryExpenseMap = {};
+    const categoryExpenseMonthMap = {};
+    const categoryExpenseLifetimeMap = {};
     const teacherSalaryMap = {};
 
     vouchersRaw.forEach(v => {
@@ -522,8 +523,12 @@ exports.getFinanceReport = async (req, res, next) => {
 
       // Expense Account details
       const expAcc = accountMap.get(String(v.expenseAccount));
-      const accName = expAcc ? expAcc.name : 'অন্যান্য ব্যয়';
-      categoryExpenseMap[accName] = (categoryExpenseMap[accName] || 0) + amt;
+      const accName = expAcc ? expAcc.name : (v.description || 'সাধারণ ব্যয়');
+      categoryExpenseLifetimeMap[accName] = (categoryExpenseLifetimeMap[accName] || 0) + amt;
+
+      if (date >= startOfMonth && date <= endOfMonth) {
+        categoryExpenseMonthMap[accName] = (categoryExpenseMonthMap[accName] || 0) + amt;
+      }
 
       // Teacher Salary Aggregation
       const isSalary = (expAcc && (expAcc.code === '5001' || expAcc.name.includes('বেতন') || expAcc.name.toLowerCase().includes('salary'))) ||
@@ -553,6 +558,11 @@ exports.getFinanceReport = async (req, res, next) => {
 
     const teacherSalary = Object.values(teacherSalaryMap).sort((a, b) => b.totalPaid - a.totalPaid);
 
+    // Use monthly category expense if available, otherwise lifetime so user sees breakdown
+    const activeCategoryMap = Object.keys(categoryExpenseMonthMap).length > 0
+      ? categoryExpenseMonthMap
+      : categoryExpenseLifetimeMap;
+
     // 4. Invoices / Total Dues
     const totalDues = invoicesRaw.reduce((sum, inv) => sum + (Number(inv.balance) || 0), 0);
 
@@ -566,7 +576,7 @@ exports.getFinanceReport = async (req, res, next) => {
       monthly: { income: monthIncome, expense: monthExpense, surplus: monthIncome - monthExpense },
       yearly: { income: yearIncome, expense: yearExpense, surplus: yearIncome - yearExpense },
       lifetime: { income: totalLifetimeIncome, expense: totalLifetimeExpense, surplus: totalLifetimeIncome - totalLifetimeExpense },
-      categoryExpense: Object.keys(categoryExpenseMap).map(k => ({ category: k, amount: categoryExpenseMap[k] })),
+      categoryExpense: Object.keys(activeCategoryMap).map(k => ({ category: k, amount: activeCategoryMap[k] })),
       totalDues,
       totalDonation,
       studentFeeIncome,
@@ -592,7 +602,7 @@ exports.getTeacherSalarySheet = async (req, res, next) => {
     const { Op } = require('sequelize');
 
     const institution = req.user.institution;
-    const instFilter = institution ? { institution } : {};
+    const instFilter = institution ? { [Op.or]: [{ institution }, { institution: null }] } : {};
 
     const today = new Date();
     const queryMonth = req.query.month || `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
@@ -601,27 +611,18 @@ exports.getTeacherSalarySheet = async (req, res, next) => {
     const startOfMonth = new Date(qYear, qMonth - 1, 1, 0, 0, 0);
     const endOfMonth = new Date(qYear, qMonth, 0, 23, 59, 59, 999);
 
-    // 1. Fetch Teachers & Staff Users
-    const staffTypes = [
-      'co_super_admin', 'admin', 'principal', 'vice_principal', 'teacher',
-      'hifz_teacher', 'accountant', 'admission_officer', 'hostel_manager', 'library_manager', 'staff'
-    ];
-
     const [teachersRaw, usersRaw, vouchersRaw, accountsRaw] = await Promise.all([
       Teacher.findAll({ where: instFilter }).catch(() => []),
       User.findAll({
         where: {
           ...instFilter,
-          [Op.or]: [
-            { userType: { [Op.in]: staffTypes } },
-            { adminRole: { [Op.in]: ['co_super_admin', 'admin'] } }
-          ]
+          userType: { [Op.notIn]: ['student', 'guardian', 'parent'] }
         }
       }).catch(() => []),
       Voucher.findAll({
         where: {
           ...instFilter,
-          status: 'approved',
+          status: { [Op.ne]: 'rejected' },
           date: { [Op.between]: [startOfMonth, endOfMonth] }
         }
       }).catch(() => []),
@@ -637,9 +638,11 @@ exports.getTeacherSalarySheet = async (req, res, next) => {
       if (t.user) teacherMapByUser.set(String(t.user), t);
     });
 
-    const staffList = usersRaw.map(u => {
+    const staffMap = new Map();
+
+    usersRaw.forEach(u => {
       const t = teacherMapByUser.get(String(u._id));
-      const fullName = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.username;
+      const fullName = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.name || u.username;
       const designation = t?.designation || u.designation || (
         u.userType === 'principal' ? 'প্রিন্সিপাল' :
           u.userType === 'vice_principal' ? 'ভাইস প্রিন্সিপাল' :
@@ -648,7 +651,7 @@ exports.getTeacherSalarySheet = async (req, res, next) => {
                 u.userType === 'teacher' ? 'শিক্ষক' : (u.adminRole || 'স্টাফ')
       );
 
-      return {
+      staffMap.set(String(u._id), {
         _id: u._id,
         teacherId: t?._id || null,
         name: fullName,
@@ -656,8 +659,26 @@ exports.getTeacherSalarySheet = async (req, res, next) => {
         phone: u.phone || t?.phone || '—',
         userType: u.userType,
         baseSalary: Number(t?.baseSalary) || Number(u.baseSalary) || 0,
-      };
+      });
     });
+
+    teachersRaw.forEach(t => {
+      const uId = t.user ? String(t.user) : null;
+      if (!uId || !staffMap.has(uId)) {
+        const tName = t.name || t.fullName || 'শিক্ষক';
+        staffMap.set(String(t._id), {
+          _id: t._id,
+          teacherId: t._id,
+          name: tName,
+          designation: t.designation || 'শিক্ষক',
+          phone: t.phone || '—',
+          userType: 'teacher',
+          baseSalary: Number(t.baseSalary) || 0,
+        });
+      }
+    });
+
+    const staffList = Array.from(staffMap.values());
 
     // Match vouchers to each staff member for the selected month
     let totalSalaryPaid = 0;
