@@ -1596,3 +1596,39 @@ exports.getStudentPassword = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    ছাত্র/ছাত্রীর প্রোফাইল ছবি পরিবর্তন করুন
+// @route   PATCH /api/v1/students/:id/photo
+exports.updateStudentPhoto = async (req, res, next) => {
+  try {
+    const student = await Student.findById(req.params.id);
+    if (!student) {
+      return ApiResponse.notFound(res, 'ছাত্র/ছাত্রী পাওয়া যায়নি');
+    }
+
+    const { photo } = req.body;
+    if (photo === undefined) {
+      return ApiResponse.error(res, 'ছবির তথ্য প্রদান করুন', 400);
+    }
+
+    const userId = (student.user && typeof student.user === 'object') ? student.user._id : student.user;
+    if (userId) {
+      const userDoc = await User.findById(userId);
+      if (userDoc) {
+        userDoc.photo = photo || '';
+        await userDoc.save();
+      }
+    }
+
+    await Student.findByIdAndUpdate(req.params.id, {
+      photo: photo || '',
+      updatedBy: req.user._id
+    });
+
+    ApiResponse.success(res, { photo: photo || '' }, 'শিক্ষার্থীর প্রোফাইল ছবি সফলভাবে পরিবর্তন হয়েছে');
+  } catch (error) {
+    console.error('❌ updateStudentPhoto Error:', error);
+    next(error);
+  }
+};
+

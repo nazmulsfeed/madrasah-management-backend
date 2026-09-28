@@ -5,6 +5,7 @@ const permissionCategories = [
       { key: 'student.view', label: 'View Students' },
       { key: 'student.create', label: 'Create Student' },
       { key: 'student.update', label: 'Update Student' },
+      { key: 'student.photo_update', label: 'Profile Picture Change (প্রোফাইল ছবি পরিবর্তন)' },
       { key: 'student.delete', label: 'Delete Student' },
       { key: 'student.restore', label: 'Restore Student' },
       { key: 'student.approve', label: 'Approve Student' },
@@ -304,7 +305,7 @@ const defaultRolePermissions = {
   super_admin: getFullPermissions(),
   co_super_admin: getFullPermissions(),
   admin: getPermissionsForKeys([
-    'student.view', 'student.create', 'student.update',
+    'student.view', 'student.create', 'student.update', 'student.photo_update',
     'teacher.view', 'teacher.create', 'teacher.update',
     'attendance.view', 'attendance.create', 'attendance.update',
     'class.view', 'subject.view', 'routine.view',

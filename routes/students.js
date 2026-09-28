@@ -41,6 +41,12 @@ router.get(
   studentController.getStudentPassword
 );
 
+router.patch(
+  '/:id/photo',
+  authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'student.update', 'student.photo_update'),
+  studentController.updateStudentPhoto
+);
+
 router
   .route('/:id')
   .get(authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'student.view', 'student', 'guardian'), studentController.getStudent)
