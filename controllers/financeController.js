@@ -84,7 +84,7 @@ async function enrichStudentsMap(institutionId, studentIds) {
     enrollmentMap[String(e._id)] = {
       ...eJson,
       classLevel: classMap[String(e.classLevel)] || null,
-      section: sectionMap[String(e.section)] || null
+      section: sectionMap[String(e.section)] || (e.section ? { name: String(e.section) } : null)
     };
   });
 
