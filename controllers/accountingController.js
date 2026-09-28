@@ -67,6 +67,33 @@ exports.getAccounts = async (req, res, next) => {
       seededNew = true;
     }
 
+    // Auto-seed default expense accounts (Expense heads) if none exist
+    const expenseCount = await Account.countDocuments({ institution: req.user.institution, type: 'Expense' });
+    if (expenseCount === 0) {
+      const defaultExpenses = [
+        { name: 'শিক্ষক ও স্টাফ বেতন-ভাতা (Salary & Allowance)', code: '5001', type: 'Expense' },
+        { name: 'বই-খাতা ও শিক্ষা উপকরণ ক্রয় (Books & Educational Supplies)', code: '5002', type: 'Expense' },
+        { name: 'মুদ্রণ ও স্টেশনারি খরচ (Printing & Stationery)', code: '5003', type: 'Expense' },
+        { name: 'বিদ্যুৎ, গ্যাস ও পানি বিল (Utility Bills)', code: '5004', type: 'Expense' },
+        { name: 'লিল্লাহ বোর্ডিং ও মেস খাদ্য খরচ (Food & Mess)', code: '5005', type: 'Expense' },
+        { name: 'ভবন সংস্কার ও রক্ষণাবেক্ষণ (Building Maintenance)', code: '5006', type: 'Expense' },
+        { name: 'অফিস ও বিবিধ প্রশাসনিক খরচ (Office & Admin)', code: '5007', type: 'Expense' },
+        { name: 'যাতায়াত ও পরিবহন খরচ (Travel & Conveyance)', code: '5008', type: 'Expense' },
+      ];
+
+      for (const exp of defaultExpenses) {
+        await Account.create({
+          institution: req.user.institution,
+          name: exp.name,
+          code: exp.code,
+          type: exp.type,
+          balance: 0,
+          isActive: true
+        });
+      }
+      seededNew = true;
+    }
+
     if (seededNew) {
       accounts = await Account.find(filter).sort({ code: 1, name: 1 });
     }
@@ -77,7 +104,7 @@ exports.getAccounts = async (req, res, next) => {
   }
 };
 
-// @desc    Seed default accounts (Assets & Revenues)
+// @desc    Seed default accounts (Assets, Revenues, Expenses)
 // @route   POST /api/v1/accounting/accounts/seed-defaults
 exports.seedDefaultAccounts = async (req, res, next) => {
   try {
@@ -99,8 +126,19 @@ exports.seedDefaultAccounts = async (req, res, next) => {
       { name: 'বিবিধ সাধারণ আয় (Miscellaneous Income)', code: '4006', type: 'Revenue' }
     ];
 
+    const defaultExpenses = [
+      { name: 'শিক্ষক ও স্টাফ বেতন-ভাতা (Salary & Allowance)', code: '5001', type: 'Expense' },
+      { name: 'বই-খাতা ও শিক্ষা উপকরণ ক্রয় (Books & Educational Supplies)', code: '5002', type: 'Expense' },
+      { name: 'মুদ্রণ ও স্টেশনারি খরচ (Printing & Stationery)', code: '5003', type: 'Expense' },
+      { name: 'বিদ্যুৎ, গ্যাস ও পানি বিল (Utility Bills)', code: '5004', type: 'Expense' },
+      { name: 'লিল্লাহ বোর্ডিং ও মেস খাদ্য খরচ (Food & Mess)', code: '5005', type: 'Expense' },
+      { name: 'ভবন সংস্কার ও রক্ষণাবেক্ষণ (Building Maintenance)', code: '5006', type: 'Expense' },
+      { name: 'অফিস ও বিবিধ প্রশাসনিক খরচ (Office & Admin)', code: '5007', type: 'Expense' },
+      { name: 'যাতায়াত ও পরিবহন খরচ (Travel & Conveyance)', code: '5008', type: 'Expense' },
+    ];
+
     let createdCount = 0;
-    for (const acc of [...defaultAssets, ...defaultRevenues]) {
+    for (const acc of [...defaultAssets, ...defaultRevenues, ...defaultExpenses]) {
       const exists = await Account.findOne({ institution, code: acc.code });
       if (!exists) {
         await Account.create({
