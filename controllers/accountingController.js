@@ -236,6 +236,38 @@ exports.updateAccount = async (req, res, next) => {
   }
 };
 
+// @desc    Delete account
+// @route   DELETE /api/v1/accounting/accounts/:id
+exports.deleteAccount = async (req, res, next) => {
+  try {
+    const account = await Account.findOne({ where: { _id: req.params.id, institution: req.user.institution } });
+    if (!account) return ApiResponse.notFound(res, 'একাউন্ট পাওয়া যায়নি');
+
+    // Prevent deleting accounts with non-zero balance
+    if (Math.abs(Number(account.balance) || 0) > 0.01) {
+      return ApiResponse.error(res, 'যেসব একাউন্টে ব্যালেন্স রয়েছে সেগুলো সরাসরি মুছে ফেলা যাবে না। প্রয়োজনে নিষ্ক্রিয় (Inactive) করুন।', 400);
+    }
+
+    const accName = account.name;
+    await account.destroy();
+
+    await auditLogger.logAction(
+      req.user.institution,
+      req.user._id,
+      'delete',
+      'Account',
+      account._id,
+      `হিসাব খাত (Account) মুছে ফেলা হয়েছে: ${accName}`,
+      account,
+      null
+    );
+
+    ApiResponse.success(res, null, 'একাউন্ট সফলভাবে মুছে ফেলা হয়েছে');
+  } catch (error) {
+    next(error);
+  }
+};
+
 // --- Journal Entries (Ledger) ---
 
 // @desc    Get journal entries / ledger for an account

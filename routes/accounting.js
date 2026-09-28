@@ -14,7 +14,8 @@ router.route('/accounts')
 router.post('/accounts/seed-defaults', accountingController.seedDefaultAccounts);
 
 router.route('/accounts/:id')
-  .put(accountingController.updateAccount);
+  .put(accountingController.updateAccount)
+  .delete(authorize('super_admin', 'co_super_admin', 'admin'), accountingController.deleteAccount);
 
 router.route('/journals')
   .get(accountingController.getJournals);
