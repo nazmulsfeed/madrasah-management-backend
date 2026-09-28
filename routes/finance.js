@@ -11,8 +11,8 @@ router.route('/invoices')
   .post(authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'accountant'), financeController.createInvoice);
 
 router.route('/invoices/:id')
-  .put(authorize('super_admin', 'co_super_admin'), financeController.updateInvoice)
-  .delete(authorize('super_admin', 'co_super_admin'), financeController.deleteInvoice);
+  .put(authorize('super_admin', 'co_super_admin', 'admin'), financeController.updateInvoice)
+  .delete(authorize('super_admin', 'co_super_admin', 'admin'), financeController.deleteInvoice);
 
 // Budgets
 router.route('/budgets')
