@@ -648,6 +648,10 @@ exports.createStudent = async (req, res, next) => {
       motherName: motherName || '',
       village: village || '',
       nationalIdOrBirthCertNo: nationalIdOrBirthCertNo || '',
+      customMonthlyFee: (req.body.customMonthlyFee !== undefined && req.body.customMonthlyFee !== null && req.body.customMonthlyFee !== '' && !isNaN(parseFloat(req.body.customMonthlyFee)) && parseFloat(req.body.customMonthlyFee) >= 0)
+        ? parseFloat(req.body.customMonthlyFee)
+        : null,
+      feeDiscountNote: req.body.feeDiscountNote ? String(req.body.feeDiscountNote).trim() : '',
       createdBy: req.user._id,
     });
 
@@ -777,6 +781,18 @@ exports.updateStudent = async (req, res, next) => {
     allowedFields.forEach((field) => {
       if (req.body[field] !== undefined) updates[field] = req.body[field];
     });
+
+    if (req.body.customMonthlyFee !== undefined) {
+      if (req.body.customMonthlyFee === '' || req.body.customMonthlyFee === null) {
+        updates.customMonthlyFee = null;
+      } else {
+        const parsedFee = parseFloat(req.body.customMonthlyFee);
+        updates.customMonthlyFee = (!isNaN(parsedFee) && parsedFee >= 0) ? parsedFee : null;
+      }
+    }
+    if (req.body.feeDiscountNote !== undefined) {
+      updates.feeDiscountNote = String(req.body.feeDiscountNote || '').trim();
+    }
 
     // Permission check for modifying studentId and admissionNumber
     const isSuperOrCoSuper = req.user.userType === 'super_admin' || 

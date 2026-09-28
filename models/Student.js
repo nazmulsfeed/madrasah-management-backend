@@ -127,6 +127,16 @@ Student.init({
     type: DataTypes.DATE,
     allowNull: true,
   },
+  customMonthlyFee: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+    defaultValue: null,
+  },
+  feeDiscountNote: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
   createdBy: {
     type: DataTypes.STRING,
     allowNull: true,

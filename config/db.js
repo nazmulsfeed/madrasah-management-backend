@@ -142,6 +142,16 @@ const connectDB = async () => {
         await sequelize.query("ALTER TABLE `students` ADD COLUMN `deviceUserId` VARCHAR(100) NULL DEFAULT ''");
         console.log("✅ Added deviceUserId column to students table");
       }
+      const [customFeeCol] = await sequelize.query("SHOW COLUMNS FROM `students` LIKE 'customMonthlyFee'");
+      if (!customFeeCol || customFeeCol.length === 0) {
+        await sequelize.query("ALTER TABLE `students` ADD COLUMN `customMonthlyFee` DOUBLE NULL DEFAULT NULL");
+        console.log("✅ Added customMonthlyFee column to students table");
+      }
+      const [discountNoteCol] = await sequelize.query("SHOW COLUMNS FROM `students` LIKE 'feeDiscountNote'");
+      if (!discountNoteCol || discountNoteCol.length === 0) {
+        await sequelize.query("ALTER TABLE `students` ADD COLUMN `feeDiscountNote` VARCHAR(255) NULL DEFAULT ''");
+        console.log("✅ Added feeDiscountNote column to students table");
+      }
       const [subUserCol] = await sequelize.query("SHOW COLUMNS FROM `push_subscriptions` LIKE 'userId'");
       if (!subUserCol || subUserCol.length === 0) {
         await sequelize.query("ALTER TABLE `push_subscriptions` ADD COLUMN `userId` VARCHAR(255) NULL");

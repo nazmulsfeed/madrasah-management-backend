@@ -65,8 +65,17 @@ async function generateMonthlyInvoicesForCurrentMonth(month, year, targetInstitu
           const classLevel = await ClassLevel.findOne({ where: { _id: enrollment.classLevel } });
           if (!classLevel) continue;
 
-          const monthlyFee = Number(classLevel.monthlyFee) || 0;
-          if (monthlyFee <= 0) continue; // কোনো ফি নির্ধারিত না থাকলে ইনভয়েস হবে না
+          const classMonthlyFee = Number(classLevel.monthlyFee) || 0;
+          
+          // Check student custom monthly fee if set
+          const hasCustomFee = student.customMonthlyFee !== null && student.customMonthlyFee !== undefined && !isNaN(student.customMonthlyFee) && Number(student.customMonthlyFee) >= 0;
+          const finalPayable = hasCustomFee ? Number(student.customMonthlyFee) : classMonthlyFee;
+
+          if (finalPayable <= 0 && classMonthlyFee <= 0) continue; // কোনো ফি নির্ধারিত না থাকলে ইনভয়েস হবে না
+
+          const subtotal = classMonthlyFee > 0 ? classMonthlyFee : finalPayable;
+          const discountTotal = (classMonthlyFee > finalPayable) ? (classMonthlyFee - finalPayable) : 0;
+          const discountType = student.feeDiscountNote ? student.feeDiscountNote : (discountTotal > 0 ? 'বিশেষ ছাড়' : null);
 
           // ইতিমধ্যে ইনভয়েস তৈরি হয়েছে কিনা চেক করা (ডুপ্লিকেট প্রতিরোধ)
           const existing = await Invoice.findOne({
@@ -106,9 +115,11 @@ async function generateMonthlyInvoicesForCurrentMonth(month, year, targetInstitu
               title,
               feeCategory: 'মাসিক বেতন',
               dueDate,
-              subtotal: monthlyFee,
-              payableTotal: monthlyFee,
-              balance: monthlyFee,
+              subtotal,
+              discountTotal,
+              discountType,
+              payableTotal: finalPayable,
+              balance: finalPayable,
               status: 'unpaid',
             });
 
@@ -187,8 +198,25 @@ async function generateCategoryInvoicesForCurrentMonth(category, month, year, in
       const classLevel = await ClassLevel.findOne({ where: { _id: enrollment.classLevel } });
       if (!classLevel) continue;
 
-      const feeAmount = Number(classLevel[category]) || 0;
-      if (feeAmount <= 0) continue;
+      const baseFee = Number(classLevel[category]) || 0;
+      let finalFee = baseFee;
+      let discountTotal = 0;
+      let discountType = null;
+      let subtotal = baseFee;
+
+      if (category === 'monthlyFee') {
+        const hasCustomFee = student.customMonthlyFee !== null && student.customMonthlyFee !== undefined && !isNaN(student.customMonthlyFee) && Number(student.customMonthlyFee) >= 0;
+        if (hasCustomFee) {
+          finalFee = Number(student.customMonthlyFee);
+          if (baseFee > finalFee) {
+            discountTotal = baseFee - finalFee;
+            discountType = student.feeDiscountNote || 'বিশেষ ছাড়';
+          }
+          subtotal = baseFee > 0 ? baseFee : finalFee;
+        }
+      }
+
+      if (finalFee <= 0 && subtotal <= 0) continue;
 
       const existing = await Invoice.findOne({
         where: {
@@ -222,9 +250,11 @@ async function generateCategoryInvoicesForCurrentMonth(category, month, year, in
           title: title,
           feeCategory: label,
           dueDate: dueDate,
-          subtotal: feeAmount,
-          payableTotal: feeAmount,
-          balance: feeAmount,
+          subtotal: subtotal,
+          discountTotal: discountTotal,
+          discountType: discountType,
+          payableTotal: finalFee,
+          balance: finalFee,
           status: 'unpaid'
         });
         count++;
