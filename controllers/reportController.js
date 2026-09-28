@@ -386,120 +386,337 @@ exports.getStudentMarks = async (req, res, next) => {
 };
 
 // ──────────────────────────────────────────────────────────────
-// @desc    Get Financial Report
+// @desc    Get Financial Report (Overview & Month Breakdown)
 // @route   GET /api/v1/reports/finance
 // @access  Private
 exports.getFinanceReport = async (req, res, next) => {
   try {
     const Income = require('../models/Income');
+    const IncomeCategory = require('../models/IncomeCategory');
     const Voucher = require('../models/Voucher');
     const Invoice = require('../models/Invoice');
     const Payment = require('../models/Payment');
-    
-    const instFilter = req.user.institution ? { institution: req.user.institution } : {};
-    
+    const Account = require('../models/Account');
+    const User = require('../models/User');
+    const Student = require('../models/Student');
+    const Institution = require('../models/Institution');
+    const { Op } = require('sequelize');
+
+    const institution = req.user.institution;
+    const instFilter = institution ? { institution } : {};
+
+    // Selected Month & Year
     const today = new Date();
-    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const startOfYear = new Date(today.getFullYear(), 0, 1);
-    
-    // Aggregations for Income (Other Incomes + Payments)
-    const otherIncomes = await Income.find({ ...instFilter, status: 'approved' }).populate('category');
-    const payments = await Payment.find({ ...instFilter, status: 'success' });
-    
-    let todayIncome = 0, monthIncome = 0, yearIncome = 0;
-    
-    [...otherIncomes, ...payments].forEach(inc => {
-      const date = inc.date || inc.paymentDate;
-      const amt = inc.amount || 0;
+    const queryMonth = req.query.month || `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const [qYear, qMonth] = queryMonth.split('-').map(Number);
+
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
+    const startOfMonth = new Date(qYear || today.getFullYear(), (qMonth ? qMonth - 1 : today.getMonth()), 1, 0, 0, 0);
+    const endOfMonth = new Date(qYear || today.getFullYear(), (qMonth ? qMonth : today.getMonth() + 1), 0, 23, 59, 59, 999);
+    const startOfYear = new Date(qYear || today.getFullYear(), 0, 1, 0, 0, 0);
+    const endOfYear = new Date(qYear || today.getFullYear(), 11, 31, 23, 59, 59, 999);
+
+    // 1. Parallel fetch of all required records safely
+    const [
+      otherIncomesRaw,
+      incomeCategoriesRaw,
+      paymentsRaw,
+      vouchersRaw,
+      accountsRaw,
+      invoicesRaw,
+      usersRaw,
+      studentsRaw,
+      instRecord
+    ] = await Promise.all([
+      Income.findAll({ where: { ...instFilter, status: 'approved' } }).catch(() => []),
+      IncomeCategory.findAll({ where: instFilter }).catch(() => []),
+      Payment.findAll({ where: { ...instFilter, status: 'success' } }).catch(() => []),
+      Voucher.findAll({ where: { ...instFilter, status: 'approved' } }).catch(() => []),
+      Account.findAll({ where: instFilter }).catch(() => []),
+      Invoice.findAll({ where: { ...instFilter, status: { [Op.in]: ['unpaid', 'partial'] } } }).catch(() => []),
+      User.findAll({ where: instFilter }).catch(() => []),
+      Student.findAll({ where: { ...instFilter, isDeleted: { [Op.ne]: true } } }).catch(() => []),
+      institution ? Institution.findOne({ where: { _id: institution } }).catch(() => null) : Institution.findOne().catch(() => null),
+    ]);
+
+    // Fast Lookup Maps
+    const categoryMap = new Map();
+    incomeCategoriesRaw.forEach(c => categoryMap.set(String(c._id), c));
+
+    const accountMap = new Map();
+    accountsRaw.forEach(a => accountMap.set(String(a._id), a));
+
+    const userMap = new Map();
+    usersRaw.forEach(u => userMap.set(String(u._id), u));
+
+    const studentMap = new Map();
+    studentsRaw.forEach(s => studentMap.set(String(s._id), s));
+
+    // 2. Income Aggregations
+    let todayIncome = 0;
+    let monthIncome = 0;
+    let yearIncome = 0;
+    let totalLifetimeIncome = 0;
+    let totalDonation = 0;
+    let studentFeeIncome = 0;
+
+    otherIncomesRaw.forEach(inc => {
+      const date = new Date(inc.date || inc.createdAt);
+      const amt = Number(inc.amount) || 0;
+      totalLifetimeIncome += amt;
+
+      const cat = categoryMap.get(String(inc.category));
+      if (cat?.type === 'donation') {
+        totalDonation += amt;
+      }
+
       if (date >= startOfToday) todayIncome += amt;
-      if (date >= startOfMonth) monthIncome += amt;
-      if (date >= startOfYear) yearIncome += amt;
+      if (date >= startOfMonth && date <= endOfMonth) monthIncome += amt;
+      if (date >= startOfYear && date <= endOfYear) yearIncome += amt;
     });
 
-    // Aggregations for Expenses (Vouchers)
-    const vouchers = await Voucher.find({ ...instFilter, status: 'approved' }).populate('expenseAccount', 'name code type');
-    let todayExpense = 0, monthExpense = 0, yearExpense = 0;
-    const categoryExpenseMap = {};
-    
-    vouchers.forEach(v => {
-      const amt = v.amount || 0;
-      if (v.date >= startOfToday) todayExpense += amt;
-      if (v.date >= startOfMonth) monthExpense += amt;
-      if (v.date >= startOfYear) yearExpense += amt;
-      
-      const catName = v.expenseAccount?.name || 'Unknown';
-      categoryExpenseMap[catName] = (categoryExpenseMap[catName] || 0) + amt;
-    });
-
-    // Dues Report
-    const dueInvoices = await Invoice.find({ ...instFilter, status: { $in: ['unpaid', 'partial'] } });
-    const totalDues = dueInvoices.reduce((sum, inv) => sum + (inv.balance || 0), 0);
-
-    // Donation Report
-    const totalDonation = otherIncomes
-      .filter(inc => inc.category?.type === 'donation')
-      .reduce((sum, inc) => sum + (inc.amount || 0), 0);
-
-    // Student-wise Report
     const studentPaymentsMap = {};
-    const populatedPayments = await Payment.find({ ...instFilter, status: 'success' }).populate({
-      path: 'student',
-      populate: { path: 'user', select: 'firstName lastName fullName' }
-    });
-    
-    populatedPayments.forEach(p => {
-      const studentName = p.student?.user 
-        ? (p.student.user.fullName || `${p.student.user.firstName || ''} ${p.student.user.lastName || ''}`.trim())
-        : 'অজানা শিক্ষার্থী';
-      studentPaymentsMap[studentName] = (studentPaymentsMap[studentName] || 0) + (p.amount || 0);
+    paymentsRaw.forEach(p => {
+      const date = new Date(p.paymentDate || p.createdAt);
+      const amt = Number(p.amount) || 0;
+      totalLifetimeIncome += amt;
+      studentFeeIncome += amt;
+
+      if (date >= startOfToday) todayIncome += amt;
+      if (date >= startOfMonth && date <= endOfMonth) monthIncome += amt;
+      if (date >= startOfYear && date <= endOfYear) yearIncome += amt;
+
+      // Group by Student Name
+      const studentObj = studentMap.get(String(p.student));
+      let sName = 'সাধারণ শিক্ষার্থী';
+      if (studentObj) {
+        const u = userMap.get(String(studentObj.user));
+        sName = u ? `${u.firstName || ''} ${u.lastName || ''}`.trim() : (studentObj.name || 'শিক্ষার্থী');
+      }
+      studentPaymentsMap[sName] = (studentPaymentsMap[sName] || 0) + amt;
     });
 
+    // Top Paying Students
     const studentWise = Object.keys(studentPaymentsMap)
       .map(k => ({ student: k, totalPaid: studentPaymentsMap[k] }))
       .sort((a, b) => b.totalPaid - a.totalPaid)
-      .slice(0, 10); // Top 10 for summary
+      .slice(0, 10);
 
-    // Teacher Salary Report
+    // 3. Expense Aggregations (Vouchers)
+    let todayExpense = 0;
+    let monthExpense = 0;
+    let yearExpense = 0;
+    let totalLifetimeExpense = 0;
+
+    const categoryExpenseMap = {};
     const teacherSalaryMap = {};
-    vouchers.forEach(v => {
-      const catName = v.expenseAccount?.name || '';
-      if (catName.includes('বেতন') || catName.toLowerCase().includes('salary')) {
-        const payee = v.payeeName || 'অজানা শিক্ষক';
-        teacherSalaryMap[payee] = (teacherSalaryMap[payee] || 0) + (v.amount || 0);
+
+    vouchersRaw.forEach(v => {
+      const date = new Date(v.date || v.createdAt);
+      const amt = Number(v.amount) || 0;
+      totalLifetimeExpense += amt;
+
+      if (date >= startOfToday) todayExpense += amt;
+      if (date >= startOfMonth && date <= endOfMonth) monthExpense += amt;
+      if (date >= startOfYear && date <= endOfYear) yearExpense += amt;
+
+      // Expense Account details
+      const expAcc = accountMap.get(String(v.expenseAccount));
+      const accName = expAcc ? expAcc.name : 'অন্যান্য ব্যয়';
+      categoryExpenseMap[accName] = (categoryExpenseMap[accName] || 0) + amt;
+
+      // Teacher Salary Aggregation
+      const isSalary = (expAcc && (expAcc.code === '5001' || expAcc.name.includes('বেতন') || expAcc.name.toLowerCase().includes('salary'))) ||
+        (v.description && (v.description.includes('বেতন') || v.description.toLowerCase().includes('salary')));
+
+      if (isSalary) {
+        const payee = v.payeeName ? v.payeeName.trim() : 'অজানা শিক্ষক/স্টাফ';
+        if (!teacherSalaryMap[payee]) {
+          teacherSalaryMap[payee] = {
+            teacher: payee,
+            totalPaid: 0,
+            monthPaid: 0,
+            lastDate: date,
+            voucherCount: 0
+          };
+        }
+        teacherSalaryMap[payee].totalPaid += amt;
+        teacherSalaryMap[payee].voucherCount++;
+        if (date >= startOfMonth && date <= endOfMonth) {
+          teacherSalaryMap[payee].monthPaid += amt;
+        }
+        if (date > new Date(teacherSalaryMap[payee].lastDate)) {
+          teacherSalaryMap[payee].lastDate = date;
+        }
       }
     });
 
-    const teacherSalary = Object.keys(teacherSalaryMap)
-      .map(k => ({ teacher: k, totalPaid: teacherSalaryMap[k] }))
-      .sort((a, b) => b.totalPaid - a.totalPaid);
+    const teacherSalary = Object.values(teacherSalaryMap).sort((a, b) => b.totalPaid - a.totalPaid);
 
-    const Institution = require('../models/Institution');
-    let instRecord = null;
-    try {
-      if (req.user?.institution) {
-        instRecord = await Institution.findOne({ where: { _id: req.user.institution } });
-      }
-      if (!instRecord) {
-        instRecord = await Institution.findOne();
-      }
-    } catch (e) {}
+    // 4. Invoices / Total Dues
+    const totalDues = invoicesRaw.reduce((sum, inv) => sum + (Number(inv.balance) || 0), 0);
 
     ApiResponse.success(res, {
       institution: {
         name: instRecord?.name || 'আন্-নূর ইসলামিক একাডেমি',
         branchName: instRecord?.branchName || 'প্রধান শাখা',
       },
+      selectedMonth: queryMonth,
       daily: { income: todayIncome, expense: todayExpense, surplus: todayIncome - todayExpense },
       monthly: { income: monthIncome, expense: monthExpense, surplus: monthIncome - monthExpense },
       yearly: { income: yearIncome, expense: yearExpense, surplus: yearIncome - yearExpense },
+      lifetime: { income: totalLifetimeIncome, expense: totalLifetimeExpense, surplus: totalLifetimeIncome - totalLifetimeExpense },
       categoryExpense: Object.keys(categoryExpenseMap).map(k => ({ category: k, amount: categoryExpenseMap[k] })),
       totalDues,
       totalDonation,
+      studentFeeIncome,
       studentWise,
       teacherSalary
     });
   } catch (error) {
+    console.error('getFinanceReport error:', error);
     next(error);
   }
 };
+
+// ──────────────────────────────────────────────────────────────
+// @desc    Get Monthly Teacher & Staff Salary Sheet (Payroll)
+// @route   GET /api/v1/reports/teacher-salary-sheet
+// @access  Private
+exports.getTeacherSalarySheet = async (req, res, next) => {
+  try {
+    const Teacher = require('../models/Teacher');
+    const User = require('../models/User');
+    const Voucher = require('../models/Voucher');
+    const Account = require('../models/Account');
+    const { Op } = require('sequelize');
+
+    const institution = req.user.institution;
+    const instFilter = institution ? { institution } : {};
+
+    const today = new Date();
+    const queryMonth = req.query.month || `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const [qYear, qMonth] = queryMonth.split('-').map(Number);
+
+    const startOfMonth = new Date(qYear, qMonth - 1, 1, 0, 0, 0);
+    const endOfMonth = new Date(qYear, qMonth, 0, 23, 59, 59, 999);
+
+    // 1. Fetch Teachers & Staff Users
+    const staffTypes = [
+      'co_super_admin', 'admin', 'principal', 'vice_principal', 'teacher',
+      'hifz_teacher', 'accountant', 'admission_officer', 'hostel_manager', 'library_manager', 'staff'
+    ];
+
+    const [teachersRaw, usersRaw, vouchersRaw, accountsRaw] = await Promise.all([
+      Teacher.findAll({ where: instFilter }).catch(() => []),
+      User.findAll({
+        where: {
+          ...instFilter,
+          [Op.or]: [
+            { userType: { [Op.in]: staffTypes } },
+            { adminRole: { [Op.in]: ['co_super_admin', 'admin'] } }
+          ]
+        }
+      }).catch(() => []),
+      Voucher.findAll({
+        where: {
+          ...instFilter,
+          status: 'approved',
+          date: { [Op.between]: [startOfMonth, endOfMonth] }
+        }
+      }).catch(() => []),
+      Account.findAll({ where: instFilter }).catch(() => [])
+    ]);
+
+    const accountMap = new Map();
+    accountsRaw.forEach(a => accountMap.set(String(a._id), a));
+
+    // Combine Teachers and Staff into unified list
+    const teacherMapByUser = new Map();
+    teachersRaw.forEach(t => {
+      if (t.user) teacherMapByUser.set(String(t.user), t);
+    });
+
+    const staffList = usersRaw.map(u => {
+      const t = teacherMapByUser.get(String(u._id));
+      const fullName = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.username;
+      const designation = t?.designation || u.designation || (
+        u.userType === 'principal' ? 'প্রিন্সিপাল' :
+          u.userType === 'vice_principal' ? 'ভাইস প্রিন্সিপাল' :
+            u.userType === 'accountant' ? 'হিসাবরক্ষক' :
+              u.userType === 'hifz_teacher' ? 'হিফজ শিক্ষক' :
+                u.userType === 'teacher' ? 'শিক্ষক' : (u.adminRole || 'স্টাফ')
+      );
+
+      return {
+        _id: u._id,
+        teacherId: t?._id || null,
+        name: fullName,
+        designation,
+        phone: u.phone || t?.phone || '—',
+        userType: u.userType,
+        baseSalary: Number(t?.baseSalary) || Number(u.baseSalary) || 0,
+      };
+    });
+
+    // Match vouchers to each staff member for the selected month
+    let totalSalaryPaid = 0;
+    let paidCount = 0;
+
+    const salarySheet = staffList.map(staff => {
+      const staffNameLower = staff.name.toLowerCase();
+
+      // Find vouchers for this staff
+      const staffVouchers = vouchersRaw.filter(v => {
+        const payee = (v.payeeName || '').toLowerCase().trim();
+        const desc = (v.description || '').toLowerCase();
+        const expAcc = accountMap.get(String(v.expenseAccount));
+        const isSalaryAcc = expAcc && (expAcc.code === '5001' || expAcc.name.includes('বেতন') || expAcc.name.toLowerCase().includes('salary'));
+
+        const nameMatch = payee.includes(staffNameLower) || staffNameLower.includes(payee) || desc.includes(staffNameLower);
+        return nameMatch && (isSalaryAcc || desc.includes('বেতন') || payee.includes('বেতন'));
+      });
+
+      const paidAmount = staffVouchers.reduce((sum, v) => sum + (Number(v.amount) || 0), 0);
+      const isPaid = paidAmount > 0;
+      if (isPaid) {
+        paidCount++;
+        totalSalaryPaid += paidAmount;
+      }
+
+      const lastVoucher = staffVouchers[staffVouchers.length - 1] || null;
+
+      return {
+        ...staff,
+        paidAmount,
+        status: isPaid ? 'paid' : 'unpaid',
+        paymentDate: lastVoucher ? lastVoucher.date : null,
+        paymentMethod: lastVoucher ? lastVoucher.paymentMethod : null,
+        voucherNumber: lastVoucher ? lastVoucher.voucherNumber : null,
+        voucherId: lastVoucher ? lastVoucher._id : null,
+        vouchers: staffVouchers.map(v => ({
+          _id: v._id,
+          voucherNumber: v.voucherNumber,
+          amount: v.amount,
+          date: v.date,
+          method: v.paymentMethod,
+        }))
+      };
+    });
+
+    ApiResponse.success(res, {
+      month: queryMonth,
+      stats: {
+        totalStaff: staffList.length,
+        paidCount,
+        unpaidCount: staffList.length - paidCount,
+        totalSalaryPaid,
+      },
+      salarySheet
+    });
+  } catch (error) {
+    console.error('getTeacherSalarySheet error:', error);
+    next(error);
+  }
+};
+
