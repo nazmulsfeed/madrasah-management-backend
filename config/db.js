@@ -202,6 +202,16 @@ const connectDB = async () => {
         await sequelize.query("ALTER TABLE `studentattendances` ADD COLUMN `outTime` VARCHAR(50) NULL DEFAULT ''");
         console.log("✅ Added outTime column to studentattendances table");
       }
+      const [teaDesigCol] = await sequelize.query("SHOW COLUMNS FROM `teachers` LIKE 'designation'");
+      if (!teaDesigCol || teaDesigCol.length === 0) {
+        await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `designation` VARCHAR(255) NULL DEFAULT ''");
+        console.log("✅ Added designation column to teachers table");
+      }
+      const [teaBranchCol] = await sequelize.query("SHOW COLUMNS FROM `teachers` LIKE 'branch'");
+      if (!teaBranchCol || teaBranchCol.length === 0) {
+        await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `branch` VARCHAR(255) NULL DEFAULT ''");
+        console.log("✅ Added branch column to teachers table");
+      }
     } catch (colErr) {
       console.error("⚠️ Error auto-adding columns:", colErr.message);
     }
