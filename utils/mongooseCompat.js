@@ -148,8 +148,17 @@ class SequelizeQueryBuilder {
         if (p === 'teacher') {
           targetModelName = 'User';
         }
+        if (p === 'receivedBy' || p === 'approvedBy' || p === 'user') {
+          targetModelName = 'User';
+        }
         if (p === 'currentEnrollment') {
           targetModelName = 'StudentEnrollment';
+        }
+        if (p === 'category') {
+          targetModelName = 'IncomeCategory';
+        }
+        if (p === 'student') {
+          targetModelName = 'Student';
         }
         if (targetModelName) {
           const targetModel = this.model.sequelize.models[targetModelName];
