@@ -156,6 +156,7 @@ exports.createTeacher = async (req, res, next) => {
       userType: finalUserType,
       institution: req.user.institution,
       branch: req.user.branch,
+      baseSalary: req.body.baseSalary ? Number(req.body.baseSalary) : 0,
       isActive: true
     };
     if (finalEmail) userFields.email = finalEmail;
@@ -186,6 +187,7 @@ exports.createTeacher = async (req, res, next) => {
       employeeId: finalTeacherId, // required by schema
       teacherType: teacherType || (finalUserType === 'hifz_teacher' ? 'hifz' : 'regular'),
       designation: req.body.designation || defaultDesignation,
+      baseSalary: req.body.baseSalary ? Number(req.body.baseSalary) : 0,
       joiningDate: req.body.joinDate || new Date(),
       qualification: req.body.qualifications || '',
       status: 'active'
@@ -292,6 +294,14 @@ exports.updateTeacher = async (req, res, next) => {
     if (req.body.qualification !== undefined) teacher.qualification = req.body.qualification;
     if (req.body.status !== undefined) teacher.status = req.body.status;
     if (req.body.teacherId !== undefined) teacher.employeeId = req.body.teacherId;
+    if (req.body.baseSalary !== undefined) {
+      const salary = Number(req.body.baseSalary) || 0;
+      teacher.baseSalary = salary;
+      if (userDoc) {
+        userDoc.baseSalary = salary;
+        await userDoc.save();
+      }
+    }
 
     await teacher.save();
 

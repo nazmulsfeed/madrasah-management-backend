@@ -741,3 +741,45 @@ exports.getTeacherSalarySheet = async (req, res, next) => {
   }
 };
 
+// ──────────────────────────────────────────────────────────────
+// @desc    Update Staff / Teacher Base Salary
+// @route   POST /api/v1/reports/update-staff-salary
+// @access  Private (Admin / Principal / Accountant)
+exports.updateStaffSalary = async (req, res, next) => {
+  try {
+    const Teacher = require('../models/Teacher');
+    const User = require('../models/User');
+
+    const { staffId, teacherId, salary } = req.body;
+    const baseSalary = Number(salary) || 0;
+
+    if (teacherId) {
+      const teacher = await Teacher.findOne({ where: { _id: teacherId } });
+      if (teacher) {
+        teacher.baseSalary = baseSalary;
+        await teacher.save();
+      }
+    }
+
+    if (staffId) {
+      const user = await User.findOne({ where: { _id: staffId } });
+      if (user) {
+        user.baseSalary = baseSalary;
+        await user.save();
+      }
+
+      const linkedTeacher = await Teacher.findOne({ where: { user: staffId } });
+      if (linkedTeacher) {
+        linkedTeacher.baseSalary = baseSalary;
+        await linkedTeacher.save();
+      }
+    }
+
+    return ApiResponse.success(res, { baseSalary }, 'বেতন সফলভাবে নির্ধারণ ও সংরক্ষণ করা হয়েছে');
+  } catch (error) {
+    console.error('updateStaffSalary error:', error);
+    next(error);
+  }
+};
+
+

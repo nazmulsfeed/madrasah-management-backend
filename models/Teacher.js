@@ -52,6 +52,11 @@ Teacher.init({
     allowNull: true,
     defaultValue: '',
   },
+  baseSalary: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: true,
+    defaultValue: 0,
+  },
   status: {
     type: DataTypes.STRING,
     allowNull: true,

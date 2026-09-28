@@ -71,6 +71,11 @@ User.init({
     type: DataTypes.STRING,
     allowNull: true,
   },
+  baseSalary: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: true,
+    defaultValue: 0,
+  },
   isActive: {
     type: DataTypes.BOOLEAN,
     allowNull: true,
