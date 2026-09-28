@@ -9,7 +9,7 @@ router.use(protect);
 router
   .route('/')
   .get(
-    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'teacher.view', 'user.view', 'can_view_users'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'accountant', 'teacher.view', 'user.view', 'can_view_users'),
     teacherController.getTeachers
   )
   .post(
