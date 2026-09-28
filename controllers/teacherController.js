@@ -255,6 +255,10 @@ exports.updateTeacher = async (req, res, next) => {
           userDoc.adminRole = 'admin';
         } else if (req.body.userType === 'co_super_admin') {
           userDoc.adminRole = 'co_super_admin';
+        } else {
+          if (userDoc.adminRole === 'admin' || userDoc.adminRole === 'co_super_admin') {
+            userDoc.adminRole = '';
+          }
         }
       }
 

@@ -13,7 +13,7 @@ router
     teacherController.getTeachers
   )
   .post(
-    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'teacher.create', 'user.create', 'can_manage_users'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'teacher.create'),
     teacherController.createTeacher
   );
 
@@ -24,11 +24,11 @@ router
     teacherController.getTeacher
   )
   .patch(
-    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'teacher.update', 'user.update', 'can_manage_users'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'teacher.update'),
     teacherController.updateTeacher
   )
   .delete(
-    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'teacher.delete', 'user.delete', 'can_manage_users'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'teacher.delete'),
     teacherController.deleteTeacher
   );
 
