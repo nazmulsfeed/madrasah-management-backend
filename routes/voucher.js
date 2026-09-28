@@ -10,8 +10,12 @@ router.route('/')
   .get(voucherController.getVouchers)
   .post(voucherController.createVoucher);
 
+router.route('/:id')
+  .get(voucherController.getVoucherById)
+  .delete(authorize('super_admin', 'co_super_admin', 'admin'), voucherController.deleteVoucher);
+
 router.post('/:id/verify', authorize('super_admin', 'co_super_admin', 'admin', 'principal'), voucherController.verifyVoucher);
-router.post('/:id/approve', authorize('super_admin', 'co_super_admin', 'admin'), voucherController.approveVoucher);
+router.post('/:id/approve', authorize('super_admin', 'co_super_admin', 'admin', 'principal'), voucherController.approveVoucher);
 router.post('/:id/reject', authorize('super_admin', 'co_super_admin', 'admin', 'principal'), voucherController.rejectVoucher);
 
 module.exports = router;

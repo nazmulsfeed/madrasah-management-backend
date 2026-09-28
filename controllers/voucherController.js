@@ -1,44 +1,124 @@
 const Voucher = require('../models/Voucher');
 const JournalEntry = require('../models/JournalEntry');
 const Account = require('../models/Account');
+const User = require('../models/User');
 const ApiResponse = require('../utils/apiResponse');
 const auditLogger = require('./auditLogController');
+const { Op } = require('sequelize');
 
-// @desc    Get all vouchers
+// Helper to check management permission
+const hasAdminRole = (user) => {
+  const role = user?.userType || user?.adminRole || '';
+  return ['super_admin', 'co_super_admin', 'admin', 'principal'].includes(role);
+};
+
+// @desc    Get all vouchers with filters & stats
 // @route   GET /api/v1/vouchers
 exports.getVouchers = async (req, res, next) => {
   try {
-    const filter = { institution: req.user.institution };
-    if (req.query.status) {
-      filter.status = req.query.status;
+    const institution = req.user.institution;
+    const { status, from, to, search } = req.query;
+
+    const where = { institution };
+
+    if (status && status !== 'all') {
+      where.status = status;
     }
 
-    const vouchers = await Voucher.find(filter).sort({ date: -1 });
-    
-    // Manual populate for string references
-    const accounts = await Account.find({ institution: req.user.institution });
-    const accountMap = {};
-    accounts.forEach(a => accountMap[a._id.toString()] = a);
+    if (from && to) {
+      where.date = {
+        [Op.between]: [new Date(`${from}T00:00:00.000Z`), new Date(`${to}T23:59:59.999Z`)]
+      };
+    } else if (from) {
+      where.date = { [Op.gte]: new Date(`${from}T00:00:00.000Z`) };
+    } else if (to) {
+      where.date = { [Op.lte]: new Date(`${to}T23:59:59.999Z`) };
+    }
 
-    const User = require('../models/User');
-    const users = await User.find({ institution: req.user.institution });
-    const userMap = {};
-    users.forEach(u => userMap[u._id.toString()] = u);
+    if (search && search.trim()) {
+      const q = `%${search.trim()}%`;
+      where[Op.or] = [
+        { voucherNumber: { [Op.like]: q } },
+        { payeeName: { [Op.like]: q } },
+        { description: { [Op.like]: q } },
+      ];
+    }
+
+    const vouchers = await Voucher.findAll({
+      where,
+      order: [['date', 'DESC'], ['createdAt', 'DESC']],
+    });
+
+    // Bulk load accounts & users for fast enrichment
+    const [accounts, users] = await Promise.all([
+      Account.findAll({ where: { institution } }),
+      User.findAll({ where: { institution } }),
+    ]);
+
+    const accountMap = new Map();
+    accounts.forEach(a => {
+      const aObj = typeof a.toJSON === 'function' ? a.toJSON() : a;
+      accountMap.set(String(aObj._id), aObj);
+    });
+
+    const userMap = new Map();
+    users.forEach(u => {
+      const uObj = typeof u.toJSON === 'function' ? u.toJSON() : u;
+      userMap.set(String(uObj._id), uObj);
+    });
+
+    let totalAmount = 0;
+    let approvedAmount = 0;
+    let pendingAmount = 0;
 
     const populatedVouchers = vouchers.map(v => {
-      const vObj = typeof v.toJSON === 'function' ? v.toJSON() : v;
-      const prepUser = userMap[vObj.preparedBy];
-      const appUser = userMap[vObj.approvedBy];
+      const vObj = typeof v.toJSON === 'function' ? v.toJSON() : { ...v };
+      const amount = Number(vObj.amount) || 0;
+      totalAmount += amount;
+
+      if (vObj.status === 'approved') {
+        approvedAmount += amount;
+      } else if (vObj.status === 'pending' || vObj.status === 'level_1_approved') {
+        pendingAmount += amount;
+      }
+
+      const prepUser = userMap.get(String(vObj.preparedBy));
+      const appUser = userMap.get(String(vObj.approvedBy));
+      const verUser = userMap.get(String(vObj.verifiedBy));
+
       return {
         ...vObj,
-        expenseAccountDetails: accountMap[vObj.expenseAccount] || { name: 'Unknown' },
-        fundAccountDetails: accountMap[vObj.fundAccount] || { name: 'Unknown' },
-        preparedByName: prepUser ? `${prepUser.firstName} ${prepUser.lastName || ''}`.trim() : 'System',
-        approvedByName: appUser ? `${appUser.firstName} ${appUser.lastName || ''}`.trim() : 'N/A',
+        expenseAccountDetails: accountMap.get(String(vObj.expenseAccount)) || { name: 'ব্যয়ের খাত' },
+        fundAccountDetails: accountMap.get(String(vObj.fundAccount)) || { name: 'তহবিল খাত' },
+        preparedByName: prepUser ? `${prepUser.firstName || ''} ${prepUser.lastName || ''}`.trim() || prepUser.username : 'অফিস স্টাফ',
+        approvedByName: appUser ? `${appUser.firstName || ''} ${appUser.lastName || ''}`.trim() || appUser.username : null,
+        verifiedByName: verUser ? `${verUser.firstName || ''} ${verUser.lastName || ''}`.trim() || verUser.username : null,
       };
     });
 
-    ApiResponse.success(res, { vouchers: populatedVouchers });
+    ApiResponse.success(res, {
+      vouchers: populatedVouchers,
+      stats: {
+        totalCount: vouchers.length,
+        totalAmount,
+        approvedAmount,
+        pendingAmount,
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get single voucher by ID
+// @route   GET /api/v1/vouchers/:id
+exports.getVoucherById = async (req, res, next) => {
+  try {
+    const voucher = await Voucher.findOne({
+      where: { _id: req.params.id, institution: req.user.institution }
+    });
+    if (!voucher) return ApiResponse.notFound(res, 'ভাউচার পাওয়া যায়নি');
+    ApiResponse.success(res, { voucher });
   } catch (error) {
     next(error);
   }
@@ -48,14 +128,8 @@ exports.getVouchers = async (req, res, next) => {
 // @route   POST /api/v1/vouchers
 exports.createVoucher = async (req, res, next) => {
   try {
-    const { date, payeeName, expenseAccount, fundAccount, amount, paymentMethod, description, attachment } = req.body;
-    
-    const voucherNumber = `VCH-${Date.now()}`;
-
-    const voucher = await Voucher.create({
-      institution: req.user.institution,
-      voucherNumber,
-      date: date || new Date(),
+    const {
+      date,
       payeeName,
       expenseAccount,
       fundAccount,
@@ -63,23 +137,90 @@ exports.createVoucher = async (req, res, next) => {
       paymentMethod,
       description,
       attachment,
-      status: 'pending',
+      autoApprove = false,
+    } = req.body;
+
+    if (!payeeName || !expenseAccount || !fundAccount || !amount) {
+      return ApiResponse.error(res, 'প্রাপকের নাম, ব্যয়ের খাত, ফান্ড খাত এবং টাকার পরিমাণ আবশ্যক', 400);
+    }
+
+    const numAmount = Math.max(0, Number(amount) || 0);
+    if (numAmount <= 0) {
+      return ApiResponse.error(res, 'টাকার পরিমাণ শূন্যের বেশি হতে হবে', 400);
+    }
+
+    const randSuffix = Math.floor(1000 + Math.random() * 9000);
+    const voucherNumber = `VCH-${Date.now().toString().slice(-6)}-${randSuffix}`;
+
+    const isAdmin = hasAdminRole(req.user);
+    const shouldApprove = autoApprove && isAdmin;
+
+    const voucher = await Voucher.create({
+      institution: req.user.institution,
+      voucherNumber,
+      date: date || new Date(),
+      payeeName: payeeName.trim(),
+      expenseAccount,
+      fundAccount,
+      amount: numAmount,
+      paymentMethod: paymentMethod || 'cash',
+      description: description ? description.trim() : '',
+      attachment: attachment || null,
+      status: shouldApprove ? 'approved' : 'pending',
+      approvalLevel: shouldApprove ? 2 : 0,
       preparedBy: req.user._id,
+      approvedBy: shouldApprove ? req.user._id : null,
     });
 
-    // Log the action
+    let journal = null;
+    if (shouldApprove) {
+      try {
+        const entries = [
+          { account: expenseAccount, debit: numAmount, credit: 0 },
+          { account: fundAccount, debit: 0, credit: numAmount }
+        ];
+
+        journal = await JournalEntry.create({
+          institution: req.user.institution,
+          date: voucher.date,
+          reference: voucher.voucherNumber,
+          description: `ভাউচার পেমেন্ট: ${voucher.payeeName} - ${voucher.description || ''}`,
+          entries
+        });
+
+        // Update Account Balances
+        const expAcc = await Account.findOne({ where: { _id: expenseAccount, institution: req.user.institution } });
+        if (expAcc) {
+          expAcc.balance = (Number(expAcc.balance) || 0) + numAmount;
+          await expAcc.save();
+        }
+
+        const fundAcc = await Account.findOne({ where: { _id: fundAccount, institution: req.user.institution } });
+        if (fundAcc) {
+          fundAcc.balance = (Number(fundAcc.balance) || 0) - numAmount;
+          await fundAcc.save();
+        }
+      } catch (e) {
+        console.error('Voucher auto-approval journal creation error:', e);
+      }
+    }
+
     await auditLogger.logAction(
       req.user.institution,
       req.user._id,
       'create',
       'Voucher',
       voucher._id,
-      `ভাউচার তৈরি করা হয়েছে: ${voucherNumber} - ৳${amount}`,
+      `ভাউচার তৈরি করা হয়েছে: ${voucherNumber} - ৳${numAmount}${shouldApprove ? ' (স্বয়ংক্রিয় অনুমোদিত)' : ''}`,
       null,
       voucher
     );
 
-    ApiResponse.created(res, { voucher }, 'ভাউচার সফলভাবে তৈরি করা হয়েছে এবং অনুমোদনের অপেক্ষায় আছে');
+    const message = shouldApprove
+      ? 'ভাউচার সফলভাবে তৈরি এবং অনুমোদিত হয়েছে'
+      : 'ভাউচার সফলভাবে তৈরি করা হয়েছে এবং অনুমোদনের অপেক্ষায় আছে';
+
+    ApiResponse.created(res, { voucher, journal }, message);
   } catch (error) {
     next(error);
   }
@@ -89,13 +230,17 @@ exports.createVoucher = async (req, res, next) => {
 // @route   POST /api/v1/vouchers/:id/verify
 exports.verifyVoucher = async (req, res, next) => {
   try {
-    const voucher = await Voucher.findById(req.params.id);
+    const voucher = await Voucher.findOne({
+      where: { _id: req.params.id, institution: req.user.institution }
+    });
     if (!voucher) return ApiResponse.notFound(res, 'ভাউচার পাওয়া যায়নি');
-    if (voucher.institution !== req.user.institution) return ApiResponse.error(res, 'Unauthorised', 403);
-    
-    if (voucher.status !== 'pending') return ApiResponse.error(res, 'শুধুমাত্র অপেক্ষাধীন ভাউচার যাচাই করা যাবে', 400);
 
-    voucher.status = 'verified';
+    if (voucher.status !== 'pending') {
+      return ApiResponse.error(res, 'শুধুমাত্র অপেক্ষাধীন ভাউচার যাচাই করা যাবে', 400);
+    }
+
+    voucher.status = 'level_1_approved';
+    voucher.approvalLevel = 1;
     voucher.verifiedBy = req.user._id;
     await voucher.save();
 
@@ -107,10 +252,10 @@ exports.verifyVoucher = async (req, res, next) => {
       voucher._id,
       `ভাউচার যাচাই (Verify) করা হয়েছে: ${voucher.voucherNumber}`,
       { status: 'pending' },
-      { status: 'verified', verifiedBy: req.user._id }
+      { status: 'level_1_approved', verifiedBy: req.user._id }
     );
 
-    ApiResponse.success(res, { voucher }, 'ভাউচার যাচাই (Verify) করা হয়েছে, এখন চূড়ান্ত অনুমোদনের অপেক্ষায় আছে');
+    ApiResponse.success(res, { voucher }, 'ভাউচার যাচাই (Level-1 Approved) করা হয়েছে, চূড়ান্ত অনুমোদনের অপেক্ষায় আছে');
   } catch (error) {
     next(error);
   }
@@ -120,24 +265,26 @@ exports.verifyVoucher = async (req, res, next) => {
 // @route   POST /api/v1/vouchers/:id/approve
 exports.approveVoucher = async (req, res, next) => {
   try {
-    const voucher = await Voucher.findById(req.params.id);
+    const voucher = await Voucher.findOne({
+      where: { _id: req.params.id, institution: req.user.institution }
+    });
     if (!voucher) return ApiResponse.notFound(res, 'ভাউচার পাওয়া যায়নি');
-    if (voucher.institution !== req.user.institution) return ApiResponse.error(res, 'Unauthorised', 403);
-    
-    if (voucher.status === 'approved') return ApiResponse.error(res, 'এই ভাউচার ইতিমধ্যে অনুমোদিত', 400);
 
-    if (voucher.status === 'pending' && req.user.userType !== 'super_admin') {
-      return ApiResponse.error(res, 'ভাউচারটি চূড়ান্ত অনুমোদনের আগে যাচাই (Verify) করতে হবে', 400);
+    if (voucher.status === 'approved') {
+      return ApiResponse.error(res, 'এই ভাউচারটি ইতিমধ্যে অনুমোদিত হয়েছে', 400);
     }
 
     voucher.status = 'approved';
+    voucher.approvalLevel = 2;
     voucher.approvedBy = req.user._id;
     await voucher.save();
 
+    const numAmount = Number(voucher.amount) || 0;
+
     // Create Double Entry Journal
     const entries = [
-      { account: voucher.expenseAccount, debit: voucher.amount, credit: 0 },
-      { account: voucher.fundAccount, debit: 0, credit: voucher.amount }
+      { account: voucher.expenseAccount, debit: numAmount, credit: 0 },
+      { account: voucher.fundAccount, debit: 0, credit: numAmount }
     ];
 
     const journal = await JournalEntry.create({
@@ -149,11 +296,17 @@ exports.approveVoucher = async (req, res, next) => {
     });
 
     // Update balances
-    const expAcc = await Account.findById(voucher.expenseAccount);
-    if (expAcc) { expAcc.balance += voucher.amount; await expAcc.save(); }
-    
-    const fundAcc = await Account.findById(voucher.fundAccount);
-    if (fundAcc) { fundAcc.balance -= voucher.amount; await fundAcc.save(); }
+    const expAcc = await Account.findOne({ where: { _id: voucher.expenseAccount, institution: req.user.institution } });
+    if (expAcc) {
+      expAcc.balance = (Number(expAcc.balance) || 0) + numAmount;
+      await expAcc.save();
+    }
+
+    const fundAcc = await Account.findOne({ where: { _id: voucher.fundAccount, institution: req.user.institution } });
+    if (fundAcc) {
+      fundAcc.balance = (Number(fundAcc.balance) || 0) - numAmount;
+      await fundAcc.save();
+    }
 
     await auditLogger.logAction(
       req.user.institution,
@@ -161,12 +314,12 @@ exports.approveVoucher = async (req, res, next) => {
       'approve',
       'Voucher',
       voucher._id,
-      `ভাউচার অনুমোদন (Approve) করা হয়েছে: ${voucher.voucherNumber}`,
-      { status: 'verified' },
+      `ভাউচার চূড়ান্ত অনুমোদন (Approve) করা হয়েছে: ${voucher.voucherNumber}`,
+      { status: 'pending' },
       { status: 'approved', approvedBy: req.user._id }
     );
 
-    ApiResponse.success(res, { voucher, journal }, 'ভাউচার অনুমোদিত এবং একাউন্টিং এ রেকর্ড করা হয়েছে');
+    ApiResponse.success(res, { voucher, journal }, 'ভাউচার সফলভাবে অনুমোদিত হয়েছে এবং হিসাব খতিয়ানে যুক্ত করা হয়েছে');
   } catch (error) {
     next(error);
   }
@@ -176,10 +329,16 @@ exports.approveVoucher = async (req, res, next) => {
 // @route   POST /api/v1/vouchers/:id/reject
 exports.rejectVoucher = async (req, res, next) => {
   try {
-    const voucher = await Voucher.findById(req.params.id);
+    const voucher = await Voucher.findOne({
+      where: { _id: req.params.id, institution: req.user.institution }
+    });
     if (!voucher) return ApiResponse.notFound(res, 'ভাউচার পাওয়া যায়নি');
-    if (voucher.status !== 'pending') return ApiResponse.error(res, 'শুধুমাত্র পেন্ডিং ভাউচার বাতিল করা যাবে', 400);
 
+    if (voucher.status === 'approved') {
+      return ApiResponse.error(res, 'অনুমোদিত ভাউচার সরাসরি বাতিল করা যায় না', 400);
+    }
+
+    const prevStatus = voucher.status;
     voucher.status = 'rejected';
     await voucher.save();
 
@@ -190,11 +349,65 @@ exports.rejectVoucher = async (req, res, next) => {
       'Voucher',
       voucher._id,
       `ভাউচার বাতিল (Reject) করা হয়েছে: ${voucher.voucherNumber}`,
-      { status: 'pending' },
+      { status: prevStatus },
       { status: 'rejected' }
     );
 
-    ApiResponse.success(res, { voucher }, 'ভাউচার বাতিল করা হয়েছে');
+    ApiResponse.success(res, { voucher }, 'ভাউচারটি সফলভাবে বাতিল করা হয়েছে');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Delete voucher
+// @route   DELETE /api/v1/vouchers/:id
+exports.deleteVoucher = async (req, res, next) => {
+  try {
+    const voucher = await Voucher.findOne({
+      where: { _id: req.params.id, institution: req.user.institution }
+    });
+    if (!voucher) return ApiResponse.notFound(res, 'ভাউচার পাওয়া যায়নি');
+
+    const numAmount = Number(voucher.amount) || 0;
+
+    // If voucher was approved, reverse accounting balances and delete journal
+    if (voucher.status === 'approved') {
+      try {
+        const expAcc = await Account.findOne({ where: { _id: voucher.expenseAccount, institution: req.user.institution } });
+        if (expAcc) {
+          expAcc.balance = Math.max(0, (Number(expAcc.balance) || 0) - numAmount);
+          await expAcc.save();
+        }
+
+        const fundAcc = await Account.findOne({ where: { _id: voucher.fundAccount, institution: req.user.institution } });
+        if (fundAcc) {
+          fundAcc.balance = (Number(fundAcc.balance) || 0) + numAmount;
+          await fundAcc.save();
+        }
+
+        await JournalEntry.destroy({
+          where: { reference: voucher.voucherNumber, institution: req.user.institution }
+        });
+      } catch (e) {
+        console.error('Error reverting journal on voucher delete:', e);
+      }
+    }
+
+    const voucherNum = voucher.voucherNumber;
+    await voucher.destroy();
+
+    await auditLogger.logAction(
+      req.user.institution,
+      req.user._id,
+      'delete',
+      'Voucher',
+      voucher._id,
+      `ভাউচার মুছে ফেলা হয়েছে: ${voucherNum}`,
+      voucher,
+      null
+    );
+
+    ApiResponse.success(res, null, 'ভাউচার সফলভাবে মুছে ফেলা হয়েছে');
   } catch (error) {
     next(error);
   }
