@@ -104,10 +104,31 @@ exports.getAttendance = async (req, res, next) => {
       }
     }
 
-    // --- Student/Guardian data scoping ---
+    // --- Student/Guardian data scoping & student filter ---
     const userType = req.user.userType;
     
-    if (userType === 'student' || userType === 'guardian') {
+    if (req.query.student) {
+      if (userType === 'student') {
+        const studentDoc = await Student.findOne({ user: req.user._id });
+        if (studentDoc) {
+          filter.student = studentDoc._id;
+        } else {
+          return ApiResponse.success(res, { records: [] });
+        }
+      } else if (userType === 'guardian') {
+        const guardian = await Guardian.findOne({ user: req.user._id });
+        const linkedStudentIds = (guardian && guardian.students && guardian.students.length > 0)
+          ? guardian.students.map(s => s.student)
+          : [];
+        if (linkedStudentIds.includes(req.query.student)) {
+          filter.student = req.query.student;
+        } else {
+          filter.student = { $in: linkedStudentIds };
+        }
+      } else {
+        filter.student = req.query.student;
+      }
+    } else if (userType === 'student' || userType === 'guardian') {
       let hasFullAccess = false;
       const rolePerm = await RolePermission.findOne({ where: { role: userType } });
       if (rolePerm && rolePerm.permissions && rolePerm.permissions.can_view_all_attendance) {
@@ -146,8 +167,9 @@ exports.getAttendance = async (req, res, next) => {
       })
       .populate('markedBy', 'firstName lastName fullName');
 
-    if (req.query.history === 'true') {
-      recordsQuery.sort({ date: -1 }).limit(100); // Last 100 records
+    if (req.query.history === 'true' || req.query.student) {
+      const limitCount = parseInt(req.query.limit, 10) || 100;
+      recordsQuery.sort({ date: -1 }).limit(limitCount);
     }
 
     const records = await recordsQuery.exec();
