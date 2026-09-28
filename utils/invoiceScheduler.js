@@ -68,11 +68,24 @@ async function generateMonthlyInvoicesForCurrentMonth(month, year, targetInstitu
           const monthlyFee = Number(classLevel.monthlyFee) || 0;
           if (monthlyFee <= 0) continue; // কোনো ফি নির্ধারিত না থাকলে ইনভয়েস হবে না
 
-          // ইতিমধ্যে ইনভয়েস তৈরি হয়েছে কিনা চেক করা
+          // ইতিমধ্যে ইনভয়েস তৈরি হয়েছে কিনা চেক করা (ডুপ্লিকেট প্রতিরোধ)
           const existing = await Invoice.findOne({
             where: {
               student: student._id,
-              title: title,
+              [Op.or]: [
+                { title: title },
+                {
+                  [Op.and]: [
+                    {
+                      [Op.or]: [
+                        { title: { [Op.like]: `%মাসিক বেতন%` } },
+                        { feeCategory: { [Op.like]: `%মাসিক বেতন%` } }
+                      ]
+                    },
+                    { title: { [Op.like]: `%${month}%` } }
+                  ]
+                }
+              ]
             }
           });
 
@@ -142,6 +155,7 @@ async function generateMonthlyInvoicesForCurrentMonth(month, year, targetInstitu
 async function generateCategoryInvoicesForCurrentMonth(category, month, year, institution) {
   try {
     const categoryLabels = {
+      monthlyFee: 'মাসিক বেতন',
       admissionFee: 'ভর্তি ফি',
       sessionFee: 'সেশন ফি',
       examFee: 'পরীক্ষা ফি'
@@ -179,7 +193,20 @@ async function generateCategoryInvoicesForCurrentMonth(category, month, year, in
       const existing = await Invoice.findOne({
         where: {
           student: student._id,
-          title: title,
+          [Op.or]: [
+            { title: title },
+            {
+              [Op.and]: [
+                {
+                  [Op.or]: [
+                    { title: { [Op.like]: `%${label}%` } },
+                    { feeCategory: { [Op.like]: `%${label}%` } }
+                  ]
+                },
+                { title: { [Op.like]: `%${month}%` } }
+              ]
+            }
+          ]
         }
       });
 
