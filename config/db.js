@@ -68,6 +68,12 @@ const connectDB = async () => {
     await sequelize.authenticate();
     console.log('✅ MySQL/Sequelize সংযুক্ত হয়েছে');
 
+    // Immediate safe migration for baseSalary before any model queries run
+    try {
+      await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `baseSalary` DECIMAL(12,2) NULL DEFAULT 0").catch(() => {});
+      await sequelize.query("ALTER TABLE `users` ADD COLUMN `baseSalary` DECIMAL(12,2) NULL DEFAULT 0").catch(() => {});
+    } catch (migErr) {}
+
     // Wrap toJSON to handle populated mongooseCompat associations & run associations
     Object.keys(sequelize.models).forEach((modelName) => {
       const model = sequelize.models[modelName];
@@ -221,6 +227,16 @@ const connectDB = async () => {
       if (!teaBranchCol || teaBranchCol.length === 0) {
         await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `branch` VARCHAR(255) NULL DEFAULT ''");
         console.log("✅ Added branch column to teachers table");
+      }
+      const [teaSalaryCol] = await sequelize.query("SHOW COLUMNS FROM `teachers` LIKE 'baseSalary'");
+      if (!teaSalaryCol || teaSalaryCol.length === 0) {
+        await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `baseSalary` DECIMAL(12,2) NULL DEFAULT 0");
+        console.log("✅ Added baseSalary column to teachers table");
+      }
+      const [userSalaryCol] = await sequelize.query("SHOW COLUMNS FROM `users` LIKE 'baseSalary'");
+      if (!userSalaryCol || userSalaryCol.length === 0) {
+        await sequelize.query("ALTER TABLE `users` ADD COLUMN `baseSalary` DECIMAL(12,2) NULL DEFAULT 0");
+        console.log("✅ Added baseSalary column to users table");
       }
     } catch (colErr) {
       console.error("⚠️ Error auto-adding columns:", colErr.message);
