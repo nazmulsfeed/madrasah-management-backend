@@ -34,7 +34,16 @@ async function enrichStudentsMap(institutionId, studentIds) {
   });
 
   const userIds = students.map(s => s.user).filter(Boolean);
-  const enrollmentIds = students.map(s => s.currentEnrollment).filter(Boolean);
+  const enrollmentIds = [];
+  const studentsNeedingLookup = [];
+  students.forEach(s => {
+    const curEnrId = s.currentEnrollment;
+    if (curEnrId && typeof curEnrId === 'string' && curEnrId.trim() !== '') {
+      enrollmentIds.push(curEnrId);
+    } else if (s._id) {
+      studentsNeedingLookup.push(s._id);
+    }
+  });
 
   // 2. Fetch Student Users
   const users = userIds.length > 0 ? await User.findAll({
@@ -52,17 +61,42 @@ async function enrichStudentsMap(institutionId, studentIds) {
     };
   });
 
-  // 3. Fetch Enrollments
-  const enrollments = enrollmentIds.length > 0 ? await StudentEnrollment.findAll({
-    where: { _id: { [Op.in]: enrollmentIds } }
+  // 3. Fetch Enrollments (including fallback for students without currentEnrollment field)
+  let fallbackEnrollments = [];
+  if (studentsNeedingLookup.length > 0) {
+    fallbackEnrollments = await StudentEnrollment.findAll({
+      where: {
+        student: { [Op.in]: studentsNeedingLookup },
+        enrollmentStatus: 'active'
+      },
+      order: [['createdAt', 'DESC']]
+    }).catch(() => []);
+  }
+
+  const allEnrollmentIds = [
+    ...new Set([
+      ...enrollmentIds,
+      ...fallbackEnrollments.map(e => e._id)
+    ])
+  ];
+
+  const enrollments = allEnrollmentIds.length > 0 ? await StudentEnrollment.findAll({
+    where: { _id: { [Op.in]: allEnrollmentIds } }
   }) : [];
 
   const classLevelIds = enrollments.map(e => e.classLevel).filter(Boolean);
-  const sectionIds = enrollments.map(e => e.section).filter(Boolean);
+  const rawSectionValues = enrollments.map(e => e.section).filter(Boolean);
 
   const [classLevels, sections, branches] = await Promise.all([
     classLevelIds.length > 0 ? ClassLevel.findAll({ where: { _id: { [Op.in]: classLevelIds } } }) : [],
-    sectionIds.length > 0 ? Section.findAll({ where: { _id: { [Op.in]: sectionIds } } }) : [],
+    rawSectionValues.length > 0 ? Section.findAll({
+      where: {
+        [Op.or]: [
+          { _id: { [Op.in]: rawSectionValues } },
+          { name: { [Op.in]: rawSectionValues } }
+        ]
+      }
+    }).catch(() => []) : [],
     Branch.findAll({ where: { institution: institutionId } }).catch(() => [])
   ]);
 
@@ -76,23 +110,47 @@ async function enrichStudentsMap(institutionId, studentIds) {
   classLevels.forEach(c => { classMap[String(c._id)] = c.toJSON ? c.toJSON() : c; });
 
   const sectionMap = {};
-  sections.forEach(s => { sectionMap[String(s._id)] = s.toJSON ? s.toJSON() : s; });
+  sections.forEach(s => {
+    const sJson = s.toJSON ? s.toJSON() : s;
+    sectionMap[String(s._id)] = sJson;
+    sectionMap[String(s.name)] = sJson;
+  });
 
   const enrollmentMap = {};
+  const studentToEnrollmentMap = {};
   enrollments.forEach(e => {
     const eJson = e.toJSON ? e.toJSON() : e;
-    enrollmentMap[String(e._id)] = {
+    const rawSec = e.section;
+    let resolvedSection = null;
+    if (rawSec) {
+      if (typeof rawSec === 'object' && rawSec.name) {
+        resolvedSection = rawSec;
+      } else {
+        const secStr = String(rawSec).trim();
+        if (sectionMap[secStr]) {
+          resolvedSection = sectionMap[secStr];
+        } else if (secStr !== '' && secStr !== '—' && secStr !== 'none' && secStr !== 'কোন সেকশন নাই') {
+          resolvedSection = { _id: secStr, name: secStr };
+        }
+      }
+    }
+
+    const populatedEnr = {
       ...eJson,
-      classLevel: classMap[String(e.classLevel)] || null,
-      section: sectionMap[String(e.section)] || (e.section ? { name: String(e.section) } : null)
+      classLevel: classMap[String(e.classLevel)] || (e.classLevel ? { _id: e.classLevel, name: '' } : null),
+      section: resolvedSection
     };
+    enrollmentMap[String(e._id)] = populatedEnr;
+    if (e.student && !studentToEnrollmentMap[String(e.student)]) {
+      studentToEnrollmentMap[String(e.student)] = populatedEnr;
+    }
   });
 
   // 4. Build studentMap
   const studentMap = {};
   students.forEach(s => {
     const sJson = s.toJSON ? s.toJSON() : s;
-    const curEnroll = enrollmentMap[String(s.currentEnrollment)] || null;
+    const curEnroll = enrollmentMap[String(s.currentEnrollment)] || studentToEnrollmentMap[String(s._id)] || null;
     const rawBranch = s.branch || (curEnroll ? curEnroll.branch : null);
     let resolvedBranchName = '';
     if (rawBranch) {
