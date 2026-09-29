@@ -1343,11 +1343,31 @@ exports.getPromotionCandidates = async (req, res, next) => {
 // @route   POST /api/v1/students/promote
 exports.promoteStudents = async (req, res, next) => {
   try {
-    const { promotions, destClassLevelId, destSectionId, destAcademicYearId } = req.body;
+    const { promotions, destClassLevelId, destSectionId, destAcademicYearId, actionType } = req.body;
 
     if (!promotions || !Array.isArray(promotions) || promotions.length === 0) {
-      return ApiResponse.error(res, 'উত্তীর্ণ করার জন্য শিক্ষার্থী নির্বাচন আবশ্যক', 400);
+      return ApiResponse.error(res, 'শিক্ষার্থী নির্বাচন আবশ্যক', 400);
     }
+
+    // সমাপনী গ্র্যাজুয়েশন (Batch Graduate / Passed Out)
+    if (actionType === 'graduate') {
+      const gradCount = promotions.length;
+      for (const p of promotions) {
+        const { studentId, enrollmentId } = p;
+        if (enrollmentId) {
+          await StudentEnrollment.findByIdAndUpdate(enrollmentId, {
+            enrollmentStatus: 'graduated',
+            endDate: new Date(),
+            updatedBy: req.user._id
+          });
+        }
+        await Student.findByIdAndUpdate(studentId, {
+          status: 'graduated'
+        });
+      }
+      return ApiResponse.success(res, null, `${gradCount} জন শিক্ষার্থীকে সফলভাবে সমাপনী স্নাতক (Graduated) করা হয়েছে`);
+    }
+
     if (!destClassLevelId || !destSectionId || !destAcademicYearId) {
       return ApiResponse.error(res, 'গন্তব্য শিক্ষাবর্ষ, শ্রেণি এবং সেকশন আবশ্যক', 400);
     }
