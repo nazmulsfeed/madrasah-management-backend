@@ -20,6 +20,9 @@ router.route('/accounts/:id')
 router.route('/journals')
   .get(accountingController.getJournals);
 
+router.route('/journals/:id')
+  .delete(authorize('super_admin', 'co_super_admin'), accountingController.deleteJournal);
+
 router.route('/transactions')
   .get(accountingController.getTransactions);
 

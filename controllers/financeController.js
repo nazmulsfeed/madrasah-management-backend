@@ -523,6 +523,15 @@ exports.deleteInvoice = async (req, res, next) => {
 
     const associatedPayments = await Payment.findAll({ where: { invoice: id } });
     if (associatedPayments.length > 0) {
+      const paymentNumbers = associatedPayments.map(p => p.paymentNumber).filter(Boolean);
+      if (paymentNumbers.length > 0) {
+        await JournalEntry.destroy({
+          where: {
+            institution,
+            reference: { [Op.in]: paymentNumbers }
+          }
+        }).catch(() => {});
+      }
       await Payment.destroy({ where: { invoice: id } });
     }
 

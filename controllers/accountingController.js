@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const Account = require('../models/Account');
 const JournalEntry = require('../models/JournalEntry');
 const ApiResponse = require('../utils/apiResponse');
@@ -276,16 +277,26 @@ exports.deleteAccount = async (req, res, next) => {
 // @route   GET /api/v1/accounting/journals
 exports.getJournals = async (req, res, next) => {
   try {
-    const filter = { institution: req.user.institution };
+    const institution = req.user.institution;
+    let where = { institution };
     
     if (req.query.startDate && req.query.endDate) {
-       filter.date = { 
-           $gte: new Date(req.query.startDate), 
-           $lte: new Date(req.query.endDate) 
-       };
+      const startDate = new Date(req.query.startDate);
+      startDate.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(req.query.endDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      where.date = { [Op.between]: [startDate, endOfDay] };
+    } else if (req.query.startDate) {
+      const startDate = new Date(req.query.startDate);
+      startDate.setHours(0, 0, 0, 0);
+      where.date = { [Op.gte]: startDate };
+    } else if (req.query.endDate) {
+      const endOfDay = new Date(req.query.endDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      where.date = { [Op.lte]: endOfDay };
     }
 
-    const journals = await JournalEntry.find(filter).sort({ date: -1 });
+    const journals = await JournalEntry.findAll({ where, order: [['date', 'DESC']] });
 
     // Filter by accountId if provided
     const accountId = req.query.account;
@@ -293,25 +304,61 @@ exports.getJournals = async (req, res, next) => {
     let result = journals;
     if (accountId) {
       result = journals.filter(j => {
-        return j.entries.some(entry => entry.account === accountId);
+        let entries = j.entries;
+        if (typeof entries === 'string') {
+          try { entries = JSON.parse(entries); } catch (e) { entries = []; }
+        }
+        return Array.isArray(entries) && entries.some(entry => entry.account && entry.account.toString() === accountId.toString());
       });
     }
 
-    // Populate account details manually since entries is stored as JSON text
-    const accounts = await Account.find({ institution: req.user.institution });
+    // Populate account details manually
+    const accounts = await Account.findAll({ where: { institution } }).catch(() => []);
     const accountMap = {};
     accounts.forEach(acc => accountMap[acc._id.toString()] = acc);
 
     const populatedResult = result.map(j => {
-      const jObj = typeof j.toJSON === 'function' ? j.toJSON() : j;
-      jObj.entries = jObj.entries.map(e => ({
+      const jObj = typeof j.toJSON === 'function' ? j.toJSON() : { ...j.get ? j.get() : j };
+      let entries = jObj.entries;
+      if (typeof entries === 'string') {
+        try { entries = JSON.parse(entries); } catch (e) { entries = []; }
+      }
+      if (!Array.isArray(entries)) entries = [];
+      jObj.entries = entries.map(e => ({
         ...e,
-        accountDetails: accountMap[e.account] || { name: 'Unknown' }
+        accountDetails: accountMap[e.account] || { name: 'অজানা হিসাব', code: '' }
       }));
       return jObj;
     });
 
     ApiResponse.success(res, { journals: populatedResult });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Delete journal entry (Super Admin Only)
+// @route   DELETE /api/v1/accounting/journals/:id
+exports.deleteJournal = async (req, res, next) => {
+  try {
+    const journal = await JournalEntry.findOne({ where: { _id: req.params.id, institution: req.user.institution } });
+    if (!journal) return ApiResponse.notFound(res, 'জার্নাল এন্ট্রি পাওয়া যায়নি');
+
+    const ref = journal.reference || journal._id;
+    await journal.destroy();
+
+    await auditLogger.logAction(
+      req.user.institution,
+      req.user._id,
+      'delete',
+      'JournalEntry',
+      req.params.id,
+      `জার্নাল এন্ট্রি মুছে ফেলা হয়েছে: ${ref}`,
+      journal,
+      null
+    );
+
+    ApiResponse.success(res, null, 'জার্নাল এন্ট্রি সফলভাবে মুছে ফেলা হয়েছে');
   } catch (error) {
     next(error);
   }
@@ -332,72 +379,118 @@ exports.getTransactions = async (req, res, next) => {
     
     const institution = req.user.institution;
     
-    let dateFilter = {};
-    if (req.query.startDate && req.query.endDate) {
-      const endOfDay = new Date(req.query.endDate);
-      endOfDay.setHours(23, 59, 59, 999);
-      
-      dateFilter = {
-        $gte: new Date(req.query.startDate),
-        $lte: endOfDay
-      };
+    let startDateObj = null;
+    let endOfDayObj = null;
+    if (req.query.startDate) {
+      startDateObj = new Date(req.query.startDate);
+      startDateObj.setHours(0, 0, 0, 0);
+    }
+    if (req.query.endDate) {
+      endOfDayObj = new Date(req.query.endDate);
+      endOfDayObj.setHours(23, 59, 59, 999);
     }
 
     // 1. Fetch Incomes
-    const incomeFilter = { institution, status: 'approved' };
-    if (dateFilter.$gte) incomeFilter.date = dateFilter;
-    const incomes = await Income.find(incomeFilter);
+    let incomeWhere = { institution, status: 'approved' };
+    if (startDateObj && endOfDayObj) {
+      incomeWhere.date = { [Op.between]: [startDateObj, endOfDayObj] };
+    } else if (startDateObj) {
+      incomeWhere.date = { [Op.gte]: startDateObj };
+    } else if (endOfDayObj) {
+      incomeWhere.date = { [Op.lte]: endOfDayObj };
+    }
+    const incomes = await Income.findAll({ where: incomeWhere, order: [['date', 'DESC']] }).catch(() => []);
     
     // 2. Fetch Payments (Student Fees)
-    const paymentFilter = { institution, status: 'success' };
-    if (dateFilter.$gte) paymentFilter.paymentDate = dateFilter;
-    const payments = await Payment.find(paymentFilter);
+    let paymentWhere = { 
+      institution, 
+      status: { [Op.in]: ['success', 'paid'] } 
+    };
+    if (startDateObj && endOfDayObj) {
+      paymentWhere[Op.or] = [
+        { paymentDate: { [Op.between]: [startDateObj, endOfDayObj] } },
+        { paymentDate: null, createdAt: { [Op.between]: [startDateObj, endOfDayObj] } }
+      ];
+    } else if (startDateObj) {
+      paymentWhere[Op.or] = [
+        { paymentDate: { [Op.gte]: startDateObj } },
+        { paymentDate: null, createdAt: { [Op.gte]: startDateObj } }
+      ];
+    } else if (endOfDayObj) {
+      paymentWhere[Op.or] = [
+        { paymentDate: { [Op.lte]: endOfDayObj } },
+        { paymentDate: null, createdAt: { [Op.lte]: endOfDayObj } }
+      ];
+    }
+    const payments = await Payment.findAll({ where: paymentWhere, order: [['createdAt', 'DESC']] }).catch(() => []);
     
     // 3. Fetch Vouchers (Expenses)
-    const voucherFilter = { institution, status: 'approved' };
-    if (dateFilter.$gte) voucherFilter.date = dateFilter;
-    const vouchers = await Voucher.find(voucherFilter);
+    let voucherWhere = { institution, status: 'approved' };
+    if (startDateObj && endOfDayObj) {
+      voucherWhere.date = { [Op.between]: [startDateObj, endOfDayObj] };
+    } else if (startDateObj) {
+      voucherWhere.date = { [Op.gte]: startDateObj };
+    } else if (endOfDayObj) {
+      voucherWhere.date = { [Op.lte]: endOfDayObj };
+    }
+    const vouchers = await Voucher.findAll({ where: voucherWhere, order: [['date', 'DESC']] }).catch(() => []);
 
-    // 4. Calculate Opening Balance (if startDate is provided)
+    // 4. Calculate Opening Balance (Prior to startDate)
     let openingBalance = 0;
-    if (req.query.startDate) {
-      const beforeStart = { $lt: new Date(req.query.startDate) };
-      
-      const prevIncomes = await Income.aggregate([
-        { $match: { institution, status: 'approved', date: beforeStart } },
-        { $group: { _id: null, total: { $sum: '$amount' } } }
-      ]);
-      const prevIncomeTotal = prevIncomes[0]?.total || 0;
+    if (startDateObj) {
+      const prevIncomes = await Income.findAll({
+        where: {
+          institution,
+          status: 'approved',
+          date: { [Op.lt]: startDateObj }
+        },
+        attributes: ['amount']
+      }).catch(() => []);
+      const prevIncomeTotal = prevIncomes.reduce((s, i) => s + (Number(i.amount) || 0), 0);
 
-      const prevPayments = await Payment.aggregate([
-        { $match: { institution, status: 'success', paymentDate: beforeStart } },
-        { $group: { _id: null, total: { $sum: '$amount' } } }
-      ]);
-      const prevPaymentTotal = prevPayments[0]?.total || 0;
+      const prevPayments = await Payment.findAll({
+        where: {
+          institution,
+          status: { [Op.in]: ['success', 'paid'] },
+          [Op.or]: [
+            { paymentDate: { [Op.lt]: startDateObj } },
+            { paymentDate: null, createdAt: { [Op.lt]: startDateObj } }
+          ]
+        },
+        attributes: ['amount']
+      }).catch(() => []);
+      const prevPaymentTotal = prevPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
 
-      const prevVouchers = await Voucher.aggregate([
-        { $match: { institution, status: 'approved', date: beforeStart } },
-        { $group: { _id: null, total: { $sum: '$amount' } } }
-      ]);
-      const prevVoucherTotal = prevVouchers[0]?.total || 0;
+      const prevVouchers = await Voucher.findAll({
+        where: {
+          institution,
+          status: 'approved',
+          date: { [Op.lt]: startDateObj }
+        },
+        attributes: ['amount']
+      }).catch(() => []);
+      const prevVoucherTotal = prevVouchers.reduce((s, v) => s + (Number(v.amount) || 0), 0);
 
       openingBalance = (prevIncomeTotal + prevPaymentTotal) - prevVoucherTotal;
     }
 
     // Fetch related data for formatting
-    const accounts = await Account.find({ institution });
+    const accounts = await Account.findAll({ where: { institution } }).catch(() => []);
     const accountMap = {};
     accounts.forEach(a => accountMap[a._id.toString()] = a.name);
 
-    const incomeCategories = await IncomeCategory.find({ institution });
+    const incomeCategories = await IncomeCategory.findAll({ where: { institution } }).catch(() => []);
     const incCatMap = {};
     incomeCategories.forEach(c => incCatMap[c._id.toString()] = c.name);
 
-    const students = await Student.find({ institution });
+    const students = await Student.findAll({ where: { institution } }).catch(() => []);
     const studentMap = {};
-    students.forEach(s => studentMap[s._id.toString()] = s);
+    students.forEach(s => {
+      if (s._id) studentMap[s._id.toString()] = s;
+      if (s.user) studentMap[s.user.toString()] = s;
+    });
     
-    const users = await User.find({ institution });
+    const users = await User.findAll({ where: { institution } }).catch(() => []);
     const userMap = {};
     users.forEach(u => userMap[u._id.toString()] = u);
 
@@ -407,32 +500,34 @@ exports.getTransactions = async (req, res, next) => {
     incomes.forEach(inc => {
       transactions.push({
         id: inc._id,
-        date: inc.date,
+        date: inc.date || inc.createdAt,
         type: 'income',
-        category: incCatMap[inc.category] || 'Unknown Income',
-        description: inc.donorName || inc.notes || 'Donation / Income',
-        amount: inc.amount,
-        method: inc.paymentMethod,
-        reference: inc.transactionReference || '-'
+        category: incCatMap[inc.category] || 'সাধারণ আয় (Income)',
+        description: inc.donorName || inc.notes || 'দান / বিবিধ আয়',
+        amount: Number(inc.amount) || 0,
+        method: inc.paymentMethod || 'cash',
+        reference: inc.transactionReference || inc.receiptNumber || '-'
       });
     });
 
     // Format Payments
     payments.forEach(pay => {
       const stu = studentMap[pay.student];
-      let stuName = 'Unknown Student';
+      let stuName = 'শিক্ষার্থী';
       if (stu && userMap[stu.user]) {
-        stuName = `${userMap[stu.user].firstName} ${userMap[stu.user].lastName || ''}`.trim();
+        stuName = `${userMap[stu.user].firstName || ''} ${userMap[stu.user].lastName || ''}`.trim() || 'শিক্ষার্থী';
+      } else if (userMap[pay.student]) {
+        stuName = `${userMap[pay.student].firstName || ''} ${userMap[pay.student].lastName || ''}`.trim() || 'শিক্ষার্থী';
       }
       transactions.push({
         id: pay._id,
-        date: pay.paymentDate,
+        date: pay.paymentDate || pay.createdAt,
         type: 'income',
         category: 'শিক্ষার্থী ফি (Student Fee)',
-        description: `${stuName} - ${pay.feeMonth}`,
-        amount: pay.amount,
-        method: pay.method,
-        reference: pay.paymentNumber
+        description: `${stuName} - ${pay.feeMonth || 'বেতন'}`,
+        amount: Number(pay.amount) || 0,
+        method: pay.method || 'cash',
+        reference: pay.paymentNumber || '-'
       });
     });
 
@@ -440,13 +535,13 @@ exports.getTransactions = async (req, res, next) => {
     vouchers.forEach(vch => {
       transactions.push({
         id: vch._id,
-        date: vch.date,
+        date: vch.date || vch.createdAt,
         type: 'expense',
-        category: accountMap[vch.expenseAccount] || 'Unknown Expense',
-        description: `${vch.payeeName} - ${vch.description || ''}`.trim(),
-        amount: vch.amount,
-        method: vch.paymentMethod,
-        reference: vch.voucherNumber
+        category: accountMap[vch.expenseAccount] || 'সাধারণ ব্যয় (Expense)',
+        description: `${vch.payeeName || ''} - ${vch.description || ''}`.trim() || 'ব্যয় ভাউচার',
+        amount: Number(vch.amount) || 0,
+        method: vch.paymentMethod || 'cash',
+        reference: vch.voucherNumber || '-'
       });
     });
 
