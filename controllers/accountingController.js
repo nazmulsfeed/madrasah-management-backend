@@ -206,13 +206,26 @@ exports.updateAccount = async (req, res, next) => {
   try {
     const { name, code, type, isActive, balance } = req.body;
     
-    const account = await Account.findById(req.params.id);
+    let account = await Account.findOne({ where: { _id: req.params.id } });
+    if (!account && !isNaN(Number(req.params.id))) {
+      account = await Account.findOne({ where: { id: req.params.id } });
+    }
+    if (!account) {
+      account = await Account.findById(req.params.id);
+    }
     if (!account) return ApiResponse.notFound(res, 'একাউন্ট পাওয়া যায়নি');
-    if (account.institution !== req.user.institution) return ApiResponse.error(res, 'Unauthorised', 403);
+
+    const userInst = req.user?.institution ? String(req.user.institution._id || req.user.institution) : '';
+    const accInst = account.institution ? String(account.institution._id || account.institution) : '';
+    if (req.user?.userType !== 'super_admin' && userInst && accInst && userInst !== accInst) {
+      return ApiResponse.error(res, 'Unauthorised', 403);
+    }
 
     if (code && code !== account.code) {
-      const existing = await Account.findOne({ code, institution: req.user.institution });
-      if (existing) return ApiResponse.error(res, 'এই কোডটি অন্য একটি একাউন্টে ব্যবহৃত হচ্ছে', 400);
+      const existing = await Account.findOne({ code, institution: account.institution });
+      if (existing && String(existing._id) !== String(account._id)) {
+        return ApiResponse.error(res, 'এই কোডটি অন্য একটি একাউন্টে ব্যবহৃত হচ্ছে', 400);
+      }
     }
 
     account.name = name || account.name;
@@ -226,7 +239,7 @@ exports.updateAccount = async (req, res, next) => {
     await account.save();
 
     await auditLogger.logAction(
-      req.user.institution,
+      account.institution || req.user.institution,
       req.user._id,
       'update',
       'Account',
@@ -261,18 +274,24 @@ exports.recalculateBalances = async (req, res, next) => {
 
     for (const acc of accounts) {
       const accId = String(acc._id);
+      const accNumId = acc.id ? String(acc.id) : null;
+      const matchesAcc = (fa) => {
+        if (!fa) return false;
+        const str = String(fa);
+        return str === accId || (accNumId && str === accNumId);
+      };
 
       if (acc.type === 'Asset') {
         const payTotal = payments
-          .filter(p => String(p.fundAccount) === accId)
+          .filter(p => matchesAcc(p.fundAccount))
           .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
         const incTotal = incomes
-          .filter(i => String(i.fundAccount) === accId)
+          .filter(i => matchesAcc(i.fundAccount))
           .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
 
         const expTotal = vouchers
-          .filter(v => String(v.fundAccount) === accId)
+          .filter(v => matchesAcc(v.fundAccount))
           .reduce((sum, v) => sum + (Number(v.amount) || 0), 0);
 
         acc.balance = (payTotal + incTotal) - expTotal;

@@ -238,6 +238,12 @@ const connectDB = async () => {
         await sequelize.query("ALTER TABLE `users` ADD COLUMN `baseSalary` DECIMAL(12,2) NULL DEFAULT 0");
         console.log("✅ Added baseSalary column to users table");
       }
+      // Auto-clean any unwanted initial balance of 900 and normalize branch names
+      try {
+        await sequelize.query("UPDATE `accounts` SET `balance` = 0 WHERE (`code` = '1001' OR `name` LIKE '%নগদ%') AND `balance` = 900");
+        await sequelize.query("UPDATE `institutions` SET `branchName` = 'প্রধান শাখা' WHERE `branchName` IN ('বালক শাখা', 'বালিকা শাখা')");
+        await sequelize.query("UPDATE `users` SET `branch` = 'প্রধান শাখা' WHERE `branch` IN ('বালক শাখা', 'বালিকা শাখা')");
+      } catch (cleanErr) {}
     } catch (colErr) {
       console.error("⚠️ Error auto-adding columns:", colErr.message);
     }
