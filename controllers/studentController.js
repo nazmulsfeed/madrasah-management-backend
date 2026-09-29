@@ -1271,7 +1271,6 @@ exports.deleteAcademicYear = async (req, res, next) => {
 // @route   GET /api/v1/students/promotion-candidates
 exports.getPromotionCandidates = async (req, res, next) => {
   try {
-    const AcademicYear = require('../models/AcademicYear');
     const MarkEntry = require('../models/MarkEntry');
     const { academicYear, classLevel, section } = req.query;
 
@@ -1285,56 +1284,95 @@ exports.getPromotionCandidates = async (req, res, next) => {
       classLevel,
       enrollmentStatus: 'active'
     };
-    if (section) {
+    if (section && section !== 'all') {
       enrollmentFilter.section = section;
     }
 
-    const enrollments = await StudentEnrollment.find(enrollmentFilter)
-      .populate({
-        path: 'student',
-        populate: { path: 'user', select: 'firstName lastName fullName email phone' }
-      })
-      .populate('section', 'name')
-      .populate('classLevel', 'name');
+    // 1. Find all active enrollments for this class & year
+    const enrollments = await StudentEnrollment.findAll({
+      where: enrollmentFilter,
+      order: [['rollNumber', 'ASC']]
+    });
 
-    // For each enrollment, query their MarkEntries for this academicYear and calculate avg marks percentage
-    const candidates = await Promise.all(
-      enrollments.map(async (e) => {
-        if (!e.student) return null;
-        
-        // Find mark entries for this student and this academic year
-        const marks = await MarkEntry.find({
-          student: e.student._id,
-          academicYear: academicYear
-        });
+    if (!enrollments || enrollments.length === 0) {
+      return ApiResponse.success(res, { candidates: [] });
+    }
 
-        let totalObtained = 0;
-        let totalMarks = 0;
-        marks.forEach((m) => {
-          totalObtained += m.marksObtained || 0;
-          totalMarks += m.totalMarks || 0;
-        });
+    const studentIds = enrollments.map(e => e.student).filter(Boolean);
+    const enrollmentMap = new Map();
+    enrollments.forEach(e => {
+      const eVal = typeof e.toJSON === 'function' ? e.toJSON() : e;
+      if (eVal.student) {
+        enrollmentMap.set(String(eVal.student), eVal);
+      }
+    });
 
-        const avgPercentage = totalMarks > 0 ? Math.round((totalObtained / totalMarks) * 100) : null;
+    // 2. Load all students with populated user details
+    const students = await Student.find({
+      _id: { $in: studentIds }
+    }).populate('user', 'firstName lastName firstNameEn lastNameEn email phone username fullName');
 
-        return {
-          studentId: e.student._id,
-          name: e.student.user ? (e.student.user.fullName || `${e.student.user.firstName || ''} ${e.student.user.lastName || ''}`.trim()) : 'অজানা',
-          email: e.student.user?.email || '',
-          admissionNumber: e.student.admissionNumber || '',
-          rollNumber: e.rollNumber,
-          enrollmentId: e._id,
-          avgPercentage,
-          marksCount: marks.length
-        };
-      })
-    );
+    // 3. Load all mark entries for these students and academic year
+    let allMarks = [];
+    try {
+      allMarks = await MarkEntry.find({
+        student: { $in: studentIds },
+        academicYear: academicYear
+      });
+    } catch (_) {}
 
-    // Filter out null candidates (if student doc was deleted)
-    const validCandidates = candidates.filter(Boolean);
+    // Group marks by student
+    const marksByStudent = new Map();
+    allMarks.forEach(m => {
+      const mVal = typeof m.toJSON === 'function' ? m.toJSON() : m;
+      const sId = String(mVal.student);
+      if (!marksByStudent.has(sId)) {
+        marksByStudent.set(sId, []);
+      }
+      marksByStudent.get(sId).push(mVal);
+    });
 
-    ApiResponse.success(res, { candidates: validCandidates });
+    // 4. Construct candidates
+    const candidates = students.map(s => {
+      const sVal = typeof s.toJSON === 'function' ? s.toJSON() : s;
+      const sId = String(sVal._id);
+      const enr = enrollmentMap.get(sId);
+      if (!enr) return null;
+
+      const marks = marksByStudent.get(sId) || [];
+      let totalObtained = 0;
+      let totalMarks = 0;
+      marks.forEach(m => {
+        totalObtained += Number(m.marksObtained) || 0;
+        totalMarks += Number(m.totalMarks) || 0;
+      });
+
+      const avgPercentage = totalMarks > 0 ? Math.round((totalObtained / totalMarks) * 100) : null;
+
+      const userObj = sVal.user && typeof sVal.user === 'object' ? sVal.user : {};
+      const name = userObj.fullName || 
+                   `${userObj.firstName || ''} ${userObj.lastName || ''}`.trim() || 
+                   sVal.studentId || 
+                   'শিক্ষার্থী';
+
+      return {
+        studentId: sVal._id,
+        name,
+        email: userObj.email || '',
+        admissionNumber: sVal.admissionNumber || sVal.studentId || '',
+        rollNumber: enr.rollNumber || '',
+        enrollmentId: enr._id,
+        avgPercentage,
+        marksCount: marks.length
+      };
+    }).filter(Boolean);
+
+    // Sort candidates numerically by rollNumber
+    candidates.sort((a, b) => (parseInt(a.rollNumber) || 999) - (parseInt(b.rollNumber) || 999));
+
+    ApiResponse.success(res, { candidates });
   } catch (error) {
+    console.error('getPromotionCandidates error:', error);
     next(error);
   }
 };
