@@ -79,6 +79,7 @@ exports.getAccounts = async (req, res, next) => {
         { name: 'ভবন সংস্কার ও রক্ষণাবেক্ষণ (Building Maintenance)', code: '5006', type: 'Expense' },
         { name: 'অফিস ও বিবিধ প্রশাসনিক খরচ (Office & Admin)', code: '5007', type: 'Expense' },
         { name: 'যাতায়াত ও পরিবহন খরচ (Travel & Conveyance)', code: '5008', type: 'Expense' },
+        { name: 'শিক্ষক নাস্তা ও আপ্যায়ন খরচ (Entertainment & Snacks)', code: '5009', type: 'Expense' },
       ];
 
       for (const exp of defaultExpenses) {
@@ -135,6 +136,7 @@ exports.seedDefaultAccounts = async (req, res, next) => {
       { name: 'ভবন সংস্কার ও রক্ষণাবেক্ষণ (Building Maintenance)', code: '5006', type: 'Expense' },
       { name: 'অফিস ও বিবিধ প্রশাসনিক খরচ (Office & Admin)', code: '5007', type: 'Expense' },
       { name: 'যাতায়াত ও পরিবহন খরচ (Travel & Conveyance)', code: '5008', type: 'Expense' },
+      { name: 'শিক্ষক নাস্তা ও আপ্যায়ন খরচ (Entertainment & Snacks)', code: '5009', type: 'Expense' },
     ];
 
     let createdCount = 0;
