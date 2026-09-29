@@ -620,11 +620,27 @@ exports.receivePayment = async (req, res, next) => {
           { account: revenueAccount, debit: 0, credit: amount }
         ];
 
+        let studentLabel = '';
+        try {
+          const stDoc = await Student.findOne({ where: { _id: invoice.student } });
+          if (stDoc) {
+            const uDoc = await User.findOne({ where: { _id: stDoc.user } });
+            if (uDoc) {
+              studentLabel = `${uDoc.firstName || ''} ${uDoc.lastName || ''}`.trim();
+              if (stDoc.studentId) studentLabel += ` (${stDoc.studentId})`;
+            }
+          }
+        } catch (e) {}
+
+        const desc = studentLabel 
+          ? `শিক্ষার্থী ফি গ্রহণ: ${studentLabel} - ইনভয়েস ${invoice.invoiceNumber || invoice.title}`
+          : `শিক্ষার্থী ফি গ্রহণ: ইনভয়েস ${invoice.invoiceNumber || invoice.title}`;
+
         await JournalEntry.create({
           institution: req.user.institution,
           date: new Date(),
           reference: payment.paymentNumber,
-          description: `শিক্ষার্থী ফি গ্রহণ: ইনভয়েস ${invoice.invoiceNumber || invoice.title}`,
+          description: desc,
           entries
         });
 

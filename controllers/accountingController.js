@@ -277,6 +277,14 @@ exports.deleteAccount = async (req, res, next) => {
 // @route   GET /api/v1/accounting/journals
 exports.getJournals = async (req, res, next) => {
   try {
+    const Invoice = require('../models/Invoice');
+    const Payment = require('../models/Payment');
+    const Voucher = require('../models/Voucher');
+    const Student = require('../models/Student');
+    const User = require('../models/User');
+    const ClassLevel = require('../models/ClassLevel');
+    const Section = require('../models/Section');
+
     const institution = req.user.institution;
     let where = { institution };
     
@@ -312,11 +320,93 @@ exports.getJournals = async (req, res, next) => {
       });
     }
 
-    // Populate account details manually
+    // 1. Fetch matching Accounts
     const accounts = await Account.findAll({ where: { institution } }).catch(() => []);
     const accountMap = {};
     accounts.forEach(acc => accountMap[acc._id.toString()] = acc);
 
+    // 2. Collect references to identify payments, vouchers, invoices
+    const payRefs = result.map(j => j.reference).filter(Boolean);
+    const payments = payRefs.length > 0 
+      ? await Payment.findAll({ where: { institution, paymentNumber: { [Op.in]: payRefs } } }).catch(() => []) 
+      : [];
+    const paymentMap = {};
+    payments.forEach(p => { paymentMap[p.paymentNumber] = p; });
+
+    // 3. Collect Invoice numbers & IDs
+    const invoiceIds = payments.map(p => p.invoice).filter(Boolean);
+    const invoiceNumberSet = new Set();
+    result.forEach(j => {
+      const match = (j.description || '').match(/INV-[A-Za-z0-9_-]+/i);
+      if (match) invoiceNumberSet.add(match[0]);
+      if (j.reference && j.reference.startsWith('INV-')) invoiceNumberSet.add(j.reference);
+    });
+    const invNumbers = Array.from(invoiceNumberSet);
+
+    const invoiceWhere = { institution, [Op.or]: [] };
+    if (invoiceIds.length > 0) invoiceWhere[Op.or].push({ _id: { [Op.in]: invoiceIds } });
+    if (invNumbers.length > 0) invoiceWhere[Op.or].push({ invoiceNumber: { [Op.in]: invNumbers } });
+
+    const invoices = invoiceWhere[Op.or].length > 0 
+      ? await Invoice.findAll({ where: invoiceWhere }).catch(() => []) 
+      : [];
+    const invoiceMap = {};
+    invoices.forEach(inv => {
+      if (inv._id) invoiceMap[inv._id.toString()] = inv;
+      if (inv.invoiceNumber) invoiceMap[inv.invoiceNumber] = inv;
+    });
+
+    // 4. Collect student IDs from payments & invoices
+    const studentIdSet = new Set();
+    payments.forEach(p => { if (p.student) studentIdSet.add(p.student.toString()); });
+    invoices.forEach(inv => { if (inv.student) studentIdSet.add(inv.student.toString()); });
+    const studentIds = Array.from(studentIdSet);
+
+    let studentMap = {};
+    let userMap = {};
+    let classMap = {};
+    let sectionMap = {};
+
+    if (studentIds.length > 0) {
+      const students = await Student.findAll({
+        where: {
+          institution,
+          [Op.or]: [
+            { _id: { [Op.in]: studentIds } },
+            { user: { [Op.in]: studentIds } },
+            { studentId: { [Op.in]: studentIds } }
+          ]
+        }
+      }).catch(() => []);
+
+      const userIds = students.map(s => s.user).filter(Boolean);
+      studentIds.forEach(id => userIds.push(id));
+
+      const [users, classLevels, sections] = await Promise.all([
+        userIds.length > 0 ? User.findAll({ where: { institution, _id: { [Op.in]: userIds } } }).catch(() => []) : [],
+        ClassLevel.findAll({ where: { institution } }).catch(() => []),
+        Section.findAll({ where: { institution } }).catch(() => [])
+      ]);
+
+      users.forEach(u => { userMap[u._id.toString()] = u; });
+      classLevels.forEach(c => { classMap[c._id.toString()] = c.name; });
+      sections.forEach(s => { sectionMap[s._id.toString()] = s.name; });
+
+      students.forEach(s => {
+        if (s._id) studentMap[s._id.toString()] = s;
+        if (s.user) studentMap[s.user.toString()] = s;
+        if (s.studentId) studentMap[s.studentId.toString()] = s;
+      });
+    }
+
+    // 5. Match vouchers
+    const vouchers = payRefs.length > 0 
+      ? await Voucher.findAll({ where: { institution, voucherNumber: { [Op.in]: payRefs } } }).catch(() => []) 
+      : [];
+    const voucherMap = {};
+    vouchers.forEach(v => { voucherMap[v.voucherNumber] = v; });
+
+    // 6. Build enriched journals
     const populatedResult = result.map(j => {
       const jObj = typeof j.toJSON === 'function' ? j.toJSON() : { ...j.get ? j.get() : j };
       let entries = jObj.entries;
@@ -328,6 +418,75 @@ exports.getJournals = async (req, res, next) => {
         ...e,
         accountDetails: accountMap[e.account] || { name: 'অজানা হিসাব', code: '' }
       }));
+
+      // Enrich source party details
+      const pay = paymentMap[j.reference];
+      let inv = null;
+      if (pay && pay.invoice) inv = invoiceMap[pay.invoice.toString()];
+      if (!inv) {
+        const match = (j.description || '').match(/INV-[A-Za-z0-9_-]+/i);
+        if (match && invoiceMap[match[0]]) inv = invoiceMap[match[0]];
+      }
+
+      if (pay || inv) {
+        const targetStudentId = (pay && pay.student) || (inv && inv.student);
+        const stu = targetStudentId ? studentMap[targetStudentId.toString()] : null;
+        let uInfo = null;
+        if (stu && stu.user && userMap[stu.user.toString()]) {
+          uInfo = userMap[stu.user.toString()];
+        } else if (targetStudentId && userMap[targetStudentId.toString()]) {
+          uInfo = userMap[targetStudentId.toString()];
+        }
+
+        const studentName = uInfo 
+          ? `${uInfo.firstName || ''} ${uInfo.lastName || ''}`.trim() 
+          : (stu ? (stu.name || 'শিক্ষার্থী') : 'শিক্ষার্থী');
+        const rollOrId = (stu && stu.studentId) || (stu && stu.rollNumber) || (uInfo && uInfo.username) || '';
+        const className = (stu && classMap[stu.currentClass]) || '';
+        const sectionName = (stu && sectionMap[stu.currentSection]) || '';
+        const classSection = [className, sectionName ? `(${sectionName})` : ''].filter(Boolean).join(' ');
+
+        const invNum = (inv && inv.invoiceNumber) || (j.description || '').match(/INV-[A-Za-z0-9_-]+/i)?.[0] || '';
+
+        jObj.sourceDetails = {
+          type: 'student_fee',
+          partyRole: 'জমাদানকারী (শিক্ষার্থী)',
+          partyName: studentName,
+          studentId: rollOrId,
+          classSection,
+          invoiceNumber: invNum,
+          invoiceTitle: inv ? inv.title : '',
+          feeMonth: pay ? pay.feeMonth : '',
+          paymentMethod: pay ? pay.method : 'cash',
+          amount: pay ? pay.amount : (entries[0]?.debit || entries[0]?.credit || 0),
+          linkUrl: invNum ? `/fees?search=${encodeURIComponent(invNum)}` : `/fees`,
+          invoiceData: inv ? {
+            _id: inv._id,
+            invoiceNumber: inv.invoiceNumber,
+            title: inv.title,
+            feeCategory: inv.feeCategory,
+            payableTotal: inv.payableTotal,
+            paidTotal: inv.paidTotal,
+            balance: inv.balance,
+            status: inv.status,
+            dueDate: inv.dueDate,
+            studentName,
+            studentRollOrId: rollOrId,
+            classSection
+          } : null
+        };
+      } else if (voucherMap[j.reference]) {
+        const vch = voucherMap[j.reference];
+        jObj.sourceDetails = {
+          type: 'expense_voucher',
+          partyRole: 'গ্রহীতা (Payee)',
+          partyName: vch.payeeName || 'অজানা ব্যক্তি/প্রতিষ্ঠান',
+          notes: vch.description,
+          linkUrl: '/expense-vouchers',
+          amount: vch.amount
+        };
+      }
+
       return jObj;
     });
 
