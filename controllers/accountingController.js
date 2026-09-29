@@ -665,7 +665,8 @@ exports.getTransactions = async (req, res, next) => {
         description: inc.donorName || inc.notes || 'দান / বিবিধ আয়',
         amount: Number(inc.amount) || 0,
         method: inc.paymentMethod || 'cash',
-        reference: inc.transactionReference || inc.receiptNumber || '-'
+        reference: inc.transactionReference || inc.receiptNumber || '-',
+        branch: inc.branch || 'প্রধান শাখা'
       });
     });
 
@@ -678,6 +679,9 @@ exports.getTransactions = async (req, res, next) => {
       } else if (userMap[pay.student]) {
         stuName = `${userMap[pay.student].firstName || ''} ${userMap[pay.student].lastName || ''}`.trim() || 'শিক্ষার্থী';
       }
+
+      const sBranch = stu?.branch || (stu?.gender === 'female' ? 'বালিকা শাখা' : stu?.gender === 'male' ? 'বালক শাখা' : 'প্রধান শাখা');
+
       transactions.push({
         id: pay._id,
         date: pay.paymentDate || pay.createdAt,
@@ -686,7 +690,8 @@ exports.getTransactions = async (req, res, next) => {
         description: `${stuName} - ${pay.feeMonth || 'বেতন'}`,
         amount: Number(pay.amount) || 0,
         method: pay.method || 'cash',
-        reference: pay.paymentNumber || '-'
+        reference: pay.paymentNumber || '-',
+        branch: sBranch
       });
     });
 
@@ -700,7 +705,8 @@ exports.getTransactions = async (req, res, next) => {
         description: `${vch.payeeName || ''} - ${vch.description || ''}`.trim() || 'ব্যয় ভাউচার',
         amount: Number(vch.amount) || 0,
         method: vch.paymentMethod || 'cash',
-        reference: vch.voucherNumber || '-'
+        reference: vch.voucherNumber || '-',
+        branch: vch.branch || 'প্রধান শাখা'
       });
     });
 
