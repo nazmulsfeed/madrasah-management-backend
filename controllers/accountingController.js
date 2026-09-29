@@ -633,23 +633,58 @@ exports.getTransactions = async (req, res, next) => {
       openingBalance = (prevIncomeTotal + prevPaymentTotal) - prevVoucherTotal;
     }
 
-    // Fetch related data for formatting
-    const accounts = await Account.findAll({ where: { institution } }).catch(() => []);
+    const Branch = require('../models/Branch');
+    const StudentEnrollment = require('../models/StudentEnrollment');
+    const ClassLevel = require('../models/ClassLevel');
+
+    const [accounts, incomeCategories, students, users, branches, enrollments, classLevels] = await Promise.all([
+      Account.findAll({ where: { institution } }).catch(() => []),
+      IncomeCategory.findAll({ where: { institution } }).catch(() => []),
+      Student.findAll({ where: { institution } }).catch(() => []),
+      User.findAll({ where: { institution } }).catch(() => []),
+      Branch.findAll({ where: { institution } }).catch(() => []),
+      StudentEnrollment.findAll({ where: { institution } }).catch(() => []),
+      ClassLevel.findAll({ where: { institution } }).catch(() => [])
+    ]);
+
     const accountMap = {};
     accounts.forEach(a => accountMap[a._id.toString()] = a.name);
 
-    const incomeCategories = await IncomeCategory.findAll({ where: { institution } }).catch(() => []);
     const incCatMap = {};
     incomeCategories.forEach(c => incCatMap[c._id.toString()] = c.name);
 
-    const students = await Student.findAll({ where: { institution } }).catch(() => []);
+    const branchMap = {
+      'BOYS': 'বালক শাখা',
+      'GIRLS': 'বালিকা শাখা',
+      'NOORANI': 'নুরানী শাখা',
+      'BOYS_NOORANI': 'বালক শাখা + নুরানী',
+      'GIRLS_NOORANI': 'বালিকা শাখা + নুরানী',
+      'MAIN': 'প্রধান শাখা'
+    };
+
+    branches.forEach(b => {
+      if (b._id) branchMap[String(b._id)] = b.name;
+      if (b.code) branchMap[String(b.code)] = b.name;
+      if (b.name) branchMap[String(b.name)] = b.name;
+    });
+
+    const classMap = {};
+    classLevels.forEach(c => {
+      if (c._id) classMap[String(c._id)] = c;
+    });
+
+    const enrollmentMap = {};
+    enrollments.forEach(e => {
+      if (e.student) enrollmentMap[String(e.student)] = e;
+      if (e._id) enrollmentMap[String(e._id)] = e;
+    });
+
     const studentMap = {};
     students.forEach(s => {
       if (s._id) studentMap[s._id.toString()] = s;
       if (s.user) studentMap[s.user.toString()] = s;
     });
     
-    const users = await User.findAll({ where: { institution } }).catch(() => []);
     const userMap = {};
     users.forEach(u => userMap[u._id.toString()] = u);
 
@@ -657,6 +692,8 @@ exports.getTransactions = async (req, res, next) => {
 
     // Format Incomes
     incomes.forEach(inc => {
+      const rawIncBranch = inc.branch;
+      const resolvedIncBranch = (rawIncBranch && branchMap[String(rawIncBranch)]) || rawIncBranch || 'প্রধান শাখা';
       transactions.push({
         id: inc._id,
         date: inc.date || inc.createdAt,
@@ -666,7 +703,7 @@ exports.getTransactions = async (req, res, next) => {
         amount: Number(inc.amount) || 0,
         method: inc.paymentMethod || 'cash',
         reference: inc.transactionReference || inc.receiptNumber || '-',
-        branch: inc.branch || 'প্রধান শাখা'
+        branch: resolvedIncBranch
       });
     });
 
@@ -680,7 +717,18 @@ exports.getTransactions = async (req, res, next) => {
         stuName = `${userMap[pay.student].firstName || ''} ${userMap[pay.student].lastName || ''}`.trim() || 'শিক্ষার্থী';
       }
 
-      const sBranch = stu?.branch || (stu?.gender === 'female' ? 'বালিকা শাখা' : stu?.gender === 'male' ? 'বালক শাখা' : 'প্রধান শাখা');
+      const curEnr = stu ? (enrollmentMap[String(stu._id)] || (stu.currentEnrollment ? enrollmentMap[String(stu.currentEnrollment)] : null)) : null;
+      const cls = curEnr?.classLevel ? classMap[String(curEnr.classLevel)] : null;
+      const rawBranch = stu?.branch || curEnr?.branch || cls?.branch;
+      let sBranch = '';
+      if (rawBranch) {
+        sBranch = branchMap[String(rawBranch)] || rawBranch;
+      }
+      if (!sBranch || sBranch.trim() === '') {
+        if (stu?.gender === 'female') sBranch = 'বালিকা শাখা';
+        else if (stu?.gender === 'male') sBranch = 'বালক শাখা';
+        else sBranch = 'প্রধান শাখা';
+      }
 
       transactions.push({
         id: pay._id,
@@ -697,6 +745,8 @@ exports.getTransactions = async (req, res, next) => {
 
     // Format Vouchers
     vouchers.forEach(vch => {
+      const rawVchBranch = vch.branch;
+      const resolvedVchBranch = (rawVchBranch && branchMap[String(rawVchBranch)]) || rawVchBranch || 'প্রধান শাখা';
       transactions.push({
         id: vch._id,
         date: vch.date || vch.createdAt,
@@ -706,14 +756,28 @@ exports.getTransactions = async (req, res, next) => {
         amount: Number(vch.amount) || 0,
         method: vch.paymentMethod || 'cash',
         reference: vch.voucherNumber || '-',
-        branch: vch.branch || 'প্রধান শাখা'
+        branch: resolvedVchBranch
       });
     });
 
     // Sort descending by date
     transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    ApiResponse.success(res, { transactions, openingBalance });
+    const defaultBranchList = [
+      'বালক শাখা',
+      'বালিকা শাখা',
+      'নুরানী শাখা',
+      'বালক শাখা + নুরানী',
+      'বালিকা শাখা + নুরানী',
+      'প্রধান শাখা'
+    ];
+    const allBranchSet = new Set(defaultBranchList);
+    branches.forEach(b => {
+      if (b.name && b.name !== 'হিফজ শাখা') allBranchSet.add(b.name);
+    });
+    const allBranchNames = Array.from(allBranchSet);
+
+    ApiResponse.success(res, { transactions, openingBalance, branches: allBranchNames });
   } catch (error) {
     next(error);
   }
