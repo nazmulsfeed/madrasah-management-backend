@@ -157,9 +157,7 @@ async function enrichStudentsMap(institutionId, studentIds) {
       resolvedBranchName = branchMap[String(rawBranch)] || rawBranch;
     }
     if (!resolvedBranchName || resolvedBranchName.trim() === '') {
-      if (s.gender === 'female') resolvedBranchName = 'বালিকা শাখা';
-      else if (s.gender === 'male') resolvedBranchName = 'বালক শাখা';
-      else resolvedBranchName = 'প্রধান শাখা';
+      resolvedBranchName = '';
     }
 
     studentMap[String(s._id)] = {

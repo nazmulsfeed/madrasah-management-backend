@@ -773,9 +773,7 @@ exports.getTransactions = async (req, res, next) => {
         sBranch = branchMap[String(rawBranch)] || rawBranch;
       }
       if (!sBranch || sBranch.trim() === '') {
-        if (stu?.gender === 'female') sBranch = 'বালিকা শাখা';
-        else if (stu?.gender === 'male') sBranch = 'বালক শাখা';
-        else sBranch = 'প্রধান শাখা';
+        sBranch = 'প্রধান শাখা';
       }
 
       transactions.push({
