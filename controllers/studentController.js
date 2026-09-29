@@ -934,8 +934,14 @@ exports.deleteStudent = async (req, res, next) => {
     }
 
     student.isDeleted = true;
+    student.status = 'inactive';
     student.deletedAt = new Date();
     await student.save();
+
+    await StudentEnrollment.update(
+      { enrollmentStatus: 'inactive', endDate: new Date() },
+      { where: { student: student._id } }
+    );
 
     ApiResponse.success(res, null, 'ছাত্র/ছাত্রী মুছে ফেলা হয়েছে');
   } catch (error) {
@@ -1307,9 +1313,11 @@ exports.getPromotionCandidates = async (req, res, next) => {
       }
     });
 
-    // 2. Load all students with populated user details
+    // 2. Load all active, non-deleted students with populated user details
     const students = await Student.find({
-      _id: { $in: studentIds }
+      _id: { $in: studentIds },
+      isDeleted: { $ne: true },
+      status: 'active'
     }).populate('user', 'firstName lastName firstNameEn lastNameEn email phone username fullName');
 
     // 3. Load all mark entries for these students and academic year
@@ -1332,9 +1340,10 @@ exports.getPromotionCandidates = async (req, res, next) => {
       marksByStudent.get(sId).push(mVal);
     });
 
-    // 4. Construct candidates
+    // 4. Construct candidates (skip deleted, inactive, or missing users)
     const candidates = students.map(s => {
       const sVal = typeof s.toJSON === 'function' ? s.toJSON() : s;
+      if (sVal.isDeleted || sVal.status !== 'active' || !sVal.user) return null;
       const sId = String(sVal._id);
       const enr = enrollmentMap.get(sId);
       if (!enr) return null;
