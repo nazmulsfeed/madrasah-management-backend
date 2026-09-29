@@ -29,7 +29,7 @@ router.post('/class-subjects', authorize('super_admin', 'co_super_admin', 'admin
 
 router
   .route('/')
-  .get(authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'student.view'), studentController.getStudents)
+  .get(authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'teacher', 'student.view'), studentController.getStudents)
   .post(
     authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'student.create'),
     studentController.createStudent

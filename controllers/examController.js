@@ -86,11 +86,46 @@ exports.getMarks = async (req, res, next) => {
     }
 
     const marks = await MarkEntry.find(filter)
-      .populate('student', 'firstName lastName studentId')
-      .populate('subject', 'name')
+      .populate('student', 'studentId user currentEnrollment')
+      .populate('subject', 'name code')
       .populate('exam', 'name');
 
-    ApiResponse.success(res, { marks });
+    // Enrich marks with student user name and enrollment info
+    const User = require('../models/User');
+    const StudentEnrollment = require('../models/StudentEnrollment');
+
+    const enrichedMarks = await Promise.all(marks.map(async (m) => {
+      const markObj = typeof m.toJSON === 'function' ? m.toJSON() : { ...m };
+      if (markObj.student && typeof markObj.student === 'object') {
+        if (markObj.student.user) {
+          const userDoc = await User.findById(markObj.student.user);
+          if (userDoc) {
+            markObj.student.firstName = userDoc.firstName || '';
+            markObj.student.lastName = userDoc.lastName || '';
+            markObj.student.fullName = userDoc.fullName || `${userDoc.firstName || ''} ${userDoc.lastName || ''}`.trim();
+            markObj.student.user = {
+              _id: userDoc._id,
+              firstName: userDoc.firstName,
+              lastName: userDoc.lastName,
+              fullName: markObj.student.fullName
+            };
+          }
+        }
+        if (markObj.student.currentEnrollment) {
+          const enrollDoc = await StudentEnrollment.findById(markObj.student.currentEnrollment);
+          if (enrollDoc) {
+            markObj.student.currentEnrollment = {
+              _id: enrollDoc._id,
+              rollNumber: enrollDoc.rollNumber,
+              section: enrollDoc.section
+            };
+          }
+        }
+      }
+      return markObj;
+    }));
+
+    ApiResponse.success(res, { marks: enrichedMarks });
   } catch (error) {
     next(error);
   }

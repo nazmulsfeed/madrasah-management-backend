@@ -172,9 +172,17 @@ class SequelizeQueryBuilder {
           as: assocName
         };
         if (attributes) {
-          const cleanAttrs = attributes.filter(attr => attr !== 'fullName');
-          if (!cleanAttrs.includes('_id')) cleanAttrs.push('_id');
-          includeObj.attributes = cleanAttrs;
+          const targetAttrs = assoc.target.rawAttributes ? Object.keys(assoc.target.rawAttributes) : null;
+          let cleanAttrs = attributes.filter(attr => attr !== 'fullName');
+          if (targetAttrs) {
+            cleanAttrs = cleanAttrs.filter(attr => targetAttrs.includes(attr));
+          }
+          if (!cleanAttrs.includes('_id') && (!targetAttrs || targetAttrs.includes('_id'))) {
+            cleanAttrs.push('_id');
+          }
+          if (cleanAttrs.length > 0) {
+            includeObj.attributes = cleanAttrs;
+          }
         }
         this.options.include.push(includeObj);
       }
