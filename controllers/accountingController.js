@@ -204,7 +204,7 @@ exports.createAccount = async (req, res, next) => {
 // @route   PUT /api/v1/accounting/accounts/:id
 exports.updateAccount = async (req, res, next) => {
   try {
-    const { name, code, type, isActive } = req.body;
+    const { name, code, type, isActive, balance } = req.body;
     
     const account = await Account.findById(req.params.id);
     if (!account) return ApiResponse.notFound(res, 'একাউন্ট পাওয়া যায়নি');
@@ -219,6 +219,9 @@ exports.updateAccount = async (req, res, next) => {
     account.code = code || account.code;
     account.type = type || account.type;
     if (isActive !== undefined) account.isActive = isActive;
+    if (balance !== undefined && !isNaN(Number(balance))) {
+      account.balance = Number(balance);
+    }
     
     await account.save();
 
@@ -228,12 +231,57 @@ exports.updateAccount = async (req, res, next) => {
       'update',
       'Account',
       account._id,
-      `হিসাব খাত (Account) আপডেট করা হয়েছে: ${account.name}`,
+      `হিসাব খাত (Account) আপডেট করা হয়েছে: ${account.name} (ব্যালেন্স: ৳ ${account.balance})`,
       null,
       account
     );
 
-    ApiResponse.success(res, { account }, 'একাউন্ট আপডেট করা হয়েছে');
+    ApiResponse.success(res, { account }, 'একাউন্ট সফলভাবে আপডেট করা হয়েছে');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    হিসাব খাতের ব্যালেন্স লাইভ লেনদেন অনুযায়ী রিক্যালকুলেট করুন
+// @route   POST /api/v1/accounting/accounts/recalculate-balances
+exports.recalculateBalances = async (req, res, next) => {
+  try {
+    const institution = req.user.institution;
+    const accounts = await Account.find({ institution });
+    
+    const Payment = require('../models/Payment');
+    const Income = require('../models/Income');
+    const Voucher = require('../models/Voucher');
+
+    const [payments, incomes, vouchers] = await Promise.all([
+      Payment.findAll({ where: { institution, status: 'success' } }).catch(() => []),
+      Income.findAll({ where: { institution, status: 'approved' } }).catch(() => []),
+      Voucher.findAll({ where: { institution, status: 'approved' } }).catch(() => [])
+    ]);
+
+    for (const acc of accounts) {
+      const accId = String(acc._id);
+
+      if (acc.type === 'Asset') {
+        const payTotal = payments
+          .filter(p => String(p.fundAccount) === accId)
+          .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+        const incTotal = incomes
+          .filter(i => String(i.fundAccount) === accId)
+          .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+
+        const expTotal = vouchers
+          .filter(v => String(v.fundAccount) === accId)
+          .reduce((sum, v) => sum + (Number(v.amount) || 0), 0);
+
+        acc.balance = (payTotal + incTotal) - expTotal;
+        await acc.save();
+      }
+    }
+
+    const updatedAccounts = await Account.find({ institution }).sort({ code: 1, name: 1 });
+    ApiResponse.success(res, { accounts: updatedAccounts }, 'সকল একাউন্টের ব্যালেন্স সফলভাবে হালনাগাদ করা হয়েছে');
   } catch (error) {
     next(error);
   }

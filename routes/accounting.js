@@ -12,6 +12,7 @@ router.route('/accounts')
   .post(accountingController.createAccount);
 
 router.post('/accounts/seed-defaults', accountingController.seedDefaultAccounts);
+router.post('/accounts/recalculate-balances', accountingController.recalculateBalances);
 
 router.route('/accounts/:id')
   .put(accountingController.updateAccount)
