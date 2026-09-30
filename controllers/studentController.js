@@ -161,6 +161,9 @@ exports.getStudents = async (req, res, next) => {
     const limit = parseInt(req.query.limit) || 25;
     const skip = (page - 1) * limit;
 
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = (req.query.sortOrder || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+
     const filter = { isDeleted: { $ne: true } };
 
     if (req.user.institution) {
@@ -340,7 +343,33 @@ exports.getStudents = async (req, res, next) => {
 
     if (req.query.classLevel || req.query.section || req.query.sections || req.query.academicYear) {
       const enrollmentFilter = { institution: req.user.institution };
-      if (req.query.classLevel && req.query.classLevel !== 'all') enrollmentFilter.classLevel = req.query.classLevel;
+
+      // ClassLevel filtering (supports matching both class ID, name, code)
+      if (req.query.classLevel && req.query.classLevel !== 'all') {
+        const targetClass = req.query.classLevel.trim();
+        const candidateClassValues = [targetClass];
+
+        try {
+          const matchedClasses = await ClassLevel.find({
+            institution: req.user.institution,
+            $or: [
+              { _id: targetClass },
+              { name: targetClass },
+              { code: targetClass },
+              { name: { $regex: targetClass, $options: 'i' } }
+            ]
+          }).select('_id name code');
+
+          matchedClasses.forEach(c => {
+            if (c._id) candidateClassValues.push(c._id);
+            if (c.name) candidateClassValues.push(c.name);
+            if (c.code) candidateClassValues.push(c.code);
+          });
+        } catch (_) {}
+
+        enrollmentFilter.classLevel = { $in: [...new Set(candidateClassValues)] };
+      }
+
       if (req.query.academicYear) enrollmentFilter.academicYear = req.query.academicYear;
       if (req.query.branch) enrollmentFilter.branch = req.query.branch;
 
@@ -400,7 +429,10 @@ exports.getStudents = async (req, res, next) => {
       }
 
       // Do not filter out enrollments if enrollmentStatus is null or active
-      enrollmentFilter.enrollmentStatus = { $ne: 'inactive' };
+      enrollmentFilter.$or = [
+        { enrollmentStatus: { $ne: 'inactive' } },
+        { enrollmentStatus: null }
+      ];
 
       const enrollments = await StudentEnrollment.find(enrollmentFilter).select('student rollNumber');
       if (sortBy === 'roll') {
@@ -414,11 +446,23 @@ exports.getStudents = async (req, res, next) => {
         });
       }
       const studentIds = enrollments.map((e) => e.student).filter(Boolean);
-      filter._id = { $in: studentIds };
-    }
 
-    const sortBy = req.query.sortBy || 'createdAt';
-    const sortOrder = (req.query.sortOrder || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+      // CRITICAL: If no students match the enrollment filter, return empty result immediately!
+      if (studentIds.length === 0) {
+        return ApiResponse.paginated(res, [], page, limit, 0);
+      }
+
+      if (filter._id) {
+        const existingIds = Array.isArray(filter._id.$in) ? filter._id.$in : [filter._id];
+        const intersected = studentIds.filter(id => existingIds.includes(id));
+        if (intersected.length === 0) {
+          return ApiResponse.paginated(res, [], page, limit, 0);
+        }
+        filter._id = { $in: intersected };
+      } else {
+        filter._id = { $in: studentIds };
+      }
+    }
 
     if (!filter._id && sortBy === 'roll') {
       try {
