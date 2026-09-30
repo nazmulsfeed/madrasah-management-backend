@@ -191,6 +191,10 @@ class SequelizeQueryBuilder {
   }
   
   sort(sortObj) {
+    if (Array.isArray(sortObj)) {
+      this.options.order = sortObj;
+      return this;
+    }
     let order = [];
     if (typeof sortObj === 'string') {
       const fields = sortObj.split(/\s+/).filter(Boolean);

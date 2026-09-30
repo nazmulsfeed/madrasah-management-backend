@@ -397,16 +397,82 @@ exports.getStudents = async (req, res, next) => {
       filter._id = { $in: studentIds };
     }
 
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = (req.query.sortOrder || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+
     const total = await Student.countDocuments(filter);
-    const students = await Student.find(filter)
-      .populate('user', 'firstName lastName firstNameEn lastNameEn email phone photo username fullName')
-      .populate('institution', 'name code')
-      .populate('branch', 'name code')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+
+    let orderClause = [['createdAt', 'DESC']];
+    if (sortBy === 'studentId') {
+      orderClause = [[sequelize.literal('CAST(studentId AS UNSIGNED)'), sortOrder], ['studentId', sortOrder]];
+    } else if (sortBy === 'admissionNumber') {
+      orderClause = [[sequelize.literal('CAST(admissionNumber AS UNSIGNED)'), sortOrder], ['admissionNumber', sortOrder]];
+    } else if (sortBy === 'status') {
+      orderClause = [['status', sortOrder]];
+    } else if (sortBy === 'createdAt') {
+      orderClause = [['createdAt', sortOrder]];
+    } else if (sortBy === 'name') {
+      orderClause = [[{ model: User, as: 'user_populated' }, 'firstName', sortOrder], [{ model: User, as: 'user_populated' }, 'lastName', sortOrder]];
+    } else if (sortBy === 'username') {
+      orderClause = [[{ model: User, as: 'user_populated' }, 'username', sortOrder]];
+    }
+
+    let students = [];
+    try {
+      students = await Student.find(filter)
+        .populate('user', 'firstName lastName firstNameEn lastNameEn email phone photo username fullName')
+        .populate('institution', 'name code')
+        .populate('branch', 'name code')
+        .sort(orderClause)
+        .skip(skip)
+        .limit(limit);
+    } catch (sortErr) {
+      console.warn('Student sort query warning, fallback to default sort:', sortErr.message);
+      students = await Student.find(filter)
+        .populate('user', 'firstName lastName firstNameEn lastNameEn email phone photo username fullName')
+        .populate('institution', 'name code')
+        .populate('branch', 'name code')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit);
+    }
 
     const populatedStudents = await populateStudentEnrollments(students);
+
+    // Also apply strict in-memory sorting on the page results as safety
+    if (sortBy && populatedStudents.length > 1) {
+      populatedStudents.sort((a, b) => {
+        let cmp = 0;
+        if (sortBy === 'roll') {
+          const rA = parseInt(a.currentEnrollment?.rollNumber, 10);
+          const rB = parseInt(b.currentEnrollment?.rollNumber, 10);
+          if (!isNaN(rA) && !isNaN(rB)) cmp = rA - rB;
+          else cmp = String(a.currentEnrollment?.rollNumber || '').localeCompare(String(b.currentEnrollment?.rollNumber || ''), 'bn');
+        } else if (sortBy === 'name') {
+          const nA = a.user?.fullName || `${a.user?.firstName || ''} ${a.user?.lastName || ''}`.trim();
+          const nB = b.user?.fullName || `${b.user?.firstName || ''} ${b.user?.lastName || ''}`.trim();
+          cmp = nA.localeCompare(nB, 'bn');
+        } else if (sortBy === 'class') {
+          const cA = a.currentEnrollment?.classLevel?.name || '';
+          const cB = b.currentEnrollment?.classLevel?.name || '';
+          cmp = cA.localeCompare(cB, 'bn');
+        } else if (sortBy === 'section') {
+          const sA = a.currentEnrollment?.section?.name || (typeof a.currentEnrollment?.section === 'string' ? a.currentEnrollment.section : '') || '';
+          const sB = b.currentEnrollment?.section?.name || (typeof b.currentEnrollment?.section === 'string' ? b.currentEnrollment.section : '') || '';
+          cmp = sA.localeCompare(sB, 'bn');
+        } else if (sortBy === 'studentId') {
+          const idA = parseInt(a.studentId || a.admissionNumber, 10);
+          const idB = parseInt(b.studentId || b.admissionNumber, 10);
+          if (!isNaN(idA) && !isNaN(idB)) cmp = idA - idB;
+          else cmp = String(a.studentId || a.admissionNumber || '').localeCompare(String(b.studentId || b.admissionNumber || ''));
+        } else if (sortBy === 'status') {
+          cmp = String(a.status || '').localeCompare(String(b.status || ''));
+        } else if (sortBy === 'username') {
+          cmp = String(a.user?.username || '').localeCompare(String(b.user?.username || ''));
+        }
+        return sortOrder === 'ASC' ? cmp : -cmp;
+      });
+    }
 
     ApiResponse.paginated(res, populatedStudents, page, limit, total);
   } catch (error) {
