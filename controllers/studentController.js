@@ -143,6 +143,16 @@ async function populateStudentEnrollments(students) {
   return isArray ? result : result[0];
 }
 
+function parseBnEnNumber(val) {
+  if (val === null || val === undefined) return null;
+  const str = String(val).trim();
+  if (!str) return null;
+  const bnToEn = { '০':'0', '১':'1', '২':'2', '৩':'3', '৪':'4', '৫':'5', '৬':'6', '৭':'7', '৮':'8', '৯':'9' };
+  const normalized = str.replace(/[০-৯]/g, d => bnToEn[d]);
+  const num = parseFloat(normalized.replace(/[^0-9.-]/g, ''));
+  return isNaN(num) ? null : num;
+}
+
 // @desc    সকল ছাত্র/ছাত্রীর তালিকা
 // @route   GET /api/v1/students
 exports.getStudents = async (req, res, next) => {
@@ -392,7 +402,17 @@ exports.getStudents = async (req, res, next) => {
       // Do not filter out enrollments if enrollmentStatus is null or active
       enrollmentFilter.enrollmentStatus = { $ne: 'inactive' };
 
-      const enrollments = await StudentEnrollment.find(enrollmentFilter).select('student');
+      const enrollments = await StudentEnrollment.find(enrollmentFilter).select('student rollNumber');
+      if (sortBy === 'roll') {
+        enrollments.sort((a, b) => {
+          const rA = parseBnEnNumber(a.rollNumber);
+          const rB = parseBnEnNumber(b.rollNumber);
+          if (rA !== null && rB !== null) return sortOrder === 'ASC' ? rA - rB : rB - rA;
+          if (rA !== null) return sortOrder === 'ASC' ? -1 : 1;
+          if (rB !== null) return sortOrder === 'ASC' ? 1 : -1;
+          return 0;
+        });
+      }
       const studentIds = enrollments.map((e) => e.student).filter(Boolean);
       filter._id = { $in: studentIds };
     }
@@ -400,10 +420,33 @@ exports.getStudents = async (req, res, next) => {
     const sortBy = req.query.sortBy || 'createdAt';
     const sortOrder = (req.query.sortOrder || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
 
+    if (!filter._id && sortBy === 'roll') {
+      try {
+        const allEnrs = await StudentEnrollment.findAll({
+          where: { institution: req.user.institution, enrollmentStatus: 'active' },
+          attributes: ['student', 'rollNumber']
+        });
+        allEnrs.sort((a, b) => {
+          const rA = parseBnEnNumber(a.rollNumber);
+          const rB = parseBnEnNumber(b.rollNumber);
+          if (rA !== null && rB !== null) return sortOrder === 'ASC' ? rA - rB : rB - rA;
+          if (rA !== null) return sortOrder === 'ASC' ? -1 : 1;
+          if (rB !== null) return sortOrder === 'ASC' ? 1 : -1;
+          return 0;
+        });
+        const allStudentIds = allEnrs.map(e => e.student).filter(Boolean);
+        if (allStudentIds.length > 0) {
+          filter._id = { $in: allStudentIds };
+        }
+      } catch (_) {}
+    }
+
     const total = await Student.countDocuments(filter);
 
     let orderClause = [['createdAt', 'DESC']];
-    if (sortBy === 'studentId') {
+    if (sortBy === 'roll' && filter._id && Array.isArray(filter._id.$in) && filter._id.$in.length > 0) {
+      orderClause = [[sequelize.literal(`FIELD(\`Student\`.\`_id\`, ${filter._id.$in.map(id => `'${id}'`).join(',')})`), 'ASC']];
+    } else if (sortBy === 'studentId') {
       orderClause = [[sequelize.literal('CAST(studentId AS UNSIGNED)'), sortOrder], ['studentId', sortOrder]];
     } else if (sortBy === 'admissionNumber') {
       orderClause = [[sequelize.literal('CAST(admissionNumber AS UNSIGNED)'), sortOrder], ['admissionNumber', sortOrder]];
@@ -439,36 +482,48 @@ exports.getStudents = async (req, res, next) => {
 
     const populatedStudents = await populateStudentEnrollments(students);
 
-    // Also apply strict in-memory sorting on the page results as safety
+    // Also apply strict in-memory sorting on the page results with parseBnEnNumber
     if (sortBy && populatedStudents.length > 1) {
       populatedStudents.sort((a, b) => {
         let cmp = 0;
         if (sortBy === 'roll') {
-          const rA = parseInt(a.currentEnrollment?.rollNumber, 10);
-          const rB = parseInt(b.currentEnrollment?.rollNumber, 10);
-          if (!isNaN(rA) && !isNaN(rB)) cmp = rA - rB;
+          const rA = parseBnEnNumber(a.currentEnrollment?.rollNumber);
+          const rB = parseBnEnNumber(b.currentEnrollment?.rollNumber);
+          if (rA !== null && rB !== null) cmp = rA - rB;
+          else if (rA !== null) cmp = -1;
+          else if (rB !== null) cmp = 1;
           else cmp = String(a.currentEnrollment?.rollNumber || '').localeCompare(String(b.currentEnrollment?.rollNumber || ''), 'bn');
         } else if (sortBy === 'name') {
           const nA = a.user?.fullName || `${a.user?.firstName || ''} ${a.user?.lastName || ''}`.trim();
           const nB = b.user?.fullName || `${b.user?.firstName || ''} ${b.user?.lastName || ''}`.trim();
-          cmp = nA.localeCompare(nB, 'bn');
+          cmp = nA.localeCompare(nB, 'bn', { sensitivity: 'base' });
         } else if (sortBy === 'class') {
-          const cA = a.currentEnrollment?.classLevel?.name || '';
-          const cB = b.currentEnrollment?.classLevel?.name || '';
-          cmp = cA.localeCompare(cB, 'bn');
+          const orderA = a.currentEnrollment?.classLevel?.order;
+          const orderB = b.currentEnrollment?.classLevel?.order;
+          if (orderA !== undefined && orderB !== undefined && orderA !== null && orderB !== null) {
+            cmp = orderA - orderB;
+          } else {
+            const cA = a.currentEnrollment?.classLevel?.name || '';
+            const cB = b.currentEnrollment?.classLevel?.name || '';
+            cmp = cA.localeCompare(cB, 'bn');
+          }
         } else if (sortBy === 'section') {
           const sA = a.currentEnrollment?.section?.name || (typeof a.currentEnrollment?.section === 'string' ? a.currentEnrollment.section : '') || '';
           const sB = b.currentEnrollment?.section?.name || (typeof b.currentEnrollment?.section === 'string' ? b.currentEnrollment.section : '') || '';
           cmp = sA.localeCompare(sB, 'bn');
         } else if (sortBy === 'studentId') {
-          const idA = parseInt(a.studentId || a.admissionNumber, 10);
-          const idB = parseInt(b.studentId || b.admissionNumber, 10);
-          if (!isNaN(idA) && !isNaN(idB)) cmp = idA - idB;
+          const idA = parseBnEnNumber(a.studentId || a.admissionNumber);
+          const idB = parseBnEnNumber(b.studentId || b.admissionNumber);
+          if (idA !== null && idB !== null) cmp = idA - idB;
+          else if (idA !== null) cmp = -1;
+          else if (idB !== null) cmp = 1;
           else cmp = String(a.studentId || a.admissionNumber || '').localeCompare(String(b.studentId || b.admissionNumber || ''));
         } else if (sortBy === 'status') {
           cmp = String(a.status || '').localeCompare(String(b.status || ''));
         } else if (sortBy === 'username') {
           cmp = String(a.user?.username || '').localeCompare(String(b.user?.username || ''));
+        } else if (sortBy === 'createdAt') {
+          cmp = new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
         }
         return sortOrder === 'ASC' ? cmp : -cmp;
       });
