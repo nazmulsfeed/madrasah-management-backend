@@ -91,6 +91,11 @@ Institution.init({
     allowNull: true,
     defaultValue: '08:45', // HH:mm 24-hr format (e.g. 08:45 = 8:45 AM)
   },
+  teacherAutoAbsentEnabled: {
+    type: DataTypes.BOOLEAN,
+    allowNull: true,
+    defaultValue: false,
+  },
   autoAbsentEnabled: {
     type: DataTypes.BOOLEAN,
     allowNull: true,

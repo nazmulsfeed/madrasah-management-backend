@@ -80,4 +80,10 @@ router.post(
   attendanceController.saveTeacherCutoffTime
 );
 
+router.post(
+  '/teachers/auto-absent-check',
+  authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'vice_principal'),
+  attendanceController.runTeacherAutoAbsentCheck
+);
+
 module.exports = router;

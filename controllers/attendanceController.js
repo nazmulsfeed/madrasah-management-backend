@@ -319,10 +319,8 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
         },
       });
 
-      let isFirst = false;
-      if (!tAttendance) {
-        isFirst = true;
-
+      const isFirst = !tAttendance || !tAttendance.inTime;
+      if (isFirst) {
         let cutoff = '08:45';
         try {
           const inst = await Institution.findOne({
@@ -348,19 +346,30 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
           ? `বিলম্ব উপস্থিতি (${timeString} > কাট-অফ ${cutoff})`
           : `বায়োমেট্রিক পাঞ্চ (${source})`;
 
-        tAttendance = await TeacherAttendance.create({
-          institution: teacher.institution || institutionId,
-          teacher: teacher._id,
-          date: targetDate,
-          status: initialStatus,
-          inTime: timeString,
-          outTime: '',
-          punchCount: 1,
-          punchTimes: JSON.stringify([timeString]),
-          punchTime: punchDate,
-          source,
-          remarks: initialRemarks,
-        });
+        if (!tAttendance) {
+          tAttendance = await TeacherAttendance.create({
+            institution: teacher.institution || institutionId,
+            teacher: teacher._id,
+            date: targetDate,
+            status: initialStatus,
+            inTime: timeString,
+            outTime: '',
+            punchCount: 1,
+            punchTimes: JSON.stringify([timeString]),
+            punchTime: punchDate,
+            source,
+            remarks: initialRemarks,
+          });
+        } else {
+          tAttendance.status = initialStatus;
+          tAttendance.inTime = timeString;
+          tAttendance.punchCount = 1;
+          tAttendance.punchTimes = JSON.stringify([timeString]);
+          tAttendance.punchTime = punchDate;
+          tAttendance.source = source;
+          tAttendance.remarks = initialRemarks;
+          await tAttendance.save();
+        }
       } else {
         // Subsequent punch: Keep late status if it was already marked late
         if (tAttendance.status !== 'late') {
@@ -1360,6 +1369,7 @@ exports.getTeacherAttendance = async (req, res, next) => {
     });
 
     let teacherCutoffTime = '08:45';
+    let teacherAutoAbsentEnabled = false;
     try {
       const inst = await Institution.findOne({
         where: {
@@ -1368,6 +1378,7 @@ exports.getTeacherAttendance = async (req, res, next) => {
       });
       if (inst?.teacherCutoffTime) teacherCutoffTime = inst.teacherCutoffTime;
       else if (inst?.attendanceCutoffTime) teacherCutoffTime = inst.attendanceCutoffTime;
+      if (inst?.teacherAutoAbsentEnabled !== undefined) teacherAutoAbsentEnabled = Boolean(inst.teacherAutoAbsentEnabled);
     } catch (_) {}
 
     const isRangeMode = Boolean(startDate && endDate);
@@ -1432,6 +1443,7 @@ exports.getTeacherAttendance = async (req, res, next) => {
         endDate,
         dateRangeList,
         teacherCutoffTime,
+        teacherAutoAbsentEnabled,
         records,
         matrix,
       });
@@ -1463,14 +1475,15 @@ exports.getTeacherAttendance = async (req, res, next) => {
     let absentCount = 0;
     let lateCount = 0;
     let leaveCount = 0;
+    let notAssignedCount = 0;
 
     for (const [tId, t] of teacherMap.entries()) {
       const att = attendanceMap.get(tId) || (t.userId ? attendanceMap.get(String(t.userId)) : null);
-      const status = att ? att.status : 'present';
+      const status = att ? att.status : 'not_assigned';
       const inTime = att ? (att.inTime || '') : '';
       const outTime = att ? (att.outTime || '') : '';
       const punchCount = att ? (att.punchCount || 0) : 0;
-      const source = att ? (att.source || 'manual') : 'manual';
+      const source = att ? (att.source || '') : '';
       const remarks = att ? (att.remarks || '') : '';
 
       let parsedPunchTimes = [];
@@ -1482,6 +1495,7 @@ exports.getTeacherAttendance = async (req, res, next) => {
       else if (status === 'absent') absentCount++;
       else if (status === 'late') lateCount++;
       else if (status === 'on_leave') leaveCount++;
+      else notAssignedCount++;
 
       records.push({
         _id: att ? att._id : `draft-${tId}`,
@@ -1515,9 +1529,11 @@ exports.getTeacherAttendance = async (req, res, next) => {
         absent: absentCount,
         late: lateCount,
         leave: leaveCount,
+        notAssigned: notAssignedCount,
         presentRate,
       },
       teacherCutoffTime,
+      teacherAutoAbsentEnabled,
       records,
     });
   } catch (error) {
@@ -1598,6 +1614,18 @@ exports.saveTeacherAttendance = async (req, res, next) => {
 
     for (const item of attendances) {
       if (!item.teacherId) continue;
+
+      if (item.status === 'not_assigned' || !item.status) {
+        // If status was reset to not_assigned, remove existing record from DB
+        await TeacherAttendance.destroy({
+          where: {
+            teacher: item.teacherId,
+            date: { [Op.between]: [start, end] },
+          },
+        });
+        savedCount++;
+        continue;
+      }
 
       const [record, created] = await TeacherAttendance.findOrCreate({
         where: {
@@ -1773,17 +1801,29 @@ exports.recordTeacherCardPunch = async (req, res, next) => {
     });
 
     if (!created) {
-      if (record.status !== 'late') {
-        record.status = 'present';
+      if (!record.inTime) {
+        // Teacher was previously marked absent without inTime (e.g. by auto-absent)
+        record.inTime = timeString;
+        record.status = initialStatus;
+        record.remarks = initialRemarks;
+        record.source = 'rfid_card';
+        record.punchCount = 1;
+        record.punchTimes = JSON.stringify([timeString]);
+        record.punchTime = now;
+        await record.save();
+      } else {
+        if (record.status !== 'late') {
+          record.status = 'present';
+        }
+        let timesList = [];
+        try { timesList = JSON.parse(record.punchTimes || '[]'); } catch (_) { timesList = []; }
+        timesList.push(timeString);
+        record.punchTimes = JSON.stringify(timesList);
+        record.punchCount = (record.punchCount || 1) + 1;
+        record.outTime = timeString;
+        record.punchTime = now;
+        await record.save();
       }
-      let timesList = [];
-      try { timesList = JSON.parse(record.punchTimes || '[]'); } catch (_) { timesList = []; }
-      timesList.push(timeString);
-      record.punchTimes = JSON.stringify(timesList);
-      record.punchCount = (record.punchCount || 1) + 1;
-      record.outTime = timeString;
-      record.punchTime = now;
-      await record.save();
     }
 
     ApiResponse.success(res, {
@@ -1801,28 +1841,114 @@ exports.recordTeacherCardPunch = async (req, res, next) => {
 };
 
 // ──────────────────────────────────────────────────────────────
-// @desc    Update Teacher Late Cut-off Time
+// @desc    Update Teacher Late Cut-off Time & Auto-Absent Setting
 // @route   POST /api/v1/attendance/teachers/cutoff
 // ──────────────────────────────────────────────────────────────
 exports.saveTeacherCutoffTime = async (req, res, next) => {
   try {
     const institution = req.user.institution;
-    const { cutoffTime } = req.body;
-    if (!cutoffTime) return ApiResponse.error(res, 'কাট-অফ সময় প্রদান করুন', 400);
+    const { cutoffTime, teacherAutoAbsentEnabled } = req.body;
 
     const sequelize = require('../config/db');
     await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `teacherCutoffTime` VARCHAR(20) NULL DEFAULT '08:45'").catch(() => {});
+    await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `teacherAutoAbsentEnabled` TINYINT(1) NULL DEFAULT 0").catch(() => {});
 
-    if (institution) {
+    const updateFields = {};
+    if (cutoffTime !== undefined && cutoffTime !== null) {
+      updateFields.teacherCutoffTime = String(cutoffTime).trim();
+    }
+    if (teacherAutoAbsentEnabled !== undefined && teacherAutoAbsentEnabled !== null) {
+      updateFields.teacherAutoAbsentEnabled = Boolean(teacherAutoAbsentEnabled);
+    }
+
+    if (institution && Object.keys(updateFields).length > 0) {
       await Institution.update(
-        { teacherCutoffTime: cutoffTime.trim() },
+        updateFields,
         { where: { [Op.or]: [{ _id: institution }, { name: institution }] } }
       );
     }
-    ApiResponse.success(res, { teacherCutoffTime: cutoffTime }, 'শিক্ষকদের লেট কাট-অফ টাইম সফলভাবে সংরক্ষণ করা হয়েছে');
+    ApiResponse.success(res, {
+      teacherCutoffTime: updateFields.teacherCutoffTime || cutoffTime,
+      teacherAutoAbsentEnabled: updateFields.teacherAutoAbsentEnabled,
+    }, 'শিক্ষকদের কাট-অফ ও অটো-অনুপস্থিত সেটিংস সফলভাবে সংরক্ষণ করা হয়েছে');
   } catch (error) {
     console.error('saveTeacherCutoffTime error:', error);
     next(error);
   }
 };
+
+// ──────────────────────────────────────────────────────────────
+// @desc    Manually Run Auto-Absent Check for Teachers
+// @route   POST /api/v1/attendance/teachers/auto-absent-check
+// ──────────────────────────────────────────────────────────────
+exports.runTeacherAutoAbsentCheck = async (req, res, next) => {
+  try {
+    const institution = req.user.institution;
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' });
+    const targetDate = new Date(dateStr + 'T00:00:00.000Z');
+    const { start, end } = getDayRange(dateStr);
+
+    let cutoff = '08:45';
+    try {
+      const inst = await Institution.findOne({
+        where: { [Op.or]: [{ _id: institution }, { name: institution }] },
+      });
+      if (inst?.teacherCutoffTime) cutoff = inst.teacherCutoffTime;
+    } catch (_) {}
+
+    const isSuperOrCoSuper = req.user.userType === 'super_admin' || req.user.userType === 'co_super_admin' || req.user.adminRole === 'co_super_admin';
+    const instFilter = (!isSuperOrCoSuper && institution)
+      ? { [Op.or]: [{ institution }, { institution: null }, { institution: '' }] }
+      : {};
+
+    const allTeachers = await Teacher.findAll({
+      where: {
+        ...instFilter,
+        status: { [Op.or]: ['active', null, ''] },
+      },
+    });
+
+    const todayAttendances = await TeacherAttendance.findAll({
+      where: {
+        ...instFilter,
+        date: { [Op.between]: [start, end] },
+      },
+    });
+
+    const attendedTeacherIds = new Set(
+      todayAttendances
+        .filter((a) => a.status === 'present' || a.status === 'late' || a.status === 'on_leave')
+        .map((a) => String(a.teacher))
+    );
+
+    let absentCount = 0;
+    for (const teacher of allTeachers) {
+      if (!attendedTeacherIds.has(String(teacher._id))) {
+        const existingRecord = todayAttendances.find((a) => String(a.teacher) === String(teacher._id));
+        if (!existingRecord) {
+          await TeacherAttendance.create({
+            institution: teacher.institution || institution || '',
+            teacher: teacher._id,
+            date: targetDate,
+            status: 'absent',
+            source: 'auto_cron',
+            remarks: `কাট-অফ সময় (${cutoff}) পার হওয়ায় স্বয়ংক্রিয় অনুপস্থিত`,
+            markedBy: req.user._id,
+          });
+          absentCount++;
+        }
+      }
+    }
+
+    return ApiResponse.success(res, {
+      totalTeachers: allTeachers.length,
+      absentCount,
+    }, `কাট-অফ চেকের মাধ্যমে ${absentCount} জন শিক্ষককে অনুপস্থিত মার্ক করা হয়েছে`);
+  } catch (error) {
+    console.error('runTeacherAutoAbsentCheck error:', error);
+    next(error);
+  }
+};
+
 

@@ -135,18 +135,118 @@ async function checkAndMarkAbsentStudents() {
   }
 }
 
+// ট্র্যাক করার জন্য শেষ কোন দিনে কোন প্রতিষ্ঠানে শিক্ষকদের অটো-অনুপস্থিত চালানো হয়েছে
+const executedTeacherDailyChecks = new Set();
+
+/**
+ * সকল প্রতিষ্ঠানের জন্য কাট-অফ টাইম চেক করে অনুপস্থিত শিক্ষক চিহ্নিত করা
+ */
+async function checkAndMarkAbsentTeachers() {
+  try {
+    const Teacher = require('../models/Teacher');
+    const TeacherAttendance = require('../models/TeacherAttendance');
+    const { Op } = require('sequelize');
+    const { getDayRange } = require('./dateUtils');
+
+    const now = new Date();
+    const dhakaTimeStr = now.toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Dhaka',
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    const [currentHour, currentMinute] = dhakaTimeStr.split(':').map(Number);
+    const currentTotalMinutes = currentHour * 60 + currentMinute;
+
+    const dateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' });
+    const targetDate = new Date(dateStr + 'T00:00:00.000Z');
+    const { start, end } = getDayRange(dateStr);
+
+    const institutions = await Institution.findAll({
+      where: { status: 'active' },
+    });
+
+    for (const inst of institutions) {
+      if (!inst.teacherAutoAbsentEnabled) continue;
+
+      const cutoff = inst.teacherCutoffTime || '08:45';
+      const [cutHour, cutMinute] = cutoff.split(':').map(Number);
+      const cutoffTotalMinutes = cutHour * 60 + cutMinute;
+
+      const checkKey = `teacher_${inst._id}_${dateStr}`;
+
+      if (currentTotalMinutes >= cutoffTotalMinutes && !executedTeacherDailyChecks.has(checkKey)) {
+        console.log(`[Teacher Attendance Scheduler] ⏰ Running auto-absent check for institution: ${inst.name} (${inst._id}) at ${dhakaTimeStr}`);
+        executedTeacherDailyChecks.add(checkKey);
+
+        const allTeachers = await Teacher.findAll({
+          where: {
+            institution: inst._id,
+            status: { [Op.or]: ['active', null, ''] },
+          },
+        });
+
+        if (allTeachers.length === 0) continue;
+
+        const todayAttendances = await TeacherAttendance.findAll({
+          where: {
+            institution: inst._id,
+            date: { [Op.between]: [start, end] },
+          },
+        });
+
+        const attendedTeacherIds = new Set(
+          todayAttendances
+            .filter((a) => a.status === 'present' || a.status === 'late' || a.status === 'on_leave')
+            .map((a) => String(a.teacher))
+        );
+
+        let absentCount = 0;
+        for (const teacher of allTeachers) {
+          if (!attendedTeacherIds.has(String(teacher._id))) {
+            const existingRecord = todayAttendances.find((a) => String(a.teacher) === String(teacher._id));
+            if (!existingRecord) {
+              await TeacherAttendance.create({
+                institution: inst._id,
+                teacher: teacher._id,
+                date: targetDate,
+                status: 'absent',
+                source: 'auto_cron',
+                remarks: `কাট-অফ সময় (${cutoff}) পার হওয়ায় স্বয়ংক্রিয় অনুপস্থিত`,
+              });
+              absentCount++;
+            }
+          }
+        }
+
+        console.log(`[Teacher Attendance Scheduler] ✅ Marked ${absentCount} teachers as absent for ${inst.name}`);
+      }
+    }
+  } catch (error) {
+    console.error('[Teacher Attendance Scheduler] Execution error:', error.message);
+  }
+}
+
 /**
  * অটো-অ্যাটেনডেন্স শিডিউলার শুরু করা (প্রতি ১ মিনিট পর পর চেক করে)
  */
 function startAttendanceScheduler() {
   console.log('[Attendance Scheduler] 🚀 ZKTeco & Biometric Auto-Absent Scheduler started.');
   // সার্ভার চালুর ৫ সেকেন্ড পর ১ম বার চেক
-  setTimeout(checkAndMarkAbsentStudents, 5000);
+  setTimeout(() => {
+    checkAndMarkAbsentStudents();
+    checkAndMarkAbsentTeachers();
+  }, 5000);
   // প্রতি ১ মিনিট অন্তর চলবে
-  setInterval(checkAndMarkAbsentStudents, 60 * 1000);
+  setInterval(() => {
+    checkAndMarkAbsentStudents();
+    checkAndMarkAbsentTeachers();
+  }, 60 * 1000);
 }
 
 module.exports = {
   startAttendanceScheduler,
   checkAndMarkAbsentStudents,
+  checkAndMarkAbsentTeachers,
 };

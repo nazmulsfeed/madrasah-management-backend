@@ -75,6 +75,7 @@ const connectDB = async () => {
       await sequelize.query("ALTER TABLE `users` ADD COLUMN `baseSalary` DECIMAL(12,2) NULL DEFAULT 0").catch(() => {});
       await sequelize.query("ALTER TABLE `students` ADD COLUMN `deviceUserId` VARCHAR(255) NULL DEFAULT ''").catch(() => {});
       await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `teacherCutoffTime` VARCHAR(20) NULL DEFAULT '08:45'").catch(() => {});
+      await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `teacherAutoAbsentEnabled` TINYINT(1) NULL DEFAULT 0").catch(() => {});
     } catch (migErr) {}
 
     // Wrap toJSON to handle populated mongooseCompat associations & run associations
