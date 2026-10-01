@@ -68,10 +68,12 @@ const connectDB = async () => {
     await sequelize.authenticate();
     console.log('✅ MySQL/Sequelize সংযুক্ত হয়েছে');
 
-    // Immediate safe migration for baseSalary before any model queries run
+    // Immediate safe migration for baseSalary and deviceUserId before any model queries run
     try {
       await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `baseSalary` DECIMAL(12,2) NULL DEFAULT 0").catch(() => {});
+      await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `deviceUserId` VARCHAR(255) NULL DEFAULT ''").catch(() => {});
       await sequelize.query("ALTER TABLE `users` ADD COLUMN `baseSalary` DECIMAL(12,2) NULL DEFAULT 0").catch(() => {});
+      await sequelize.query("ALTER TABLE `students` ADD COLUMN `deviceUserId` VARCHAR(255) NULL DEFAULT ''").catch(() => {});
     } catch (migErr) {}
 
     // Wrap toJSON to handle populated mongooseCompat associations & run associations

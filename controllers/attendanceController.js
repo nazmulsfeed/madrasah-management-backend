@@ -1253,6 +1253,8 @@ exports.getTeacherAttendance = async (req, res, next) => {
     const targetDate = new Date(targetDateStr + 'T00:00:00.000Z');
 
     await TeacherAttendance.sync({ alter: true }).catch(() => {});
+    const sequelize = require('../config/db');
+    await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `deviceUserId` VARCHAR(255) NULL DEFAULT ''").catch(() => {});
 
     const isSuperOrCoSuper = req.user.userType === 'super_admin' || 
                              req.user.userType === 'co_super_admin' || 
@@ -1268,6 +1270,17 @@ exports.getTeacherAttendance = async (req, res, next) => {
           ...instFilter,
           status: { [Op.or]: ['active', null, ''] },
         },
+      }).catch(async (err) => {
+        if (err.message && err.message.includes('deviceUserId')) {
+          return Teacher.findAll({
+            attributes: ['_id', 'user', 'institution', 'branch', 'employeeId', 'designation', 'status'],
+            where: {
+              ...instFilter,
+              status: { [Op.or]: ['active', null, ''] },
+            },
+          }).catch(() => []);
+        }
+        return [];
       }),
       User.findAll({
         where: {
@@ -1464,8 +1477,9 @@ exports.recordTeacherCardPunch = async (req, res, next) => {
       return ApiResponse.error(res, 'কার্ড আইডি প্রদান করা আবশ্যক', 400);
     }
 
-    const cleanCard = cardId.trim();
     await TeacherAttendance.sync({ alter: true }).catch(() => {});
+    const sequelize = require('../config/db');
+    await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `deviceUserId` VARCHAR(255) NULL DEFAULT ''").catch(() => {});
 
     const now = new Date();
     const dateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' });
@@ -1487,16 +1501,33 @@ exports.recordTeacherCardPunch = async (req, res, next) => {
       ? { [Op.or]: [{ institution }, { institution: null }, { institution: '' }] }
       : {};
 
-    let teacher = await Teacher.findOne({
-      where: {
-        ...instWhere,
-        [Op.or]: [
-          { deviceUserId: cleanCard },
-          { employeeId: cleanCard },
-          { _id: cleanCard },
-        ],
-      },
-    });
+    let teacher = null;
+    try {
+      teacher = await Teacher.findOne({
+        where: {
+          ...instWhere,
+          [Op.or]: [
+            { deviceUserId: cleanCard },
+            { employeeId: cleanCard },
+            { _id: cleanCard },
+          ],
+        },
+      });
+    } catch (err) {
+      if (err.message && err.message.includes('deviceUserId')) {
+        teacher = await Teacher.findOne({
+          where: {
+            ...instWhere,
+            [Op.or]: [
+              { employeeId: cleanCard },
+              { _id: cleanCard },
+            ],
+          },
+        }).catch(() => null);
+      } else {
+        throw err;
+      }
+    }
 
     let teacherUser = null;
     if (!teacher) {
