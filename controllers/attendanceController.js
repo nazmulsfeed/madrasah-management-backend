@@ -322,21 +322,50 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
       let isFirst = false;
       if (!tAttendance) {
         isFirst = true;
+
+        let cutoff = '08:45';
+        try {
+          const inst = await Institution.findOne({
+            where: {
+              [Op.or]: [{ _id: teacher.institution || institutionId }, { name: teacher.institution || institutionId }],
+            },
+          });
+          if (inst?.teacherCutoffTime) cutoff = inst.teacherCutoffTime;
+          else if (inst?.attendanceCutoffTime) cutoff = inst.attendanceCutoffTime;
+        } catch (_) {}
+
+        // Bangladesh time in 24-hr format (e.g. "08:52")
+        const bdTime24 = punchDate.toLocaleTimeString('en-US', {
+          timeZone: 'Asia/Dhaka',
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+
+        const isLate = cutoff && bdTime24 > cutoff;
+        const initialStatus = isLate ? 'late' : 'present';
+        const initialRemarks = isLate
+          ? `বিলম্ব উপস্থিতি (${timeString} > কাট-অফ ${cutoff})`
+          : `বায়োমেট্রিক পাঞ্চ (${source})`;
+
         tAttendance = await TeacherAttendance.create({
           institution: teacher.institution || institutionId,
           teacher: teacher._id,
           date: targetDate,
-          status: 'present',
+          status: initialStatus,
           inTime: timeString,
           outTime: '',
           punchCount: 1,
           punchTimes: JSON.stringify([timeString]),
           punchTime: punchDate,
           source,
-          remarks: `বায়োমেট্রিক পাঞ্চ (${source})`,
+          remarks: initialRemarks,
         });
       } else {
-        tAttendance.status = 'present';
+        // Subsequent punch: Keep late status if it was already marked late
+        if (tAttendance.status !== 'late') {
+          tAttendance.status = 'present';
+        }
         let timesList = [];
         try {
           timesList = tAttendance.punchTimes ? JSON.parse(tAttendance.punchTimes) : [];
@@ -1330,6 +1359,17 @@ exports.getTeacherAttendance = async (req, res, next) => {
       }
     });
 
+    let teacherCutoffTime = '08:45';
+    try {
+      const inst = await Institution.findOne({
+        where: {
+          [Op.or]: [{ _id: institution }, { name: institution }],
+        },
+      });
+      if (inst?.teacherCutoffTime) teacherCutoffTime = inst.teacherCutoffTime;
+      else if (inst?.attendanceCutoffTime) teacherCutoffTime = inst.attendanceCutoffTime;
+    } catch (_) {}
+
     const isRangeMode = Boolean(startDate && endDate);
 
     if (isRangeMode) {
@@ -1391,6 +1431,7 @@ exports.getTeacherAttendance = async (req, res, next) => {
         startDate,
         endDate,
         dateRangeList,
+        teacherCutoffTime,
         records,
         matrix,
       });
@@ -1476,6 +1517,7 @@ exports.getTeacherAttendance = async (req, res, next) => {
         leave: leaveCount,
         presentRate,
       },
+      teacherCutoffTime,
       records,
     });
   } catch (error) {
@@ -1687,6 +1729,28 @@ exports.recordTeacherCardPunch = async (req, res, next) => {
       ? `${teacherUser.firstName || ''} ${teacherUser.lastName || ''}`.trim() || teacherUser.username
       : (teacher?.employeeId || 'শিক্ষক');
 
+    let cutoff = '08:45';
+    try {
+      const inst = await Institution.findOne({
+        where: {
+          [Op.or]: [{ _id: institution }, { name: institution }],
+        },
+      });
+      if (inst?.teacherCutoffTime) cutoff = inst.teacherCutoffTime;
+    } catch (_) {}
+
+    const bdTime24 = now.toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Dhaka',
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const isLate = cutoff && bdTime24 > cutoff;
+    const initialStatus = isLate ? 'late' : 'present';
+    const initialRemarks = isLate
+      ? `বিলম্ব উপস্থিতি (কার্ড: ${timeString} > কাট-অফ ${cutoff})`
+      : 'ইউএসবি কার্ড স্ক্যানার';
+
     let [record, created] = await TeacherAttendance.findOrCreate({
       where: {
         teacher: teacherId,
@@ -1696,20 +1760,22 @@ exports.recordTeacherCardPunch = async (req, res, next) => {
         institution: institution || teacher?.institution || '',
         teacher: teacherId,
         date: targetDate,
-        status: 'present',
+        status: initialStatus,
         inTime: timeString,
         outTime: '',
         punchCount: 1,
         punchTimes: JSON.stringify([timeString]),
         punchTime: now,
         source: 'rfid_card',
-        remarks: 'ইউএসবি কার্ড স্ক্যানার',
+        remarks: initialRemarks,
         markedBy: req.user._id,
       },
     });
 
     if (!created) {
-      record.status = 'present';
+      if (record.status !== 'late') {
+        record.status = 'present';
+      }
       let timesList = [];
       try { timesList = JSON.parse(record.punchTimes || '[]'); } catch (_) { timesList = []; }
       timesList.push(timeString);
@@ -1730,6 +1796,32 @@ exports.recordTeacherCardPunch = async (req, res, next) => {
     }, `${teacherName} — উপস্থিতি সফলভাবে রেকর্ড হয়েছে (${timeString})`);
   } catch (error) {
     console.error('recordTeacherCardPunch error:', error);
+    next(error);
+  }
+};
+
+// ──────────────────────────────────────────────────────────────
+// @desc    Update Teacher Late Cut-off Time
+// @route   POST /api/v1/attendance/teachers/cutoff
+// ──────────────────────────────────────────────────────────────
+exports.saveTeacherCutoffTime = async (req, res, next) => {
+  try {
+    const institution = req.user.institution;
+    const { cutoffTime } = req.body;
+    if (!cutoffTime) return ApiResponse.error(res, 'কাট-অফ সময় প্রদান করুন', 400);
+
+    const sequelize = require('../config/db');
+    await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `teacherCutoffTime` VARCHAR(20) NULL DEFAULT '08:45'").catch(() => {});
+
+    if (institution) {
+      await Institution.update(
+        { teacherCutoffTime: cutoffTime.trim() },
+        { where: { [Op.or]: [{ _id: institution }, { name: institution }] } }
+      );
+    }
+    ApiResponse.success(res, { teacherCutoffTime: cutoffTime }, 'শিক্ষকদের লেট কাট-অফ টাইম সফলভাবে সংরক্ষণ করা হয়েছে');
+  } catch (error) {
+    console.error('saveTeacherCutoffTime error:', error);
     next(error);
   }
 };

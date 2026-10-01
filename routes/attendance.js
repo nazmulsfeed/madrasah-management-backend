@@ -74,4 +74,10 @@ router.post(
   attendanceController.recordTeacherCardPunch
 );
 
+router.post(
+  '/teachers/cutoff',
+  authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'vice_principal'),
+  attendanceController.saveTeacherCutoffTime
+);
+
 module.exports = router;

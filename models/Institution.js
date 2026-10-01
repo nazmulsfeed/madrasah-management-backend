@@ -86,6 +86,11 @@ Institution.init({
     allowNull: true,
     defaultValue: '09:30', // HH:mm 24-hr format (e.g. 09:30 = 9:30 AM)
   },
+  teacherCutoffTime: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '08:45', // HH:mm 24-hr format (e.g. 08:45 = 8:45 AM)
+  },
   autoAbsentEnabled: {
     type: DataTypes.BOOLEAN,
     allowNull: true,
