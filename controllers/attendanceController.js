@@ -1242,15 +1242,14 @@ exports.getAttendanceSummaryReport = async (req, res, next) => {
 // @desc    Get Teacher Daily Attendance
 // ──────────────────────────────────────────────────────────────
 // @desc    Get Teacher Daily Attendance
+// ──────────────────────────────────────────────────────────────
+// @desc    Get Teacher Daily or Date-Range Attendance
 // @route   GET /api/v1/attendance/teachers
 // ──────────────────────────────────────────────────────────────
 exports.getTeacherAttendance = async (req, res, next) => {
   try {
     const institution = req.user.institution;
-    const { date } = req.query;
-    const targetDateStr = date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' });
-    const { start, end } = getDayRange(targetDateStr);
-    const targetDate = new Date(targetDateStr + 'T00:00:00.000Z');
+    const { date, startDate, endDate } = req.query;
 
     await TeacherAttendance.sync({ alter: true }).catch(() => {});
     const sequelize = require('../config/db');
@@ -1264,7 +1263,8 @@ exports.getTeacherAttendance = async (req, res, next) => {
       ? { [Op.or]: [{ institution }, { institution: null }, { institution: '' }] }
       : {};
 
-    const [teachers, users, existingAttendances] = await Promise.all([
+    // 1. Fetch Teachers and Staff Users
+    const [teachers, users] = await Promise.all([
       Teacher.findAll({
         where: {
           ...instFilter,
@@ -1290,23 +1290,10 @@ exports.getTeacherAttendance = async (req, res, next) => {
         },
         attributes: ['_id', 'firstName', 'lastName', 'username', 'phone', 'userType', 'adminRole'],
       }),
-      TeacherAttendance.findAll({
-        where: {
-          ...instFilter,
-          date: { [Op.between]: [start, end] },
-        },
-      }),
     ]);
 
     const userMap = new Map();
     users.forEach(u => userMap.set(String(u._id), u));
-
-    const attendanceMap = new Map();
-    existingAttendances.forEach(a => {
-      if (a.teacher) {
-        attendanceMap.set(String(a.teacher), a);
-      }
-    });
 
     const teacherMap = new Map();
 
@@ -1343,6 +1330,93 @@ exports.getTeacherAttendance = async (req, res, next) => {
       }
     });
 
+    const isRangeMode = Boolean(startDate && endDate);
+
+    if (isRangeMode) {
+      // ──────────────────────────────────────────
+      // RANGE MODE: Fetch matrix for date interval
+      // ──────────────────────────────────────────
+      const startRange = new Date(startDate + 'T00:00:00.000Z');
+      const endRange = new Date(endDate + 'T23:59:59.999Z');
+
+      const existingAttendances = await TeacherAttendance.findAll({
+        where: {
+          ...instFilter,
+          date: { [Op.between]: [startRange, endRange] },
+        },
+      });
+
+      // Build dateRangeList
+      const dateRangeList = [];
+      const cur = new Date(startRange);
+      while (cur <= endRange) {
+        dateRangeList.push(cur.toISOString().slice(0, 10));
+        cur.setUTCDate(cur.getUTCDate() + 1);
+      }
+
+      // Matrix: { [teacherId]: { [dateStr]: record } }
+      const matrix = {};
+      teacherMap.forEach((_, tId) => { matrix[tId] = {}; });
+
+      existingAttendances.forEach(a => {
+        const tId = String(a.teacher);
+        const dStr = new Date(a.date).toISOString().slice(0, 10);
+        if (!matrix[tId]) matrix[tId] = {};
+        let parsedTimes = [];
+        try { parsedTimes = JSON.parse(a.punchTimes || '[]'); } catch (_) { parsedTimes = []; }
+        matrix[tId][dStr] = {
+          _id: a._id,
+          status: a.status,
+          inTime: a.inTime || '',
+          outTime: a.outTime || '',
+          punchCount: a.punchCount || 0,
+          punchTimes: parsedTimes,
+          source: a.source || 'manual',
+          remarks: a.remarks || '',
+        };
+      });
+
+      const records = Array.from(teacherMap.values()).map(t => ({
+        teacherId: t.teacherId,
+        name: t.name,
+        designation: t.designation,
+        phone: t.phone,
+        deviceUserId: t.deviceUserId,
+        userType: t.userType,
+      }));
+      records.sort((a, b) => a.name.localeCompare(b.name, 'bn'));
+
+      return ApiResponse.success(res, {
+        mode: 'range',
+        startDate,
+        endDate,
+        dateRangeList,
+        records,
+        matrix,
+      });
+    }
+
+    // ──────────────────────────────────────────
+    // SINGLE DATE MODE
+    // ──────────────────────────────────────────
+    const targetDateStr = date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' });
+    const { start, end } = getDayRange(targetDateStr);
+    const targetDate = new Date(targetDateStr + 'T00:00:00.000Z');
+
+    const existingAttendances = await TeacherAttendance.findAll({
+      where: {
+        ...instFilter,
+        date: { [Op.between]: [start, end] },
+      },
+    });
+
+    const attendanceMap = new Map();
+    existingAttendances.forEach(a => {
+      if (a.teacher) {
+        attendanceMap.set(String(a.teacher), a);
+      }
+    });
+
     const records = [];
     let presentCount = 0;
     let absentCount = 0;
@@ -1357,6 +1431,11 @@ exports.getTeacherAttendance = async (req, res, next) => {
       const punchCount = att ? (att.punchCount || 0) : 0;
       const source = att ? (att.source || 'manual') : 'manual';
       const remarks = att ? (att.remarks || '') : '';
+
+      let parsedPunchTimes = [];
+      try {
+        parsedPunchTimes = att && att.punchTimes ? JSON.parse(att.punchTimes) : [];
+      } catch (_) { parsedPunchTimes = []; }
 
       if (status === 'present') presentCount++;
       else if (status === 'absent') absentCount++;
@@ -1374,6 +1453,7 @@ exports.getTeacherAttendance = async (req, res, next) => {
         inTime,
         outTime,
         punchCount,
+        punchTimes: parsedPunchTimes,
         source,
         remarks,
         isRecorded: Boolean(att),
@@ -1386,6 +1466,7 @@ exports.getTeacherAttendance = async (req, res, next) => {
     const presentRate = total > 0 ? Math.round(((presentCount + lateCount) / total) * 100) : 0;
 
     ApiResponse.success(res, {
+      mode: 'single',
       date: targetDateStr,
       stats: {
         total,
@@ -1404,19 +1485,70 @@ exports.getTeacherAttendance = async (req, res, next) => {
 };
 
 // ──────────────────────────────────────────────────────────────
-// @desc    Bulk Save Teacher Attendance
+// @desc    Bulk Save Teacher Attendance (Single Date or Multiple Dates)
 // @route   POST /api/v1/attendance/teachers
 // ──────────────────────────────────────────────────────────────
 exports.saveTeacherAttendance = async (req, res, next) => {
   try {
     const institution = req.user.institution;
-    const { date, attendances } = req.body;
+    const { date, dates, attendances } = req.body;
 
-    if (!date || !Array.isArray(attendances) || attendances.length === 0) {
-      return ApiResponse.error(res, 'তারিখ ও হাজিরা তালিকা প্রদান করা আবশ্যক', 400);
+    if (!Array.isArray(attendances) || attendances.length === 0) {
+      return ApiResponse.error(res, 'শিক্ষক হাজিরা তালিকা প্রদান করা আবশ্যক', 400);
     }
 
     await TeacherAttendance.sync({ alter: true }).catch(() => {});
+
+    // ──────────────────────────────────────────
+    // MULTIPLE DATES RANGE SAVE
+    // ──────────────────────────────────────────
+    if (Array.isArray(dates) && dates.length > 0) {
+      let savedRecords = 0;
+      for (const dStr of dates) {
+        const { start, end } = getDayRange(dStr);
+        const targetDate = new Date(dStr + 'T00:00:00.000Z');
+
+        for (const item of attendances) {
+          if (!item.teacherId) continue;
+          const status = item.statuses ? (item.statuses[dStr] || 'present') : (item.status || 'present');
+          const remarks = item.remarksMap ? (item.remarksMap[dStr] || '') : (item.remarks || '');
+
+          const [record, created] = await TeacherAttendance.findOrCreate({
+            where: {
+              teacher: item.teacherId,
+              date: { [Op.between]: [start, end] },
+            },
+            defaults: {
+              institution: institution || '',
+              teacher: item.teacherId,
+              date: targetDate,
+              status,
+              source: item.source || 'manual',
+              markedBy: req.user._id,
+              remarks,
+            },
+          });
+
+          if (!created) {
+            await record.update({
+              status,
+              remarks: remarks !== undefined ? remarks : record.remarks,
+              markedBy: req.user._id,
+            });
+          }
+          savedRecords++;
+        }
+      }
+
+      return ApiResponse.success(res, { savedRecords, dateCount: dates.length }, `${dates.length} দিনের শিক্ষক হাজিরা সফলভাবে সংরক্ষিত হয়েছে`);
+    }
+
+    // ──────────────────────────────────────────
+    // SINGLE DATE SAVE
+    // ──────────────────────────────────────────
+    if (!date) {
+      return ApiResponse.error(res, 'তারিখ প্রদান করা আবশ্যক', 400);
+    }
 
     const targetDate = new Date(date + 'T00:00:00.000Z');
     const { start, end } = getDayRange(date);
