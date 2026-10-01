@@ -1236,7 +1236,7 @@ exports.getAdvances = async (req, res, next) => {
     if (personType && personType !== 'all') where.personType = personType;
     if (status && status !== 'all') where.status = status;
     if (search) {
-      where.personName = { [OpAdv.like]: %% };
+      where.personName = { [OpAdv.like]: '%' + search + '%' };
     }
     const advances = await Advance.findAll({ where, order: [['date', 'DESC'], ['createdAt', 'DESC']] });
     ApiResponse.success(res, { advances });
