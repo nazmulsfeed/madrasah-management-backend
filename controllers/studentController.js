@@ -153,6 +153,20 @@ function parseBnEnNumber(val) {
   return isNaN(num) ? null : num;
 }
 
+// Helper: Extract numeric suffix from student IDs like ANG2001, ANB2023005, etc.
+function parseCustomId(idStr) {
+  if (!idStr) return 999999;
+  const bnToEn = { '০':'0', '১':'1', '২':'2', '৩':'3', '৪':'4', '৫':'5', '৬':'6', '৭':'7', '৮':'8', '৯':'9' };
+  const s = String(idStr).trim().toUpperCase().replace(/[০-৯]/g, d => bnToEn[d]);
+  const stripped = s.replace(/^(?:ANG20|ANB20|ANG|ANB)/i, '');
+  const match = stripped.match(/(\d+)/);
+  if (match) {
+    return parseInt(match[1], 10);
+  }
+  const digits = s.replace(/\D/g, '');
+  return digits ? parseInt(digits, 10) : 999999;
+}
+
 // @desc    সকল ছাত্র/ছাত্রীর তালিকা
 // @route   GET /api/v1/students
 exports.getStudents = async (req, res, next) => {
@@ -491,7 +505,10 @@ exports.getStudents = async (req, res, next) => {
     if (sortBy === 'roll' && filter._id && Array.isArray(filter._id.$in) && filter._id.$in.length > 0) {
       orderClause = [[sequelize.literal(`FIELD(\`Student\`.\`_id\`, ${filter._id.$in.map(id => `'${id}'`).join(',')})`), 'ASC']];
     } else if (sortBy === 'studentId') {
-      orderClause = [[sequelize.literal('CAST(studentId AS UNSIGNED)'), sortOrder], ['studentId', sortOrder]];
+      orderClause = [
+        [sequelize.literal("CAST(NULLIF(REPLACE(REPLACE(REPLACE(REPLACE(UPPER(COALESCE(`Student`.`studentId`, '')), 'ANG20', ''), 'ANB20', ''), 'ANG', ''), 'ANB', ''), '') AS UNSIGNED)"), sortOrder],
+        ['studentId', sortOrder]
+      ];
     } else if (sortBy === 'admissionNumber') {
       orderClause = [[sequelize.literal('CAST(admissionNumber AS UNSIGNED)'), sortOrder], ['admissionNumber', sortOrder]];
     } else if (sortBy === 'status') {
@@ -526,7 +543,7 @@ exports.getStudents = async (req, res, next) => {
 
     const populatedStudents = await populateStudentEnrollments(students);
 
-    // Also apply strict in-memory sorting on the page results with parseBnEnNumber
+    // Also apply strict in-memory sorting on the page results with parseBnEnNumber and parseCustomId
     if (sortBy && populatedStudents.length > 1) {
       populatedStudents.sort((a, b) => {
         let cmp = 0;
@@ -556,12 +573,12 @@ exports.getStudents = async (req, res, next) => {
           const sB = b.currentEnrollment?.section?.name || (typeof b.currentEnrollment?.section === 'string' ? b.currentEnrollment.section : '') || '';
           cmp = sA.localeCompare(sB, 'bn');
         } else if (sortBy === 'studentId') {
-          const idA = parseBnEnNumber(a.studentId || a.admissionNumber);
-          const idB = parseBnEnNumber(b.studentId || b.admissionNumber);
-          if (idA !== null && idB !== null) cmp = idA - idB;
-          else if (idA !== null) cmp = -1;
-          else if (idB !== null) cmp = 1;
-          else cmp = String(a.studentId || a.admissionNumber || '').localeCompare(String(b.studentId || b.admissionNumber || ''));
+          const idCodeA = a.studentId || a.admissionNumber || '';
+          const idCodeB = b.studentId || b.admissionNumber || '';
+          const numA = parseCustomId(idCodeA);
+          const numB = parseCustomId(idCodeB);
+          if (numA !== numB) cmp = numA - numB;
+          else cmp = String(idCodeA).localeCompare(String(idCodeB));
         } else if (sortBy === 'status') {
           cmp = String(a.status || '').localeCompare(String(b.status || ''));
         } else if (sortBy === 'username') {
