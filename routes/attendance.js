@@ -60,7 +60,7 @@ router
 router
   .route('/teachers')
   .get(
-    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'vice_principal', 'accountant'),
+    authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'vice_principal', 'teacher', 'hifz_teacher', 'accountant'),
     attendanceController.getTeacherAttendance
   )
   .post(

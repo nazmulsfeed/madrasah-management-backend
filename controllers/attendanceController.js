@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const StudentAttendance = require('../models/StudentAttendance');
 const Student = require('../models/Student');
 const Guardian = require('../models/Guardian');
@@ -5,6 +6,11 @@ const RolePermission = require('../models/RolePermission');
 const ClassLevel = require('../models/ClassLevel');
 const Section = require('../models/Section');
 const Branch = require('../models/Branch');
+const User = require('../models/User');
+const Teacher = require('../models/Teacher');
+const TeacherAttendance = require('../models/TeacherAttendance');
+const Institution = require('../models/Institution');
+const StudentEnrollment = require('../models/StudentEnrollment');
 const ApiResponse = require('../utils/apiResponse');
 
 // Helper: date string থেকে UTC start/end of day তৈরি করা
@@ -185,9 +191,6 @@ exports.getAttendance = async (req, res, next) => {
 // ==========================================
 
 const { sendTargetedPush } = require('../utils/pushHelper');
-const User = require('../models/User');
-const Institution = require('../models/Institution');
-const StudentEnrollment = require('../models/StudentEnrollment');
 
 /**
  * স্টুডেন্টের উপস্থিতি পাঞ্চ প্রসেস করে এবং নির্দিষ্ট অভিভাবককে নোটিফিকেশন পাঠায়
@@ -1237,6 +1240,8 @@ exports.getAttendanceSummaryReport = async (req, res, next) => {
 
 // ──────────────────────────────────────────────────────────────
 // @desc    Get Teacher Daily Attendance
+// ──────────────────────────────────────────────────────────────
+// @desc    Get Teacher Daily Attendance
 // @route   GET /api/v1/attendance/teachers
 // ──────────────────────────────────────────────────────────────
 exports.getTeacherAttendance = async (req, res, next) => {
@@ -1244,28 +1249,38 @@ exports.getTeacherAttendance = async (req, res, next) => {
     const institution = req.user.institution;
     const { date } = req.query;
     const targetDateStr = date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' });
+    const { start, end } = getDayRange(targetDateStr);
     const targetDate = new Date(targetDateStr + 'T00:00:00.000Z');
 
-    const Teacher = require('../models/Teacher');
-    const TeacherAttendance = require('../models/TeacherAttendance');
     await TeacherAttendance.sync({ alter: true }).catch(() => {});
 
-    const instFilter = institution ? { [Op.or]: [{ institution }, { institution: null }] } : {};
+    const isSuperOrCoSuper = req.user.userType === 'super_admin' || 
+                             req.user.userType === 'co_super_admin' || 
+                             req.user.adminRole === 'co_super_admin';
+
+    const instFilter = (!isSuperOrCoSuper && institution)
+      ? { [Op.or]: [{ institution }, { institution: null }, { institution: '' }] }
+      : {};
 
     const [teachers, users, existingAttendances] = await Promise.all([
-      Teacher.findAll({ where: { ...instFilter, status: 'active' } }),
+      Teacher.findAll({
+        where: {
+          ...instFilter,
+          status: { [Op.or]: ['active', null, ''] },
+        },
+      }),
       User.findAll({
         where: {
           ...instFilter,
           isActive: true,
-          userType: { [Op.in]: ['teacher', 'hifz_teacher', 'principal', 'vice_principal'] },
+          userType: { [Op.notIn]: ['student', 'guardian', 'parent', 'super_admin'] },
         },
-        attributes: ['_id', 'firstName', 'lastName', 'username', 'phone', 'userType'],
+        attributes: ['_id', 'firstName', 'lastName', 'username', 'phone', 'userType', 'adminRole'],
       }),
       TeacherAttendance.findAll({
         where: {
           ...instFilter,
-          date: targetDate,
+          date: { [Op.between]: [start, end] },
         },
       }),
     ]);
@@ -1274,7 +1289,11 @@ exports.getTeacherAttendance = async (req, res, next) => {
     users.forEach(u => userMap.set(String(u._id), u));
 
     const attendanceMap = new Map();
-    existingAttendances.forEach(a => attendanceMap.set(String(a.teacher), a));
+    existingAttendances.forEach(a => {
+      if (a.teacher) {
+        attendanceMap.set(String(a.teacher), a);
+      }
+    });
 
     const teacherMap = new Map();
 
@@ -1287,7 +1306,7 @@ exports.getTeacherAttendance = async (req, res, next) => {
         teacherId: String(t._id),
         userId: t.user,
         name,
-        designation: t.designation || (u?.userType === 'principal' ? 'প্রিন্সিপাল' : 'শিক্ষক'),
+        designation: t.designation || (u?.userType === 'principal' ? 'প্রিন্সিপাল' : (u?.adminRole === 'admin' ? 'অ্যাডমিন' : 'শিক্ষক')),
         phone: u?.phone || '',
         deviceUserId: t.deviceUserId || t.employeeId || '',
         userType: u?.userType || 'teacher',
@@ -1296,14 +1315,14 @@ exports.getTeacherAttendance = async (req, res, next) => {
 
     users.forEach(u => {
       const uId = String(u._id);
-      const hasRecord = Array.from(teacherMap.values()).some(t => String(t.userId) === uId);
+      const hasRecord = Array.from(teacherMap.values()).some(t => String(t.userId) === uId || String(t.teacherId) === uId);
       if (!hasRecord) {
         const name = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.username;
         teacherMap.set(uId, {
           teacherId: uId,
           userId: uId,
           name,
-          designation: u.userType === 'principal' ? 'প্রিন্সিপাল' : 'শিক্ষক',
+          designation: u.userType === 'principal' ? 'প্রিন্সিপাল' : (u.adminRole === 'admin' ? 'অ্যাডমিন' : 'শিক্ষক'),
           phone: u.phone || '',
           deviceUserId: '',
           userType: u.userType,
@@ -1320,8 +1339,8 @@ exports.getTeacherAttendance = async (req, res, next) => {
     for (const [tId, t] of teacherMap.entries()) {
       const att = attendanceMap.get(tId) || (t.userId ? attendanceMap.get(String(t.userId)) : null);
       const status = att ? att.status : 'present';
-      const inTime = att ? att.inTime : '';
-      const outTime = att ? att.outTime : '';
+      const inTime = att ? (att.inTime || '') : '';
+      const outTime = att ? (att.outTime || '') : '';
       const punchCount = att ? (att.punchCount || 0) : 0;
       const source = att ? (att.source || 'manual') : 'manual';
       const remarks = att ? (att.remarks || '') : '';
@@ -1384,10 +1403,10 @@ exports.saveTeacherAttendance = async (req, res, next) => {
       return ApiResponse.error(res, 'তারিখ ও হাজিরা তালিকা প্রদান করা আবশ্যক', 400);
     }
 
-    const TeacherAttendance = require('../models/TeacherAttendance');
     await TeacherAttendance.sync({ alter: true }).catch(() => {});
 
     const targetDate = new Date(date + 'T00:00:00.000Z');
+    const { start, end } = getDayRange(date);
     let savedCount = 0;
 
     for (const item of attendances) {
@@ -1395,9 +1414,8 @@ exports.saveTeacherAttendance = async (req, res, next) => {
 
       const [record, created] = await TeacherAttendance.findOrCreate({
         where: {
-          institution: institution || '',
           teacher: item.teacherId,
-          date: targetDate,
+          date: { [Op.between]: [start, end] },
         },
         defaults: {
           institution: institution || '',
@@ -1447,12 +1465,11 @@ exports.recordTeacherCardPunch = async (req, res, next) => {
     }
 
     const cleanCard = cardId.trim();
-    const Teacher = require('../models/Teacher');
-    const TeacherAttendance = require('../models/TeacherAttendance');
     await TeacherAttendance.sync({ alter: true }).catch(() => {});
 
     const now = new Date();
     const dateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' });
+    const { start, end } = getDayRange(dateStr);
     const targetDate = new Date(dateStr + 'T00:00:00.000Z');
     const timeString = now.toLocaleTimeString('en-US', {
       timeZone: 'Asia/Dhaka',
@@ -1462,9 +1479,17 @@ exports.recordTeacherCardPunch = async (req, res, next) => {
       second: '2-digit',
     });
 
+    const isSuperOrCoSuper = req.user.userType === 'super_admin' || 
+                             req.user.userType === 'co_super_admin' || 
+                             req.user.adminRole === 'co_super_admin';
+
+    const instWhere = (!isSuperOrCoSuper && institution)
+      ? { [Op.or]: [{ institution }, { institution: null }, { institution: '' }] }
+      : {};
+
     let teacher = await Teacher.findOne({
       where: {
-        institution: institution || '',
+        ...instWhere,
         [Op.or]: [
           { deviceUserId: cleanCard },
           { employeeId: cleanCard },
@@ -1473,36 +1498,40 @@ exports.recordTeacherCardPunch = async (req, res, next) => {
       },
     });
 
+    let teacherUser = null;
     if (!teacher) {
       const userMatch = await User.findOne({
         where: {
-          institution: institution || '',
+          ...instWhere,
           [Op.or]: [{ phone: cleanCard }, { username: cleanCard }, { _id: cleanCard }],
         },
       });
       if (userMatch) {
+        teacherUser = userMatch;
         teacher = await Teacher.findOne({ where: { user: userMatch._id } });
       }
     }
 
-    if (!teacher) {
+    const teacherId = teacher ? String(teacher._id) : (teacherUser ? String(teacherUser._id) : null);
+    if (!teacherId) {
       return ApiResponse.notFound(res, `"${cleanCard}" আইডিধারী কোনো শিক্ষক পাওয়া যায়নি`);
     }
 
-    const teacherUser = await User.findOne({ where: { _id: teacher.user } });
+    if (!teacherUser && teacher && teacher.user) {
+      teacherUser = await User.findOne({ where: { _id: teacher.user } });
+    }
     const teacherName = teacherUser
       ? `${teacherUser.firstName || ''} ${teacherUser.lastName || ''}`.trim() || teacherUser.username
-      : (teacher.employeeId || 'শিক্ষক');
+      : (teacher?.employeeId || 'শিক্ষক');
 
     let [record, created] = await TeacherAttendance.findOrCreate({
       where: {
-        institution: institution || '',
-        teacher: teacher._id,
-        date: targetDate,
+        teacher: teacherId,
+        date: { [Op.between]: [start, end] },
       },
       defaults: {
-        institution: institution || '',
-        teacher: teacher._id,
+        institution: institution || teacher?.institution || '',
+        teacher: teacherId,
         date: targetDate,
         status: 'present',
         inTime: timeString,
@@ -1512,6 +1541,7 @@ exports.recordTeacherCardPunch = async (req, res, next) => {
         punchTime: now,
         source: 'rfid_card',
         remarks: 'ইউএসবি কার্ড স্ক্যানার',
+        markedBy: req.user._id,
       },
     });
 
@@ -1529,7 +1559,7 @@ exports.recordTeacherCardPunch = async (req, res, next) => {
 
     ApiResponse.success(res, {
       teacherName,
-      designation: teacher.designation || 'শিক্ষক',
+      designation: teacher?.designation || (teacherUser?.userType === 'principal' ? 'প্রিন্সিপাল' : 'শিক্ষক'),
       inTime: record.inTime,
       outTime: record.outTime,
       punchCount: record.punchCount,

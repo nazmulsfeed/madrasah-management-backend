@@ -16,7 +16,8 @@ TeacherAttendance.init({
   },
   institution: {
     type: DataTypes.STRING,
-    allowNull: false,
+    allowNull: true,
+    defaultValue: '',
   },
   teacher: {
     type: DataTypes.STRING,
