@@ -1,4 +1,4 @@
-const { Op } = require('sequelize');
+﻿const { Op } = require('sequelize');
 const SalaryPayment = require('../models/SalaryPayment');
 const Teacher = require('../models/Teacher');
 const User = require('../models/User');
@@ -89,6 +89,9 @@ exports.getSalarySheet = async (req, res, next) => {
     const startOfMonth = new Date(qYear, qMonth - 1, 1, 0, 0, 0);
     const endOfMonth = new Date(qYear, qMonth, 0, 23, 59, 59, 999);
     const daysInMonth = new Date(qYear, qMonth, 0).getDate();
+
+    // 0. Ensure salary_payments table exists (safe if already exists)
+    await SalaryPayment.sync({ alter: true }).catch(() => {});
 
     // 1. Load Existing SalaryPayment records for this month
     const existingRecords = await SalaryPayment.findAll({
@@ -319,6 +322,9 @@ exports.generateSalarySheet = async (req, res, next) => {
     const daysInMonth = new Date(qYear, qMonth, 0).getDate();
 
     const instFilter = institution ? { [Op.or]: [{ institution }, { institution: null }] } : {};
+
+    // Ensure table exists
+    await SalaryPayment.sync({ alter: true }).catch(() => {});
 
     const [teachersRaw, usersRaw, attendancesRaw] = await Promise.all([
       Teacher.findAll({ where: { ...instFilter, status: 'active' } }),
