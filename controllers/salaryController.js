@@ -470,6 +470,7 @@ exports.updateSalaryRecord = async (req, res, next) => {
   try {
     const institution = req.user.institution;
     const { id } = req.params;
+    await SalaryPayment.sync({ alter: true }).catch(() => {});
     let salary = await SalaryPayment.findOne({
       where: { _id: id, institution: institution || '' },
     });
