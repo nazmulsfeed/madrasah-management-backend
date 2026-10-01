@@ -325,15 +325,42 @@ exports.getStudents = async (req, res, next) => {
         } catch (_) {}
       }
 
+      // Search variations for mixed Bengali-English numbers (e.g., 5৯ -> 59, ৫৯)
+      const digitVariations = [...new Set([searchStr, enDigits, bnDigits, cleanDigits])].filter(Boolean);
+
+      // Search StudentEnrollment by rollNumber for any of the digit variations
+      let rollMatchedStudentIds = [];
+      try {
+        const matchedEnrollments = await StudentEnrollment.findAll({
+          where: {
+            institution: req.user.institution,
+            [Op.or]: digitVariations.map(dv => ({ rollNumber: { [Op.like]: `%${dv}%` } }))
+          },
+          attributes: ['student'],
+          raw: true
+        });
+        rollMatchedStudentIds = matchedEnrollments.map(e => e.student).filter(Boolean);
+      } catch (enrErr) {
+        console.error('Enrollment roll search error in getStudents:', enrErr.message);
+      }
+
       const orConditions = [
-        { admissionNumber: new RegExp(searchStr, 'i') },
-        { admissionNumber: new RegExp(enDigits, 'i') },
-        { studentId: new RegExp(searchStr, 'i') },
-        { studentId: new RegExp(enDigits, 'i') },
         { fatherName: new RegExp(searchStr, 'i') },
         { motherName: new RegExp(searchStr, 'i') },
         { village: new RegExp(searchStr, 'i') },
       ];
+
+      // Add admissionNumber and studentId for all digit variations
+      digitVariations.forEach(dv => {
+        orConditions.push(
+          { admissionNumber: new RegExp(dv, 'i') },
+          { studentId: new RegExp(dv, 'i') }
+        );
+      });
+
+      if (rollMatchedStudentIds.length > 0) {
+        orConditions.push({ _id: { $in: rollMatchedStudentIds } });
+      }
 
       if (words.length > 1) {
         words.forEach(word => {
