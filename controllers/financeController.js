@@ -1225,11 +1225,20 @@ exports.closeFinancialYear = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-// --- Advances ---
+// --- Advances (Sequelize) ---
+const { Op: OpAdv } = require('sequelize');
+
 exports.getAdvances = async (req, res, next) => {
   try {
     const institution = req.user.institution;
-    const advances = await Advance.find({ institution }).sort({ date: -1 });
+    const { personType, status, search } = req.query;
+    const where = { institution };
+    if (personType && personType !== 'all') where.personType = personType;
+    if (status && status !== 'all') where.status = status;
+    if (search) {
+      where.personName = { [OpAdv.like]: %% };
+    }
+    const advances = await Advance.findAll({ where, order: [['date', 'DESC'], ['createdAt', 'DESC']] });
     ApiResponse.success(res, { advances });
   } catch (error) { next(error); }
 };
@@ -1238,7 +1247,19 @@ exports.createAdvance = async (req, res, next) => {
   try {
     const institution = req.user.institution;
     const { personType, personName, amount, date, reason } = req.body;
-    const advance = await Advance.create({ institution, personType, personName, amount, date, reason });
+    if (!personType || !personName || !amount || !date) {
+      return ApiResponse.error(res, 'ব্যক্তির ধরন, নাম, পরিমাণ ও তারিখ আবশ্যক', 400);
+    }
+    const advance = await Advance.create({
+      institution,
+      personType,
+      personName: personName.trim(),
+      amount: Number(amount),
+      date: new Date(date),
+      reason: reason || '',
+      adjustedAmount: 0,
+      status: 'pending',
+    });
     ApiResponse.created(res, { advance }, 'অগ্রিম সফলভাবে যুক্ত করা হয়েছে');
   } catch (error) { next(error); }
 };
@@ -1247,18 +1268,37 @@ exports.updateAdvance = async (req, res, next) => {
   try {
     const institution = req.user.institution;
     const { id } = req.params;
-    const { adjustedAmount, status } = req.body;
-    
-    const advance = await Advance.findOne({ _id: id, institution });
+    const { personType, personName, amount, date, reason, adjustedAmount, status } = req.body;
+
+    const advance = await Advance.findOne({ where: { _id: id, institution } });
     if (!advance) return ApiResponse.error(res, 'অগ্রিম পাওয়া যায়নি', 404);
-    
-    if (adjustedAmount !== undefined) advance.adjustedAmount = adjustedAmount;
+
+    if (personType !== undefined) advance.personType = personType;
+    if (personName !== undefined) advance.personName = personName.trim();
+    if (amount !== undefined) advance.amount = Number(amount);
+    if (date !== undefined) advance.date = new Date(date);
+    if (reason !== undefined) advance.reason = reason;
+    if (adjustedAmount !== undefined) advance.adjustedAmount = Number(adjustedAmount);
     if (status !== undefined) advance.status = status;
-    
-    if (advance.adjustedAmount >= advance.amount) advance.status = 'adjusted';
-    
+
+    if (Number(advance.adjustedAmount) >= Number(advance.amount)) advance.status = 'adjusted';
+    else if (Number(advance.adjustedAmount) > 0) advance.status = 'partially_adjusted';
+    else advance.status = 'pending';
+
     await advance.save();
     ApiResponse.success(res, { advance }, 'অগ্রিম আপডেট করা হয়েছে');
+  } catch (error) { next(error); }
+};
+
+exports.deleteAdvance = async (req, res, next) => {
+  try {
+    const institution = req.user.institution;
+    const { id } = req.params;
+    const advance = await Advance.findOne({ where: { _id: id, institution } });
+    if (!advance) return ApiResponse.error(res, 'অগ্রিম পাওয়া যায়নি', 404);
+    if (advance.status === 'adjusted') return ApiResponse.error(res, 'সম্পূর্ণ সমন্বয় হওয়া অগ্রিম মুছে ফেলা যাবে না', 400);
+    await advance.destroy();
+    ApiResponse.success(res, {}, 'অগ্রিম মুছে ফেলা হয়েছে');
   } catch (error) { next(error); }
 };
 

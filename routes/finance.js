@@ -60,7 +60,8 @@ router.route('/advances')
   .post(authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'accountant'), financeController.createAdvance);
 
 router.route('/advances/:id')
-  .put(authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'accountant'), financeController.updateAdvance);
+  .put(authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'accountant'), financeController.updateAdvance)
+  .delete(authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'accountant'), financeController.deleteAdvance);
 
 // Refunds
 router.route('/refunds')
