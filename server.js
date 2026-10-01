@@ -40,6 +40,7 @@ require('./models/JournalEntry');
 require('./models/Voucher');
 require('./models/QurbaniSkin');
 require('./models/FundTransfer');
+require('./models/SalaryPayment');
 
 
 const authRoutes = require('./routes/auth');
@@ -65,6 +66,7 @@ const dashboardRoutes = require('./routes/dashboard');
 const auditLogRoutes = require('./routes/auditLog');
 const madrasahRoutes = require('./routes/madrasah');
 const searchRoutes = require('./routes/search');
+const salaryRoutes = require('./routes/salary');
 
 const app = express();
 
@@ -141,6 +143,7 @@ app.use('/api/v1/hostels', hostelRoutes);
 app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/audit-logs', auditLogRoutes);
 app.use('/api/v1/search', searchRoutes);
+app.use('/api/v1/salary', salaryRoutes);
 
 
 // ৪০৪ হ্যান্ডলার
