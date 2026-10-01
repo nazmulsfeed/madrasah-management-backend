@@ -227,6 +227,8 @@ exports.getStudents = async (req, res, next) => {
       const enDigits = searchStr.replace(/[০-৯]/g, d => bnToEn[d]);
       const bnDigits = searchStr.replace(/[0-9]/g, d => enToBn[d]);
       const cleanDigits = enDigits.replace(/[^0-9]/g, '');
+      const cleanNum = cleanDigits ? parseInt(cleanDigits, 10) : null;
+      const isPureNumeric = cleanNum !== null && /^[0-9০-৯\s]+$/.test(searchStr);
       const words = searchStr.split(/\s+/).filter(Boolean);
 
       // 1. Build User search conditions using native Sequelize Op
@@ -234,16 +236,13 @@ exports.getStudents = async (req, res, next) => {
         { firstName: { [Op.like]: `%${searchStr}%` } },
         { lastName: { [Op.like]: `%${searchStr}%` } },
         { username: { [Op.like]: `%${searchStr}%` } },
-        { phone: { [Op.like]: `%${searchStr}%` } },
-        { phone: { [Op.like]: `%${enDigits}%` } },
-        { phone: { [Op.like]: `%${bnDigits}%` } },
         sequelize.where(
           sequelize.fn('concat', sequelize.fn('coalesce', sequelize.col('firstName'), ''), ' ', sequelize.fn('coalesce', sequelize.col('lastName'), '')),
           { [Op.like]: `%${searchStr}%` }
         ),
       ];
 
-      if (cleanDigits.length >= 3) {
+      if (cleanDigits.length >= 5 || cleanDigits.startsWith('01')) {
         userOrConditions.push(
           sequelize.where(
             sequelize.fn('replace', sequelize.fn('replace', sequelize.col('phone'), '-', ''), ' ', ''),
@@ -328,35 +327,62 @@ exports.getStudents = async (req, res, next) => {
       // Search variations for mixed Bengali-English numbers (e.g., 5৯ -> 59, ৫৯)
       const digitVariations = [...new Set([searchStr, enDigits, bnDigits, cleanDigits])].filter(Boolean);
 
-      // Search StudentEnrollment by rollNumber for any of the digit variations
+      // Search StudentEnrollment by rollNumber (exact and prefix)
       let rollMatchedStudentIds = [];
       try {
-        const matchedEnrollments = await StudentEnrollment.findAll({
-          where: {
-            institution: req.user.institution,
-            [Op.or]: digitVariations.map(dv => ({ rollNumber: { [Op.like]: `%${dv}%` } }))
-          },
-          attributes: ['student'],
-          raw: true
-        });
-        rollMatchedStudentIds = matchedEnrollments.map(e => e.student).filter(Boolean);
+        if (isPureNumeric) {
+          const exactVariants = [cleanDigits, String(cleanNum), enDigits, bnDigits].filter(Boolean);
+          const matchedEnrollments = await StudentEnrollment.findAll({
+            where: {
+              institution: req.user.institution,
+              [Op.or]: [
+                { rollNumber: { [Op.in]: exactVariants } },
+                { rollNumber: { [Op.like]: `${cleanDigits}%` } }
+              ]
+            },
+            attributes: ['student', 'rollNumber'],
+            raw: true
+          });
+          rollMatchedStudentIds = matchedEnrollments.map(e => e.student).filter(Boolean);
+        } else {
+          const matchedEnrollments = await StudentEnrollment.findAll({
+            where: {
+              institution: req.user.institution,
+              [Op.or]: digitVariations.map(dv => ({ rollNumber: { [Op.like]: `%${dv}%` } }))
+            },
+            attributes: ['student'],
+            raw: true
+          });
+          rollMatchedStudentIds = matchedEnrollments.map(e => e.student).filter(Boolean);
+        }
       } catch (enrErr) {
         console.error('Enrollment roll search error in getStudents:', enrErr.message);
       }
 
-      const orConditions = [
-        { fatherName: new RegExp(searchStr, 'i') },
-        { motherName: new RegExp(searchStr, 'i') },
-        { village: new RegExp(searchStr, 'i') },
-      ];
+      const orConditions = [];
 
-      // Add admissionNumber and studentId for all digit variations
-      digitVariations.forEach(dv => {
+      if (!isPureNumeric) {
         orConditions.push(
-          { admissionNumber: new RegExp(dv, 'i') },
-          { studentId: new RegExp(dv, 'i') }
+          { fatherName: new RegExp(searchStr, 'i') },
+          { motherName: new RegExp(searchStr, 'i') },
+          { village: new RegExp(searchStr, 'i') }
         );
-      });
+      }
+
+      if (isPureNumeric) {
+        // Pure numeric: match exact student ID suffix or exact match
+        orConditions.push(
+          { studentId: new RegExp(`(ANG20|ANB20|ANG|ANB|^)0*${cleanDigits}$`, 'i') },
+          { admissionNumber: new RegExp(`0*${cleanDigits}$`, 'i') }
+        );
+      } else {
+        digitVariations.forEach(dv => {
+          orConditions.push(
+            { admissionNumber: new RegExp(dv, 'i') },
+            { studentId: new RegExp(dv, 'i') }
+          );
+        });
+      }
 
       if (rollMatchedStudentIds.length > 0) {
         orConditions.push({ _id: { $in: rollMatchedStudentIds } });
@@ -571,8 +597,34 @@ exports.getStudents = async (req, res, next) => {
     const populatedStudents = await populateStudentEnrollments(students);
 
     // Also apply strict in-memory sorting on the page results with parseBnEnNumber and parseCustomId
-    if (sortBy && populatedStudents.length > 1) {
+    if (populatedStudents.length > 1) {
       populatedStudents.sort((a, b) => {
+        // Priority 1: If searching a number (e.g. 34, 29), exact roll match ALWAYS comes FIRST!
+        if (req.query.search) {
+          const sStr = req.query.search.trim();
+          const cNum = parseBnEnNumber(sStr);
+          if (cNum !== null && /^[0-9০-৯\s]+$/.test(sStr)) {
+            const rA = parseBnEnNumber(a.currentEnrollment?.rollNumber);
+            const rB = parseBnEnNumber(b.currentEnrollment?.rollNumber);
+            const idA = parseCustomId(a.studentId || a.admissionNumber);
+            const idB = parseCustomId(b.studentId || b.admissionNumber);
+
+            let rankA = 99;
+            let rankB = 99;
+            if (rA === cNum) rankA = 0; // Exact roll match
+            else if (idA === cNum) rankA = 1; // Exact student ID suffix match
+            else if (String(a.currentEnrollment?.rollNumber || '').startsWith(String(cNum))) rankA = 2;
+            else rankA = 3;
+
+            if (rB === cNum) rankB = 0;
+            else if (idB === cNum) rankB = 1;
+            else if (String(b.currentEnrollment?.rollNumber || '').startsWith(String(cNum))) rankB = 2;
+            else rankB = 3;
+
+            if (rankA !== rankB) return rankA - rankB;
+          }
+        }
+
         let cmp = 0;
         if (sortBy === 'roll') {
           const rA = parseBnEnNumber(a.currentEnrollment?.rollNumber);
