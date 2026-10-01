@@ -57,6 +57,11 @@ Teacher.init({
     allowNull: true,
     defaultValue: 0,
   },
+  deviceUserId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
   status: {
     type: DataTypes.STRING,
     allowNull: true,

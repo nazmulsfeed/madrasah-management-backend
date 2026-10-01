@@ -261,8 +261,104 @@ async function processAttendancePunch({ institutionId, deviceUserId, punchTime, 
   }
 
   if (!student) {
-    console.warn(`[Punch] ❌ Student NOT FOUND with ID: "${cleanId}" (institutionId: ${institutionId})`);
-    return { success: false, message: `Student not found with ID: ${cleanId}` };
+    // যদি ছাত্র না পাওয়া যায়, তবে শিক্ষকের আইডি বা ডিভাইস আইডি দিয়ে খোঁজা
+    const Teacher = require('../models/Teacher');
+    const TeacherAttendance = require('../models/TeacherAttendance');
+
+    let teacher = await Teacher.findOne({
+      where: {
+        institution: institutionId,
+        [Op.or]: [
+          { deviceUserId: cleanId },
+          { employeeId: cleanId },
+          { _id: cleanId },
+        ],
+      },
+    });
+
+    if (!teacher) {
+      teacher = await Teacher.findOne({
+        where: {
+          [Op.or]: [
+            { deviceUserId: cleanId },
+            { employeeId: cleanId },
+            { _id: cleanId },
+          ],
+        },
+      });
+    }
+
+    if (!teacher) {
+      const userMatch = await User.findOne({
+        where: {
+          [Op.or]: [{ phone: cleanId }, { _id: cleanId }, { username: cleanId }],
+          userType: { [Op.in]: ['teacher', 'hifz_teacher', 'principal', 'vice_principal'] },
+        },
+      });
+      if (userMatch) {
+        teacher = await Teacher.findOne({ where: { user: userMatch._id } });
+      }
+    }
+
+    if (teacher) {
+      console.log(`[Punch] 👨‍🏫 Teacher FOUND with ID: "${cleanId}" (_id: ${teacher._id})`);
+      const teacherUser = await User.findOne({ where: { _id: teacher.user } });
+      const teacherName = teacherUser
+        ? `${teacherUser.firstName || ''} ${teacherUser.lastName || ''}`.trim() || teacherUser.username
+        : (teacher.employeeId || 'শিক্ষক');
+
+      await TeacherAttendance.sync({ alter: true }).catch(() => {});
+
+      let tAttendance = await TeacherAttendance.findOne({
+        where: {
+          teacher: teacher._id,
+          date: targetDate,
+        },
+      });
+
+      let isFirst = false;
+      if (!tAttendance) {
+        isFirst = true;
+        tAttendance = await TeacherAttendance.create({
+          institution: teacher.institution || institutionId,
+          teacher: teacher._id,
+          date: targetDate,
+          status: 'present',
+          inTime: timeString,
+          outTime: '',
+          punchCount: 1,
+          punchTimes: JSON.stringify([timeString]),
+          punchTime: punchDate,
+          source,
+          remarks: `বায়োমেট্রিক পাঞ্চ (${source})`,
+        });
+      } else {
+        tAttendance.status = 'present';
+        let timesList = [];
+        try {
+          timesList = tAttendance.punchTimes ? JSON.parse(tAttendance.punchTimes) : [];
+        } catch (_) { timesList = []; }
+        timesList.push(timeString);
+        tAttendance.punchTimes = JSON.stringify(timesList);
+        tAttendance.punchCount = (tAttendance.punchCount || 1) + 1;
+        tAttendance.outTime = timeString;
+        tAttendance.punchTime = punchDate;
+        await tAttendance.save();
+      }
+
+      return {
+        success: true,
+        isTeacher: true,
+        teacherName,
+        teacherId: teacher._id,
+        punchTime: timeString,
+        isFirstPunch: isFirst,
+        message: `শিক্ষক ${teacherName}-এর পাঞ্চ সফল হয়েছে (${timeString})`,
+      };
+    }
+
+    console.warn(`[Punch] ❌ Neither Student nor Teacher FOUND with ID: "${cleanId}" (institutionId: ${institutionId})`);
+    return { success: false, message: `Student or Teacher not found with ID: ${cleanId}` };
   }
   console.log(`[Punch] ✅ Student found: ${student.studentId} (_id: ${student._id}, institution: ${student.institution})`);
 
@@ -1138,3 +1234,310 @@ exports.getAttendanceSummaryReport = async (req, res, next) => {
     next(error);
   }
 };
+
+// ──────────────────────────────────────────────────────────────
+// @desc    Get Teacher Daily Attendance
+// @route   GET /api/v1/attendance/teachers
+// ──────────────────────────────────────────────────────────────
+exports.getTeacherAttendance = async (req, res, next) => {
+  try {
+    const institution = req.user.institution;
+    const { date } = req.query;
+    const targetDateStr = date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' });
+    const targetDate = new Date(targetDateStr + 'T00:00:00.000Z');
+
+    const Teacher = require('../models/Teacher');
+    const TeacherAttendance = require('../models/TeacherAttendance');
+    await TeacherAttendance.sync({ alter: true }).catch(() => {});
+
+    const instFilter = institution ? { [Op.or]: [{ institution }, { institution: null }] } : {};
+
+    const [teachers, users, existingAttendances] = await Promise.all([
+      Teacher.findAll({ where: { ...instFilter, status: 'active' } }),
+      User.findAll({
+        where: {
+          ...instFilter,
+          isActive: true,
+          userType: { [Op.in]: ['teacher', 'hifz_teacher', 'principal', 'vice_principal'] },
+        },
+        attributes: ['_id', 'firstName', 'lastName', 'username', 'phone', 'userType'],
+      }),
+      TeacherAttendance.findAll({
+        where: {
+          ...instFilter,
+          date: targetDate,
+        },
+      }),
+    ]);
+
+    const userMap = new Map();
+    users.forEach(u => userMap.set(String(u._id), u));
+
+    const attendanceMap = new Map();
+    existingAttendances.forEach(a => attendanceMap.set(String(a.teacher), a));
+
+    const teacherMap = new Map();
+
+    teachers.forEach(t => {
+      const u = userMap.get(String(t.user));
+      const name = u
+        ? `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.username
+        : (t.employeeId || 'শিক্ষক');
+      teacherMap.set(String(t._id), {
+        teacherId: String(t._id),
+        userId: t.user,
+        name,
+        designation: t.designation || (u?.userType === 'principal' ? 'প্রিন্সিপাল' : 'শিক্ষক'),
+        phone: u?.phone || '',
+        deviceUserId: t.deviceUserId || t.employeeId || '',
+        userType: u?.userType || 'teacher',
+      });
+    });
+
+    users.forEach(u => {
+      const uId = String(u._id);
+      const hasRecord = Array.from(teacherMap.values()).some(t => String(t.userId) === uId);
+      if (!hasRecord) {
+        const name = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.username;
+        teacherMap.set(uId, {
+          teacherId: uId,
+          userId: uId,
+          name,
+          designation: u.userType === 'principal' ? 'প্রিন্সিপাল' : 'শিক্ষক',
+          phone: u.phone || '',
+          deviceUserId: '',
+          userType: u.userType,
+        });
+      }
+    });
+
+    const records = [];
+    let presentCount = 0;
+    let absentCount = 0;
+    let lateCount = 0;
+    let leaveCount = 0;
+
+    for (const [tId, t] of teacherMap.entries()) {
+      const att = attendanceMap.get(tId) || (t.userId ? attendanceMap.get(String(t.userId)) : null);
+      const status = att ? att.status : 'present';
+      const inTime = att ? att.inTime : '';
+      const outTime = att ? att.outTime : '';
+      const punchCount = att ? (att.punchCount || 0) : 0;
+      const source = att ? (att.source || 'manual') : 'manual';
+      const remarks = att ? (att.remarks || '') : '';
+
+      if (status === 'present') presentCount++;
+      else if (status === 'absent') absentCount++;
+      else if (status === 'late') lateCount++;
+      else if (status === 'on_leave') leaveCount++;
+
+      records.push({
+        _id: att ? att._id : `draft-${tId}`,
+        teacherId: tId,
+        name: t.name,
+        designation: t.designation,
+        phone: t.phone,
+        deviceUserId: t.deviceUserId,
+        status,
+        inTime,
+        outTime,
+        punchCount,
+        source,
+        remarks,
+        isRecorded: Boolean(att),
+      });
+    }
+
+    records.sort((a, b) => a.name.localeCompare(b.name, 'bn'));
+
+    const total = records.length;
+    const presentRate = total > 0 ? Math.round(((presentCount + lateCount) / total) * 100) : 0;
+
+    ApiResponse.success(res, {
+      date: targetDateStr,
+      stats: {
+        total,
+        present: presentCount,
+        absent: absentCount,
+        late: lateCount,
+        leave: leaveCount,
+        presentRate,
+      },
+      records,
+    });
+  } catch (error) {
+    console.error('getTeacherAttendance error:', error);
+    next(error);
+  }
+};
+
+// ──────────────────────────────────────────────────────────────
+// @desc    Bulk Save Teacher Attendance
+// @route   POST /api/v1/attendance/teachers
+// ──────────────────────────────────────────────────────────────
+exports.saveTeacherAttendance = async (req, res, next) => {
+  try {
+    const institution = req.user.institution;
+    const { date, attendances } = req.body;
+
+    if (!date || !Array.isArray(attendances) || attendances.length === 0) {
+      return ApiResponse.error(res, 'তারিখ ও হাজিরা তালিকা প্রদান করা আবশ্যক', 400);
+    }
+
+    const TeacherAttendance = require('../models/TeacherAttendance');
+    await TeacherAttendance.sync({ alter: true }).catch(() => {});
+
+    const targetDate = new Date(date + 'T00:00:00.000Z');
+    let savedCount = 0;
+
+    for (const item of attendances) {
+      if (!item.teacherId) continue;
+
+      const [record, created] = await TeacherAttendance.findOrCreate({
+        where: {
+          institution: institution || '',
+          teacher: item.teacherId,
+          date: targetDate,
+        },
+        defaults: {
+          institution: institution || '',
+          teacher: item.teacherId,
+          date: targetDate,
+          status: item.status || 'present',
+          inTime: item.inTime || '',
+          outTime: item.outTime || '',
+          source: item.source || 'manual',
+          markedBy: req.user._id,
+          remarks: item.remarks || '',
+        },
+      });
+
+      if (!created) {
+        await record.update({
+          status: item.status || 'present',
+          inTime: item.inTime !== undefined ? item.inTime : record.inTime,
+          outTime: item.outTime !== undefined ? item.outTime : record.outTime,
+          source: item.source || record.source,
+          remarks: item.remarks !== undefined ? item.remarks : record.remarks,
+          markedBy: req.user._id,
+        });
+      }
+
+      savedCount++;
+    }
+
+    ApiResponse.success(res, { savedCount }, `${savedCount} জন শিক্ষকের হাজিরা সফলভাবে সংরক্ষিত হয়েছে`);
+  } catch (error) {
+    console.error('saveTeacherAttendance error:', error);
+    next(error);
+  }
+};
+
+// ──────────────────────────────────────────────────────────────
+// @desc    Quick USB RFID Card Punch for Teachers
+// @route   POST /api/v1/attendance/teachers/card-punch
+// ──────────────────────────────────────────────────────────────
+exports.recordTeacherCardPunch = async (req, res, next) => {
+  try {
+    const institution = req.user.institution;
+    const { cardId } = req.body;
+
+    if (!cardId || !cardId.trim()) {
+      return ApiResponse.error(res, 'কার্ড আইডি প্রদান করা আবশ্যক', 400);
+    }
+
+    const cleanCard = cardId.trim();
+    const Teacher = require('../models/Teacher');
+    const TeacherAttendance = require('../models/TeacherAttendance');
+    await TeacherAttendance.sync({ alter: true }).catch(() => {});
+
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' });
+    const targetDate = new Date(dateStr + 'T00:00:00.000Z');
+    const timeString = now.toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Dhaka',
+      hour12: true,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    let teacher = await Teacher.findOne({
+      where: {
+        institution: institution || '',
+        [Op.or]: [
+          { deviceUserId: cleanCard },
+          { employeeId: cleanCard },
+          { _id: cleanCard },
+        ],
+      },
+    });
+
+    if (!teacher) {
+      const userMatch = await User.findOne({
+        where: {
+          institution: institution || '',
+          [Op.or]: [{ phone: cleanCard }, { username: cleanCard }, { _id: cleanCard }],
+        },
+      });
+      if (userMatch) {
+        teacher = await Teacher.findOne({ where: { user: userMatch._id } });
+      }
+    }
+
+    if (!teacher) {
+      return ApiResponse.notFound(res, `"${cleanCard}" আইডিধারী কোনো শিক্ষক পাওয়া যায়নি`);
+    }
+
+    const teacherUser = await User.findOne({ where: { _id: teacher.user } });
+    const teacherName = teacherUser
+      ? `${teacherUser.firstName || ''} ${teacherUser.lastName || ''}`.trim() || teacherUser.username
+      : (teacher.employeeId || 'শিক্ষক');
+
+    let [record, created] = await TeacherAttendance.findOrCreate({
+      where: {
+        institution: institution || '',
+        teacher: teacher._id,
+        date: targetDate,
+      },
+      defaults: {
+        institution: institution || '',
+        teacher: teacher._id,
+        date: targetDate,
+        status: 'present',
+        inTime: timeString,
+        outTime: '',
+        punchCount: 1,
+        punchTimes: JSON.stringify([timeString]),
+        punchTime: now,
+        source: 'rfid_card',
+        remarks: 'ইউএসবি কার্ড স্ক্যানার',
+      },
+    });
+
+    if (!created) {
+      record.status = 'present';
+      let timesList = [];
+      try { timesList = JSON.parse(record.punchTimes || '[]'); } catch (_) { timesList = []; }
+      timesList.push(timeString);
+      record.punchTimes = JSON.stringify(timesList);
+      record.punchCount = (record.punchCount || 1) + 1;
+      record.outTime = timeString;
+      record.punchTime = now;
+      await record.save();
+    }
+
+    ApiResponse.success(res, {
+      teacherName,
+      designation: teacher.designation || 'শিক্ষক',
+      inTime: record.inTime,
+      outTime: record.outTime,
+      punchCount: record.punchCount,
+      time: timeString,
+    }, `${teacherName} — উপস্থিতি সফলভাবে রেকর্ড হয়েছে (${timeString})`);
+  } catch (error) {
+    console.error('recordTeacherCardPunch error:', error);
+    next(error);
+  }
+};
+
