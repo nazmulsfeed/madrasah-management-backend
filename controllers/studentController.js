@@ -153,12 +153,22 @@ function parseBnEnNumber(val) {
   return isNaN(num) ? null : num;
 }
 
-// Helper: Extract numeric suffix from student IDs like ANG2001, ANB2023005, etc.
+// Helper: Extract serial number from student IDs like ANB20264, ANG20265, ANB20271, etc.
+// Format: ANB/ANG + 4-digit-year (2026/2027/2028...) + serial number
+// Returns only the trailing serial number after the year for correct natural sorting.
 function parseCustomId(idStr) {
   if (!idStr) return 999999;
   const bnToEn = { '০':'0', '১':'1', '২':'2', '৩':'3', '৪':'4', '৫':'5', '৬':'6', '৭':'7', '৮':'8', '৯':'9' };
   const s = String(idStr).trim().toUpperCase().replace(/[০-৯]/g, d => bnToEn[d]);
-  const stripped = s.replace(/^(?:ANG20|ANB20|ANG|ANB)/i, '');
+  // Match ANB/ANG + exactly 4-digit year + remaining serial digits
+  // e.g. ANB20264 -> year=2026, serial=4
+  // e.g. ANB202642 -> year=2026, serial=42
+  const fullMatch = s.match(/^AN[BG](\d{4})(\d+)$/);
+  if (fullMatch) {
+    return parseInt(fullMatch[2], 10);
+  }
+  // Fallback: strip ANB/ANG prefix and return remaining digits
+  const stripped = s.replace(/^AN[BG]/i, '');
   const match = stripped.match(/(\d+)/);
   if (match) {
     return parseInt(match[1], 10);
@@ -558,8 +568,11 @@ exports.getStudents = async (req, res, next) => {
     if (sortBy === 'roll' && filter._id && Array.isArray(filter._id.$in) && filter._id.$in.length > 0) {
       orderClause = [[sequelize.literal(`FIELD(\`Student\`.\`_id\`, ${filter._id.$in.map(id => `'${id}'`).join(',')})`), 'ASC']];
     } else if (sortBy === 'studentId') {
+      // Extract serial number after ANB/ANG (3 chars) + 4-digit year (4 chars) = 7 char prefix
+      // e.g. ANB20264 -> SUBSTRING from pos 8 -> "4" -> CAST 4
+      // e.g. ANB202642 -> SUBSTRING from pos 8 -> "42" -> CAST 42
       orderClause = [
-        [sequelize.literal("CAST(NULLIF(REPLACE(REPLACE(REPLACE(REPLACE(UPPER(COALESCE(`Student`.`studentId`, '')), 'ANG20', ''), 'ANB20', ''), 'ANG', ''), 'ANB', ''), '') AS UNSIGNED)"), sortOrder],
+        [sequelize.literal("CASE WHEN `Student`.`studentId` REGEXP '^AN[BG][0-9]{4}[0-9]+$' THEN CAST(SUBSTRING(`Student`.`studentId`, 8) AS UNSIGNED) ELSE CAST(NULLIF(REPLACE(REPLACE(UPPER(COALESCE(`Student`.`studentId`, '')), 'ANG', ''), 'ANB', '') AS UNSIGNED) END"), sortOrder],
         ['studentId', sortOrder]
       ];
     } else if (sortBy === 'admissionNumber') {
