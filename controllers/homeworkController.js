@@ -91,22 +91,15 @@ exports.getHomeworks = async (req, res, next) => {
           const userIdentifier = req.user._id ? req.user._id.toString() : '';
           const student = await Student.findOne({
             where: {
-              [Op.or]: [
-                { user: userIdentifier },
-                ...(req.user.id ? [{ user: req.user.id.toString() }] : [])
-              ]
+              user: userIdentifier,
+              isDeleted: { [Op.ne]: true }
             }
           });
           if (student) {
             let enrollment = null;
             if (student.currentEnrollment) {
               enrollment = await StudentEnrollment.findOne({
-                where: {
-                  [Op.or]: [
-                    { _id: student.currentEnrollment },
-                    { id: student.currentEnrollment }
-                  ]
-                }
+                where: { _id: student.currentEnrollment }
               });
             }
             if (!enrollment) {
@@ -121,7 +114,6 @@ exports.getHomeworks = async (req, res, next) => {
                 where: {
                   [Op.or]: [
                     { _id: enrollment.classLevel },
-                    { id: enrollment.classLevel },
                     { name: enrollment.classLevel }
                   ]
                 }
@@ -135,20 +127,23 @@ exports.getHomeworks = async (req, res, next) => {
         } else if (userType === 'guardian') {
           const guardian = await Guardian.findOne({
             where: {
-              [Op.or]: [
-                { user: req.user._id ? req.user._id.toString() : '' },
-                ...(req.user.id ? [{ user: req.user.id.toString() }] : [])
-              ]
+              user: req.user._id ? req.user._id.toString() : ''
             }
           });
           if (guardian && guardian.students && guardian.students.length > 0) {
             const linkedStudentIds = guardian.students.map(s => s.student);
-            const students = await Student.findAll({ where: { _id: { [Op.in]: linkedStudentIds } } });
+            const students = await Student.findAll({
+              where: {
+                _id: { [Op.in]: linkedStudentIds },
+                isDeleted: { [Op.ne]: true }
+              }
+            });
             const studentIds = students.map(s => s._id);
+            const curEnrIds = students.map(s => s.currentEnrollment).filter(Boolean);
             const enrollments = await StudentEnrollment.findAll({
               where: {
                 [Op.or]: [
-                  { _id: { [Op.in]: students.map(s => s.currentEnrollment).filter(Boolean) } },
+                  ...(curEnrIds.length > 0 ? [{ _id: { [Op.in]: curEnrIds } }] : []),
                   { student: { [Op.in]: studentIds }, enrollmentStatus: 'active' }
                 ]
               }
@@ -158,10 +153,7 @@ exports.getHomeworks = async (req, res, next) => {
             if (clIds.length > 0) {
               const clObjects = await ClassLevel.findAll({
                 where: {
-                  [Op.or]: [
-                    { _id: { [Op.in]: clIds } },
-                    { id: { [Op.in]: clIds } }
-                  ]
+                  _id: { [Op.in]: clIds }
                 }
               });
               clObjects.forEach(c => { if (c.name) classLevelValues.push(c.name); });
@@ -183,6 +175,8 @@ exports.getHomeworks = async (req, res, next) => {
           } else {
             where.classLevel = { [Op.in]: allowedClasses };
           }
+        } else {
+          where.classLevel = '__NO_CLASS_ACCESS__';
         }
       }
     } else if (userType === 'student') {

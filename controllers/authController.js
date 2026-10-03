@@ -30,13 +30,34 @@ exports.login = async (req, res, next) => {
           { email: email.toLowerCase() },
           { phone: email },
           { username: email }
-        ]
-      }
+        ],
+        isActive: true
+      },
+      order: [['createdAt', 'DESC']]
     });
 
-    // If not found by email/phone/username, try finding by studentId
+    // Fallback: If not found among active users, check if an inactive user exists with these credentials
     if (!user) {
-      const studentRecord = await Student.findOne({ where: { studentId: email } });
+      user = await User.findOne({
+        where: {
+          [Op.or]: [
+            { email: email.toLowerCase() },
+            { phone: email },
+            { username: email }
+          ]
+        },
+        order: [['createdAt', 'DESC']]
+      });
+    }
+
+    // If not found by email/phone/username, try finding by active studentId
+    if (!user) {
+      const studentRecord = await Student.findOne({
+        where: {
+          studentId: email,
+          isDeleted: { [Op.ne]: true }
+        }
+      });
       if (studentRecord) {
         user = await User.findOne({ where: { _id: studentRecord.user } });
       }
@@ -53,6 +74,18 @@ exports.login = async (req, res, next) => {
 
     if (!user.isActive) {
       return ApiResponse.error(res, 'আপনার একাউন্ট নিষ্ক্রিয়', 403);
+    }
+
+    if (user.userType === 'student') {
+      const studentProfile = await Student.findOne({
+        where: {
+          user: user._id,
+          isDeleted: { [Op.ne]: true }
+        }
+      });
+      if (!studentProfile || studentProfile.status === 'inactive') {
+        return ApiResponse.error(res, 'এই শিক্ষার্থী অ্যাকাউন্টটি নিষ্ক্রিয় বা মুছে ফেলা হয়েছে', 403);
+      }
     }
 
     user.lastLogin = new Date();

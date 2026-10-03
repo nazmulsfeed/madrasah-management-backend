@@ -1231,6 +1231,14 @@ exports.deleteStudent = async (req, res, next) => {
       { where: { student: student._id } }
     );
 
+    // Also deactivate associated user account so they cannot log in
+    if (student.user) {
+      await User.update(
+        { isActive: false },
+        { where: { _id: student.user } }
+      );
+    }
+
     ApiResponse.success(res, null, 'ছাত্র/ছাত্রী মুছে ফেলা হয়েছে');
   } catch (error) {
     next(error);
