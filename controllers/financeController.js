@@ -921,6 +921,99 @@ exports.rejectPayment = async (req, res, next) => {
   }
 };
 
+// @desc    পেমেন্ট রিভার্ট / বাতিল করুন (Super Admin / Admin Only)
+// @route   DELETE /api/v1/finance/payments/:id
+exports.revertPayment = async (req, res, next) => {
+  try {
+    const institution = req.user.institution;
+    const { id } = req.params;
+
+    const payment = await Payment.findOne({ where: { _id: id, institution } });
+    if (!payment) return ApiResponse.notFound(res, 'পেমেন্ট রেকর্ড পাওয়া যায়নি');
+
+    const paymentNumber = payment.paymentNumber;
+    const amount = Number(payment.amount) || 0;
+    const status = payment.status;
+
+    let updatedInvoice = null;
+
+    if (payment.invoice) {
+      const invoice = await Invoice.findOne({ where: { _id: payment.invoice, institution } });
+      if (invoice) {
+        if (status === 'success') {
+          const currentPaid = Number(invoice.paidTotal) || 0;
+          const newPaidTotal = Math.max(0, currentPaid - amount);
+          const payableTotal = Number(invoice.payableTotal) || 0;
+          const newBalance = Math.max(0, payableTotal - newPaidTotal);
+
+          let newStatus = 'unpaid';
+          if (newBalance === 0 && newPaidTotal > 0) {
+            newStatus = 'paid';
+          } else if (newPaidTotal > 0 && newBalance > 0) {
+            newStatus = 'partial';
+          }
+
+          invoice.paidTotal = newPaidTotal;
+          invoice.balance = newBalance;
+          invoice.status = newStatus;
+          await invoice.save();
+        }
+        updatedInvoice = invoice;
+      }
+    }
+
+    // Revert fund and revenue accounts if successful
+    if (status === 'success') {
+      if (payment.fundAccount) {
+        const fundAcc = await Account.findOne({ where: { _id: payment.fundAccount, institution } });
+        if (fundAcc) {
+          fundAcc.balance = Math.max(0, (Number(fundAcc.balance) || 0) - amount);
+          await fundAcc.save();
+        }
+      }
+      if (payment.revenueAccount) {
+        const revAcc = await Account.findOne({ where: { _id: payment.revenueAccount, institution } });
+        if (revAcc) {
+          revAcc.balance = Math.max(0, (Number(revAcc.balance) || 0) - amount);
+          await revAcc.save();
+        }
+      }
+
+      if (paymentNumber) {
+        await JournalEntry.destroy({
+          where: {
+            institution,
+            reference: paymentNumber
+          }
+        }).catch(() => {});
+      }
+    }
+
+    // Log action to audit log
+    await auditLogger.logAction(
+      institution,
+      req.user._id,
+      'revert',
+      'Payment',
+      id,
+      `পেমেন্ট রিভার্ট/বাতিল করা হয়েছে: ${paymentNumber} (৳${amount}) - ইনভয়েস: ${updatedInvoice?.invoiceNumber || '—'}`,
+      payment.toJSON ? payment.toJSON() : payment,
+      null
+    );
+
+    // Remove payment record
+    await Payment.destroy({ where: { _id: id, institution } });
+
+    ApiResponse.success(
+      res, 
+      { invoice: updatedInvoice }, 
+      `পেমেন্ট (${paymentNumber} - ৳${amount}) সফলভাবে বাতিল/রিভার্ট করা হয়েছে এবং ইনভয়েসের বকেয়া আপডেট হয়েছে।`
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    চলতি মাসের ইনভয়েস ম্যানুয়ালি তৈরি করুন (Batch generate tuition fees)
 // @route   POST /api/v1/finance/invoices/generate-monthly
 exports.generateMonthlyInvoices = async (req, res, next) => {

@@ -86,6 +86,7 @@ router.post('/payments/:id/verify', authorize('super_admin', 'co_super_admin', '
 router.post('/payments/:id/reject', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'accountant'), financeController.rejectPayment);
 
 router.post('/payments/bulk', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'accountant', 'student', 'guardian'), financeController.receiveBulkPayment);
+router.delete('/payments/:id', authorize('super_admin', 'co_super_admin', 'admin'), financeController.revertPayment);
 router.get('/my-student-summary', authorize('student', 'guardian'), financeController.getMyStudentSummary);
 
 module.exports = router;
