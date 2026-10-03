@@ -163,7 +163,9 @@ const PORT = process.env.PORT || 5000;
 const start = async () => {
   await db.connectDB();
   
-  // One-time migrations (notice permission, institution fix) already applied — skipped for fast boot
+  // Auto-fix any usernames containing spaces on boot (runs seamlessly in background)
+  const { autoFixUsernamesOnBoot } = require('./utils/autoFixUsernames');
+  await autoFixUsernamesOnBoot();
 
   // Start Monthly Invoice Auto-Scheduler
   const { startInvoiceScheduler } = require('./utils/invoiceScheduler');
