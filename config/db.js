@@ -247,6 +247,33 @@ const connectDB = async () => {
         await sequelize.query("UPDATE `accounts` SET `balance` = 0 WHERE (`code` = '1001' OR `name` LIKE '%নগদ%') AND `balance` = 900");
         await sequelize.query("UPDATE `institutions` SET `branchName` = 'প্রধান শাখা' WHERE `branchName` IN ('বালক শাখা', 'বালিকা শাখা')");
         await sequelize.query("UPDATE `users` SET `branch` = 'প্রধান শাখা' WHERE `branch` IN ('বালক শাখা', 'বালিকা শাখা')");
+        // Safe auto-clean any usernames containing spaces
+        try {
+          const [usersWithSpaces] = await sequelize.query(
+            "SELECT `_id`, `username` FROM `users` WHERE `username` LIKE '% %'"
+          );
+          if (usersWithSpaces && usersWithSpaces.length > 0) {
+            for (const u of usersWithSpaces) {
+              let clean = (u.username || '').toLowerCase().replace(/\s+/g, '');
+              if (!clean) clean = `user${String(u._id).substring(0, 6)}`;
+              let candidate = clean;
+              let counter = 1;
+              while (true) {
+                const [conflict] = await sequelize.query(
+                  "SELECT `_id` FROM `users` WHERE `username` = :candidate AND `_id` != :id",
+                  { replacements: { candidate, id: u._id } }
+                );
+                if (!conflict || conflict.length === 0) break;
+                candidate = `${clean}${counter}`;
+                counter++;
+              }
+              await sequelize.query(
+                "UPDATE `users` SET `username` = :candidate WHERE `_id` = :id",
+                { replacements: { candidate, id: u._id } }
+              );
+            }
+          }
+        } catch (uErr) {}
       } catch (cleanErr) {}
     } catch (colErr) {
       console.error("⚠️ Error auto-adding columns:", colErr.message);

@@ -609,6 +609,16 @@ exports.getStudents = async (req, res, next) => {
 
     const populatedStudents = await populateStudentEnrollments(students);
 
+    // Ensure all returned students have clean, space-free, lowercase usernames
+    populatedStudents.forEach(st => {
+      if (st.user && st.user.username && st.user.username.includes(' ')) {
+        const cleanU = st.user.username.toLowerCase().replace(/\s+/g, '');
+        st.user.username = cleanU;
+        // Asynchronously update MySQL record in background
+        User.update({ username: cleanU }, { where: { _id: st.user._id } }).catch(() => {});
+      }
+    });
+
     // Also apply strict in-memory sorting on the page results with parseBnEnNumber and parseCustomId
     if (populatedStudents.length > 1) {
       populatedStudents.sort((a, b) => {

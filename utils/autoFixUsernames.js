@@ -1,4 +1,5 @@
-const { sequelize } = require('../config/db');
+const db = require('../config/db');
+const sequelize = db.sequelize || db;
 
 /**
  * Automatically cleans up usernames containing spaces on server boot.
