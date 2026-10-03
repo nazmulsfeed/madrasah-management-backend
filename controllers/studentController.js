@@ -855,14 +855,18 @@ exports.createStudent = async (req, res, next) => {
       finalStudentId = candidateId;
     }
 
-    // Auto-generate username from English name (firstNameEn) or fallback to Bengali firstName
-    let finalUsername = username && username.trim() !== '' ? username.trim() : null;
+    // Auto-generate username from English name (firstNameEn) or fallback to Bengali firstName (strictly NO SPACES & LOWERCASE)
+    let finalUsername = username && username.trim() !== '' 
+      ? username.trim().toLowerCase().replace(/\s+/g, '') 
+      : null;
     if (!finalUsername) {
       // Prefer English name for username generation
-      const baseName = (firstNameEn && firstNameEn.trim() !== '') 
+      let baseName = (firstNameEn && firstNameEn.trim() !== '') 
         ? firstNameEn.trim() 
         : (firstName && firstName.trim() !== '' ? firstName.trim() : null);
       if (baseName) {
+        // Strip all whitespace and convert to lowercase (e.g. 'Most Nusrat Akter' -> 'mostnusratakter')
+        baseName = baseName.toLowerCase().replace(/\s+/g, '');
         let attempts = 0;
         let generated = null;
         while (attempts < 20) {
@@ -1011,7 +1015,7 @@ exports.updateStudent = async (req, res, next) => {
 
       // Username — sparse unique: check duplicate & set null if empty
       if (req.body.username !== undefined) {
-        const trimmedUsername = req.body.username ? req.body.username.trim() : '';
+        const trimmedUsername = req.body.username ? req.body.username.trim().toLowerCase().replace(/\s+/g, '') : '';
         if (trimmedUsername !== '') {
           const existing = await User.findOne({
             where: {
