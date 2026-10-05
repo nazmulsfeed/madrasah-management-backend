@@ -121,6 +121,16 @@ Institution.init({
     allowNull: true,
     defaultValue: false, // Default false: whether to send push notifications when students punch to exit/leave
   },
+  timetableData: {
+    type: DataTypes.TEXT('long'),
+    allowNull: true,
+    defaultValue: '',
+  },
+  academicCalendarEvents: {
+    type: DataTypes.TEXT('long'),
+    allowNull: true,
+    defaultValue: '',
+  },
 }, {
   sequelize,
   modelName: 'Institution',

@@ -69,6 +69,7 @@ const auditLogRoutes = require('./routes/auditLog');
 const madrasahRoutes = require('./routes/madrasah');
 const searchRoutes = require('./routes/search');
 const salaryRoutes = require('./routes/salary');
+const academicRoutes = require('./routes/academics');
 
 const app = express();
 
@@ -147,6 +148,7 @@ app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/audit-logs', auditLogRoutes);
 app.use('/api/v1/search', searchRoutes);
 app.use('/api/v1/salary', salaryRoutes);
+app.use('/api/v1/academics', academicRoutes);
 
 
 // ৪০৪ হ্যান্ডলার
