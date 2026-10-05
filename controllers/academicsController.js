@@ -8,17 +8,24 @@ exports.getPublicTimetable = async (req, res, next) => {
     let timetable = {};
     if (institution && institution.timetableData) {
       try {
-        timetable = JSON.parse(institution.timetableData);
+        timetable = typeof institution.timetableData === 'string'
+          ? JSON.parse(institution.timetableData)
+          : institution.timetableData;
       } catch (_) {
         timetable = {};
       }
     }
 
-    const classes = await ClassLevel.findAll({
-      where: { status: 'active' },
-      attributes: ['_id', 'name', 'code', 'numericOrOrder'],
-      order: [['numericOrOrder', 'ASC']]
-    });
+    let classes = [];
+    try {
+      classes = await ClassLevel.findAll({
+        attributes: ['_id', 'name', 'code', 'order'],
+        order: [['order', 'ASC'], ['name', 'ASC']]
+      });
+    } catch (clsErr) {
+      console.error('Error querying ClassLevel with order:', clsErr);
+      classes = await ClassLevel.findAll();
+    }
 
     return res.status(200).json({
       success: true,
@@ -48,7 +55,9 @@ exports.getPublicCalendar = async (req, res, next) => {
     let events = [];
     if (institution && institution.academicCalendarEvents) {
       try {
-        events = JSON.parse(institution.academicCalendarEvents);
+        events = typeof institution.academicCalendarEvents === 'string'
+          ? JSON.parse(institution.academicCalendarEvents)
+          : institution.academicCalendarEvents;
       } catch (_) {
         events = [];
       }
@@ -74,13 +83,22 @@ exports.getPublicCalendar = async (req, res, next) => {
 exports.saveTimetable = async (req, res, next) => {
   try {
     const { timetable } = req.body;
-    const institution = await Institution.findOne();
+    let institution = await Institution.findOne();
     if (!institution) {
       return res.status(404).json({ success: false, message: 'প্রতিষ্ঠান পাওয়া যায়নি' });
     }
 
-    institution.timetableData = JSON.stringify(timetable || {});
-    await institution.save();
+    const jsonStr = JSON.stringify(timetable || {});
+    try {
+      institution.timetableData = jsonStr;
+      await institution.save();
+    } catch (saveErr) {
+      console.warn('Fallback to raw query for timetableData update:', saveErr.message);
+      await Institution.sequelize.query(
+        "UPDATE `institutions` SET `timetableData` = ? WHERE `_id` = ?",
+        { replacements: [jsonStr, institution._id] }
+      );
+    }
 
     return res.status(200).json({
       success: true,
@@ -101,13 +119,22 @@ exports.saveTimetable = async (req, res, next) => {
 exports.saveCalendar = async (req, res, next) => {
   try {
     const { events } = req.body;
-    const institution = await Institution.findOne();
+    let institution = await Institution.findOne();
     if (!institution) {
       return res.status(404).json({ success: false, message: 'প্রতিষ্ঠান পাওয়া যায়নি' });
     }
 
-    institution.academicCalendarEvents = JSON.stringify(events || []);
-    await institution.save();
+    const jsonStr = JSON.stringify(events || []);
+    try {
+      institution.academicCalendarEvents = jsonStr;
+      await institution.save();
+    } catch (saveErr) {
+      console.warn('Fallback to raw query for academicCalendarEvents update:', saveErr.message);
+      await Institution.sequelize.query(
+        "UPDATE `institutions` SET `academicCalendarEvents` = ? WHERE `_id` = ?",
+        { replacements: [jsonStr, institution._id] }
+      );
+    }
 
     return res.status(200).json({
       success: true,

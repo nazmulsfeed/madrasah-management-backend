@@ -207,6 +207,16 @@ const connectDB = async () => {
         await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `outTimePushEnabled` TINYINT(1) NULL DEFAULT 0");
         console.log("✅ Added outTimePushEnabled column to institutions table");
       }
+      const [instTimetableCol] = await sequelize.query("SHOW COLUMNS FROM `institutions` LIKE 'timetableData'");
+      if (!instTimetableCol || instTimetableCol.length === 0) {
+        await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `timetableData` LONGTEXT NULL");
+        console.log("✅ Added timetableData column to institutions table");
+      }
+      const [instCalEventsCol] = await sequelize.query("SHOW COLUMNS FROM `institutions` LIKE 'academicCalendarEvents'");
+      if (!instCalEventsCol || instCalEventsCol.length === 0) {
+        await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `academicCalendarEvents` LONGTEXT NULL");
+        console.log("✅ Added academicCalendarEvents column to institutions table");
+      }
       const [punchCountCol] = await sequelize.query("SHOW COLUMNS FROM `studentattendances` LIKE 'punchCount'");
       if (!punchCountCol || punchCountCol.length === 0) {
         await sequelize.query("ALTER TABLE `studentattendances` ADD COLUMN `punchCount` INT NULL DEFAULT 0");
