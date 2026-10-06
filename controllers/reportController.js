@@ -341,8 +341,14 @@ exports.getStudentMarks = async (req, res, next) => {
 
     const marks = await MarkEntry.find(filter)
       .populate('exam', 'name startDate status')
-      .populate('subject', 'name code')
-      .sort({ 'exam.startDate': -1 });
+      .populate('subject', 'name code');
+
+    // Sort in-memory safely by exam.startDate descending
+    marks.sort((a, b) => {
+      const dateA = a.exam?.startDate ? new Date(a.exam.startDate).getTime() : 0;
+      const dateB = b.exam?.startDate ? new Date(b.exam.startDate).getTime() : 0;
+      return dateB - dateA;
+    });
 
     // Group by exam
     const examMap = {};
