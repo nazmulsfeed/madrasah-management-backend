@@ -90,9 +90,10 @@ exports.getTeachers = async (req, res, next) => {
           status: 'active'
         });
       }
-    }
+    const { enrichWithUsers } = require('../utils/userEnricher');
+    const enrichedTeachersList = await enrichWithUsers(teachersList, ['createdBy', 'updatedBy']);
 
-    ApiResponse.paginated(res, teachersList, page, limit, totalUsers);
+    ApiResponse.paginated(res, enrichedTeachersList, page, limit, totalUsers);
   } catch (error) {
     next(error);
   }
@@ -109,7 +110,20 @@ exports.getTeacher = async (req, res, next) => {
       return ApiResponse.notFound(res, 'শিক্ষক পাওয়া যায়নি');
     }
 
-    ApiResponse.success(res, { teacher });
+    const teacherData = teacher.toJSON ? teacher.toJSON() : { ...teacher };
+    const auditIds = [teacherData.createdBy, teacherData.updatedBy].filter(Boolean);
+    if (auditIds.length > 0) {
+      const { getUserMap } = require('../utils/userEnricher');
+      const userMap = await getUserMap(auditIds);
+      if (teacherData.createdBy && userMap[String(teacherData.createdBy)]) {
+        teacherData.createdByUser = userMap[String(teacherData.createdBy)];
+      }
+      if (teacherData.updatedBy && userMap[String(teacherData.updatedBy)]) {
+        teacherData.updatedByUser = userMap[String(teacherData.updatedBy)];
+      }
+    }
+
+    ApiResponse.success(res, { teacher: teacherData });
   } catch (error) {
     next(error);
   }
@@ -192,7 +206,8 @@ exports.createTeacher = async (req, res, next) => {
       baseSalary: req.body.baseSalary ? Number(req.body.baseSalary) : 0,
       joiningDate: req.body.joinDate || new Date(),
       qualification: req.body.qualifications || '',
-      status: 'active'
+      status: 'active',
+      createdBy: req.user._id
     });
 
     // 3. Link profileId back to User
@@ -313,6 +328,7 @@ exports.updateTeacher = async (req, res, next) => {
       await userDoc.save();
     }
 
+    teacher.updatedBy = req.user._id;
     await teacher.save();
 
     const updated = await Teacher.findById(req.params.id).populate('user', 'firstName lastName email phone photo userType branch');

@@ -67,6 +67,14 @@ Teacher.init({
     allowNull: true,
     defaultValue: 'active',
   },
+  createdBy: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  updatedBy: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
 }, {
   sequelize,
   modelName: 'Teacher',

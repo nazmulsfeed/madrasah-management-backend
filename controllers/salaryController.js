@@ -1,4 +1,4 @@
-﻿const { Op } = require('sequelize');
+const { Op } = require('sequelize');
 const SalaryPayment = require('../models/SalaryPayment');
 const Teacher = require('../models/Teacher');
 const User = require('../models/User');
@@ -275,6 +275,9 @@ exports.getSalarySheet = async (req, res, next) => {
       }
     }
 
+    const { enrichWithUsers } = require('../utils/userEnricher');
+    const enrichedRecords = await enrichWithUsers(records, ['disbursedBy']);
+
     // Chart of Accounts helpers:
     // Salary expense account (code 5001 or name includes বেতন/salary)
     const salaryAccount = accountsRaw.find(a => 
@@ -293,7 +296,7 @@ exports.getSalarySheet = async (req, res, next) => {
         totalPaid: Math.round(totalPaid),
         totalDue: Math.round(totalDue),
       },
-      records,
+      records: enrichedRecords,
       salaryAccount: salaryAccount ? { _id: salaryAccount._id, name: salaryAccount.name, code: salaryAccount.code } : null,
       fundAccounts: fundAccounts.map(f => ({ _id: f._id, name: f.name, code: f.code, balance: f.balance })),
     });
@@ -851,6 +854,15 @@ exports.getPayslip = async (req, res, next) => {
       where: { _id: institutionId },
     }).catch(() => null);
 
+    const salaryJson = salary.toJSON ? salary.toJSON() : { ...salary };
+    if (salaryJson.disbursedBy) {
+      const { getUserMap } = require('../utils/userEnricher');
+      const userMap = await getUserMap([salaryJson.disbursedBy]);
+      if (userMap[String(salaryJson.disbursedBy)]) {
+        salaryJson.disbursedByUser = userMap[String(salaryJson.disbursedBy)];
+      }
+    }
+
     const payslipData = {
       institution: {
         name: inst?.name || 'আন্-নূর ইসলামিক একাডেমি',
@@ -859,7 +871,7 @@ exports.getPayslip = async (req, res, next) => {
         email: inst?.email || '',
         logo: inst?.logo || '',
       },
-      salary: salary.toJSON ? salary.toJSON() : salary,
+      salary: salaryJson,
       netSalaryInWords: numberToBanglaWords(Number(salary.netSalary)),
       paidAmountInWords: numberToBanglaWords(Number(salary.paidAmount)),
     };

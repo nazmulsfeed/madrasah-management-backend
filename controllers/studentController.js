@@ -692,7 +692,10 @@ exports.getStudents = async (req, res, next) => {
       });
     }
 
-    ApiResponse.paginated(res, populatedStudents, page, limit, total);
+    const { enrichWithUsers } = require('../utils/userEnricher');
+    const enrichedStudents = await enrichWithUsers(populatedStudents, ['createdBy', 'updatedBy']);
+
+    ApiResponse.paginated(res, enrichedStudents, page, limit, total);
   } catch (error) {
     next(error);
   }
@@ -743,8 +746,22 @@ exports.getStudent = async (req, res, next) => {
     }
 
     const populatedStudent = await populateStudentEnrollments(student);
+    const studentData = populatedStudent.toJSON ? populatedStudent.toJSON() : { ...populatedStudent };
 
-    ApiResponse.success(res, { student: populatedStudent });
+    // Resolve createdBy and updatedBy audit users
+    const auditIds = [studentData.createdBy, studentData.updatedBy].filter(Boolean);
+    if (auditIds.length > 0) {
+      const { getUserMap } = require('../utils/userEnricher');
+      const userMap = await getUserMap(auditIds);
+      if (studentData.createdBy && userMap[String(studentData.createdBy)]) {
+        studentData.createdByUser = userMap[String(studentData.createdBy)];
+      }
+      if (studentData.updatedBy && userMap[String(studentData.updatedBy)]) {
+        studentData.updatedByUser = userMap[String(studentData.updatedBy)];
+      }
+    }
+
+    ApiResponse.success(res, { student: studentData });
   } catch (error) {
     next(error);
   }

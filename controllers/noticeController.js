@@ -45,7 +45,10 @@ exports.getNotices = async (req, res, next) => {
       order: [['createdAt', 'DESC']]
     });
 
-    ApiResponse.success(res, { notices });
+    const { enrichWithUsers } = require('../utils/userEnricher');
+    const enrichedNotices = await enrichWithUsers(notices, ['publishedBy']);
+
+    ApiResponse.success(res, { notices: enrichedNotices });
   } catch (error) {
     next(error);
   }
