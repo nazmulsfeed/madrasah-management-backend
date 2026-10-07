@@ -103,7 +103,7 @@ exports.getTeachers = async (req, res, next) => {
 exports.getTeacher = async (req, res, next) => {
   try {
     const teacher = await Teacher.findById(req.params.id)
-      .populate('user', 'firstName lastName email phone photo userType');
+      .populate('user', 'firstName lastName email phone photo userType branch');
 
     if (!teacher) {
       return ApiResponse.notFound(res, 'শিক্ষক পাওয়া যায়নি');
@@ -147,6 +147,8 @@ exports.createTeacher = async (req, res, next) => {
 
     const finalUserType = validUserTypes.includes(requestedUserType) ? requestedUserType : 'teacher';
 
+    const teacherBranch = req.body.branch || req.user.branch || null;
+
     const userFields = {
       firstName: firstName || '',
       lastName: lastName || '',
@@ -155,7 +157,7 @@ exports.createTeacher = async (req, res, next) => {
       password: (password && password.trim() !== '') ? password.trim() : 'teacher123',
       userType: finalUserType,
       institution: req.user.institution,
-      branch: req.user.branch,
+      branch: teacherBranch,
       baseSalary: req.body.baseSalary ? Number(req.body.baseSalary) : 0,
       isActive: true
     };
@@ -183,7 +185,7 @@ exports.createTeacher = async (req, res, next) => {
     const teacher = await Teacher.create({
       user: user._id,
       institution: req.user.institution,
-      branch: req.user.branch,
+      branch: teacherBranch,
       employeeId: finalTeacherId, // required by schema
       teacherType: teacherType || (finalUserType === 'hifz_teacher' ? 'hifz' : 'regular'),
       designation: req.body.designation || defaultDesignation,
@@ -290,6 +292,12 @@ exports.updateTeacher = async (req, res, next) => {
 
     // Update Teacher profile
     if (req.body.teacherType !== undefined) teacher.teacherType = req.body.teacherType;
+    if (req.body.branch !== undefined) {
+      teacher.branch = req.body.branch;
+      if (userDoc) {
+        userDoc.branch = req.body.branch;
+      }
+    }
     if (req.body.designation !== undefined) teacher.designation = req.body.designation;
     if (req.body.qualification !== undefined) teacher.qualification = req.body.qualification;
     if (req.body.status !== undefined) teacher.status = req.body.status;
@@ -299,13 +307,15 @@ exports.updateTeacher = async (req, res, next) => {
       teacher.baseSalary = salary;
       if (userDoc) {
         userDoc.baseSalary = salary;
-        await userDoc.save();
       }
+    }
+    if (userDoc) {
+      await userDoc.save();
     }
 
     await teacher.save();
 
-    const updated = await Teacher.findById(req.params.id).populate('user', 'firstName lastName email phone photo userType');
+    const updated = await Teacher.findById(req.params.id).populate('user', 'firstName lastName email phone photo userType branch');
 
     ApiResponse.success(res, { teacher: updated }, 'স্টাফ/শিক্ষকের তথ্য আপডেট করা হয়েছে');
   } catch (error) {
