@@ -130,5 +130,201 @@ async function sendTargetedPush({ userIds = [], studentIds = [], payload = {} })
   return results;
 }
 
-module.exports = { broadcastNotification, sendTargetedPush };
+/**
+ * নির্দিষ্ট ক্লাসের (এবং অপশনাল সেকশনের) শিক্ষার্থী ও অভিভাবকদের কাছে পুশ পাঠায়।
+ * শুধুমাত্র লগইন করা এবং সাবস্ক্রাইব করা ডিভাইসগুলোতেই নোটিফিকেশন যাবে।
+ */
+async function sendClassHomeworkPush({ homework, payload = {} }) {
+  try {
+    const Institution = require('../models/Institution');
+    const StudentEnrollment = require('../models/StudentEnrollment');
+    const Student = require('../models/Student');
+    const Guardian = require('../models/Guardian');
+    const ClassLevel = require('../models/ClassLevel');
+    const { Op } = require('sequelize');
+
+    const inst = await Institution.findOne();
+    const isPublic = inst ? Boolean(inst.isHomeworkPublic) : false;
+
+    let classLevelIds = [];
+    if (homework.classLevel) {
+      classLevelIds.push(String(homework.classLevel));
+      const matchedClasses = await ClassLevel.findAll({
+        where: {
+          [Op.or]: [
+            { _id: String(homework.classLevel) },
+            { name: String(homework.classLevel) }
+          ]
+        }
+      });
+      matchedClasses.forEach(c => {
+        if (c._id) classLevelIds.push(String(c._id));
+        if (c.name) classLevelIds.push(String(c.name));
+      });
+      classLevelIds = [...new Set(classLevelIds)];
+    }
+
+    const enrollmentWhere = {
+      enrollmentStatus: 'active'
+    };
+    if (classLevelIds.length > 0) {
+      enrollmentWhere.classLevel = { [Op.in]: classLevelIds };
+    }
+    if (homework.section) {
+      enrollmentWhere.section = homework.section;
+    }
+
+    const enrollments = await StudentEnrollment.findAll({
+      where: enrollmentWhere,
+      attributes: ['_id', 'student', 'classLevel', 'section']
+    });
+
+    const enrolledStudentIds = enrollments.map(e => e.student).filter(Boolean);
+    const enrollmentIds = enrollments.map(e => e._id).filter(Boolean);
+
+    const studentWhere = {
+      isDeleted: { [Op.ne]: true }
+    };
+    if (enrolledStudentIds.length > 0 || enrollmentIds.length > 0) {
+      studentWhere[Op.or] = [
+        ...(enrolledStudentIds.length > 0 ? [{ _id: { [Op.in]: enrolledStudentIds } }] : []),
+        ...(enrollmentIds.length > 0 ? [{ currentEnrollment: { [Op.in]: enrollmentIds } }] : [])
+      ];
+    } else {
+      console.log('[Push-Homework] No active enrollments found for class:', homework.classLevel);
+      return [];
+    }
+
+    const students = await Student.findAll({
+      where: studentWhere,
+      attributes: ['_id', 'user', 'studentId']
+    });
+
+    const targetUserIds = new Set();
+    const targetStudentIds = new Set();
+
+    students.forEach(st => {
+      if (st.user) targetUserIds.add(String(st.user));
+      if (st.studentId) targetStudentIds.add(String(st.studentId));
+      if (st._id) targetStudentIds.add(String(st._id));
+    });
+
+    const allGuardians = await Guardian.findAll({
+      where: { status: 'active' },
+      attributes: ['user', 'students']
+    });
+
+    const studentIdStrings = new Set(students.map(s => String(s._id)));
+    const customStudentIdStrings = new Set(students.map(s => String(s.studentId)).filter(Boolean));
+
+    allGuardians.forEach(g => {
+      if (!g.students || !Array.isArray(g.students)) return;
+      const hasChild = g.students.some(s => {
+        const sid = typeof s === 'string' ? s : (s.student || s.studentId);
+        return sid && (studentIdStrings.has(String(sid)) || customStudentIdStrings.has(String(sid)));
+      });
+      if (hasChild && g.user) {
+        targetUserIds.add(String(g.user));
+      }
+    });
+
+    console.log(`[Push-Homework] Target recipients: ${targetUserIds.size} users, ${targetStudentIds.size} student IDs.`);
+
+    // ক্লিক URL: পাবলিক ভিউ অন থাকলে /public-homework, অফ থাকলে লগইন পেজ /homework
+    const clickUrl = isPublic ? '/public-homework' : '/homework';
+
+    return await sendTargetedPush({
+      userIds: Array.from(targetUserIds),
+      studentIds: Array.from(targetStudentIds),
+      payload: {
+        title: payload.title || `📚 নতুন হোমওয়ার্ক: ${homework.title}`,
+        body: payload.body || (homework.description ? homework.description.substring(0, 100) : `বিষয়: ${homework.subject || ''} | শ্রেণী: ${homework.classLevel || ''}`),
+        url: clickUrl
+      }
+    });
+  } catch (error) {
+    console.error('[Push-Homework] Error sending class homework push:', error.message);
+    return [];
+  }
+}
+
+/**
+ * নোটিশের পুশ নোটিফিকেশন পাঠায়।
+ * যদি পাবলিক ভিউ বন্ধ থাকে, তবে কোনো পাবলিক ব্রডকাস্ট হবে না—শুধুমাত্র লগইন করা সংশ্লিষ্ট অডিয়েন্স পাবে।
+ * যদি পাবলিক ভিউ চালু থাকে এবং অডিয়েন্স 'all' হয়, তবে সবার জন্য ব্রডকাস্ট পাঠানো হবে।
+ */
+async function sendNoticePush({ notice, payload = {} }) {
+  try {
+    const Institution = require('../models/Institution');
+    const PushSubscription = require('../models/PushSubscription');
+    const User = require('../models/User');
+    const { Op } = require('sequelize');
+
+    const inst = await Institution.findOne();
+    const isPublic = inst ? Boolean(inst.isHomeworkPublic) : false;
+
+    const audience = Array.isArray(notice.audience) ? notice.audience : (notice.audience ? [notice.audience] : ['all']);
+    const isAllAudience = audience.includes('all') || audience.length === 0;
+
+    // যদি পাবলিক ভিউ অন থাকে এবং অডিয়েন্স 'all' হয়, তবে সবার জন্য ব্রডকাস্ট
+    if (isPublic && isAllAudience) {
+      return await broadcastNotification({
+        title: payload.title || `📢 নতুন নোটিশ: ${notice.title}`,
+        body: payload.body || (notice.content ? notice.content.substring(0, 100) : 'একটি নতুন নোটিশ পোস্ট করা হয়েছে।'),
+        url: '/public-homework'
+      });
+    }
+
+    // অন্যথায় (পাবলিক ভিউ অফ থাকলে অথবা নির্দিষ্ট অডিয়েন্স থাকলে): শুধুমাত্র লগইন করা ইউজারদের টার্গেট করা হবে
+    let targetUserIds = [];
+
+    if (isAllAudience) {
+      // সকল লগইন করা ইউজার যাদের পুশ সাবস্ক্রিপশন আছে
+      const subsWithUser = await PushSubscription.findAll({
+        where: {
+          userId: { [Op.ne]: null }
+        },
+        attributes: ['userId']
+      });
+      targetUserIds = subsWithUser.map(s => s.userId).filter(Boolean);
+    } else {
+      // নির্দিষ্ট রোলের ইউজারদের খোঁজা
+      const allowedRoles = [];
+      if (audience.includes('students')) allowedRoles.push('student');
+      if (audience.includes('guardians')) allowedRoles.push('guardian');
+      if (audience.includes('teachers')) allowedRoles.push('teacher', 'principal', 'vice_principal');
+      if (audience.includes('staff')) allowedRoles.push('staff', 'accountant');
+
+      const matchingUsers = await User.findAll({
+        where: {
+          userType: { [Op.in]: allowedRoles },
+          status: 'active'
+        },
+        attributes: ['_id']
+      });
+      targetUserIds = matchingUsers.map(u => String(u._id));
+    }
+
+    if (targetUserIds.length === 0) {
+      console.log('[Push-Notice] No target users found for notice.');
+      return [];
+    }
+
+    const clickUrl = isPublic ? '/public-homework' : '/notices';
+
+    return await sendTargetedPush({
+      userIds: targetUserIds,
+      payload: {
+        title: payload.title || `📢 নতুন নোটিশ: ${notice.title}`,
+        body: payload.body || (notice.content ? notice.content.substring(0, 100) : 'একটি নতুন নোটিশ পোস্ট করা হয়েছে।'),
+        url: clickUrl
+      }
+    });
+  } catch (error) {
+    console.error('[Push-Notice] Error in sendNoticePush:', error.message);
+    return [];
+  }
+}
+
+module.exports = { broadcastNotification, sendTargetedPush, sendClassHomeworkPush, sendNoticePush };
 
