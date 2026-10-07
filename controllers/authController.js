@@ -332,8 +332,12 @@ exports.updateMe = async (req, res, next) => {
       }
     }
 
-    // If updating name/phone, check profile.info.update permission for student/guardian/restricted roles
-    if ((req.body.firstName !== undefined || req.body.lastName !== undefined || req.body.phone !== undefined) && !isSuperOrCoSuper) {
+    // If updating name/phone (only when values actually change), check profile.info.update permission
+    const isFirstNameChanged = req.body.firstName !== undefined && (req.body.firstName || '').trim() !== (req.user.firstName || '').trim();
+    const isLastNameChanged = req.body.lastName !== undefined && (req.body.lastName || '').trim() !== (req.user.lastName || '').trim();
+    const isPhoneChanged = req.body.phone !== undefined && (req.body.phone || '').trim() !== (req.user.phone || '').trim();
+
+    if ((isFirstNameChanged || isLastNameChanged || isPhoneChanged) && !isSuperOrCoSuper) {
       const { evaluateUserPermission } = require('../middleware/rbac');
       if (typeof evaluateUserPermission === 'function') {
         const canUpdateInfo = await evaluateUserPermission(req.user, 'profile.info.update');
@@ -355,6 +359,19 @@ exports.updateMe = async (req, res, next) => {
       new: true,
       runValidators: true,
     });
+
+    // If photo is updated and user is a student, sync to Student table as well
+    if (updates.photo !== undefined && req.user.userType === 'student') {
+      try {
+        const Student = require('../models/Student');
+        await Student.update(
+          { photo: updates.photo },
+          { where: { user: req.user._id } }
+        );
+      } catch (syncErr) {
+        console.error('Failed to sync photo to Student table:', syncErr);
+      }
+    }
 
     ApiResponse.success(res, { user }, 'প্রোফাইল আপডেট হয়েছে');
   } catch (error) {
