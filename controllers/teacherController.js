@@ -59,7 +59,8 @@ exports.getTeachers = async (req, res, next) => {
                       user.userType === 'library_manager' ? 'লাইব্রেরি ম্যানেজার' :
                         user.userType === 'hostel_manager' ? 'হোস্টেল ম্যানেজার' : 'শিক্ষক',
             joiningDate: user.createdAt || new Date(),
-            status: 'active'
+            status: 'active',
+            createdBy: req.user._id
           });
 
           // Link profileId back to User
@@ -92,6 +93,45 @@ exports.getTeachers = async (req, res, next) => {
       }
     }
 
+    // Resolve primary institution admin for legacy/fallback creator attribution
+    let primaryAdmin = null;
+    try {
+      primaryAdmin = await User.findOne({
+        where: {
+          institution: req.user.institution,
+          [Op.or]: [
+            { userType: 'super_admin' },
+            { adminRole: 'super_admin' },
+            { userType: 'admin' },
+            { adminRole: 'admin' }
+          ]
+        },
+        order: [['createdAt', 'ASC']]
+      });
+      if (!primaryAdmin) {
+        primaryAdmin = await User.findOne({
+          where: {
+            [Op.or]: [
+              { userType: 'super_admin' },
+              { adminRole: 'super_admin' }
+            ]
+          },
+          order: [['createdAt', 'ASC']]
+        });
+      }
+    } catch (_) {}
+
+    const defaultCreatorId = primaryAdmin ? primaryAdmin._id : req.user._id;
+
+    teachersList.forEach(t => {
+      if (!t.createdBy) {
+        t.createdBy = defaultCreatorId;
+        if (t._id) {
+          Teacher.update({ createdBy: defaultCreatorId }, { where: { _id: t._id, createdBy: null } }).catch(() => {});
+        }
+      }
+    });
+
     const { enrichWithUsers } = require('../utils/userEnricher');
     const enrichedTeachersList = await enrichWithUsers(teachersList, ['createdBy', 'updatedBy']);
 
@@ -113,6 +153,25 @@ exports.getTeacher = async (req, res, next) => {
     }
 
     const teacherData = teacher.toJSON ? teacher.toJSON() : { ...teacher };
+    if (!teacherData.createdBy) {
+      try {
+        const primaryAdmin = await User.findOne({
+          where: {
+            institution: teacherData.institution || req.user.institution,
+            [Op.or]: [
+              { userType: 'super_admin' },
+              { adminRole: 'super_admin' },
+              { userType: 'admin' }
+            ]
+          },
+          order: [['createdAt', 'ASC']]
+        });
+        if (primaryAdmin) {
+          teacherData.createdBy = primaryAdmin._id;
+        }
+      } catch (_) {}
+    }
+
     const auditIds = [teacherData.createdBy, teacherData.updatedBy].filter(Boolean);
     if (auditIds.length > 0) {
       const { getUserMap } = require('../utils/userEnricher');

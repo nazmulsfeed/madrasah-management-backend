@@ -78,6 +78,13 @@ const connectDB = async () => {
       await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `teacherAutoAbsentEnabled` TINYINT(1) NULL DEFAULT 0").catch(() => {});
       await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `createdBy` VARCHAR(255) NULL").catch(() => {});
       await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `updatedBy` VARCHAR(255) NULL").catch(() => {});
+      await sequelize.query(`
+        UPDATE \`teachers\` t
+        JOIN \`users\` u ON (u.institution = t.institution OR t.institution IS NULL OR t.institution = '') 
+          AND (u.userType = 'super_admin' OR u.adminRole = 'super_admin' OR u.userType = 'admin')
+        SET t.createdBy = u._id
+        WHERE t.createdBy IS NULL OR t.createdBy = ''
+      `).catch(() => {});
     } catch (migErr) {}
 
     // Wrap toJSON to handle populated mongooseCompat associations & run associations
