@@ -90,6 +90,8 @@ exports.getTeachers = async (req, res, next) => {
           status: 'active'
         });
       }
+    }
+
     const { enrichWithUsers } = require('../utils/userEnricher');
     const enrichedTeachersList = await enrichWithUsers(teachersList, ['createdBy', 'updatedBy']);
 

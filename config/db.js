@@ -76,6 +76,8 @@ const connectDB = async () => {
       await sequelize.query("ALTER TABLE `students` ADD COLUMN `deviceUserId` VARCHAR(255) NULL DEFAULT ''").catch(() => {});
       await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `teacherCutoffTime` VARCHAR(20) NULL DEFAULT '08:45'").catch(() => {});
       await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `teacherAutoAbsentEnabled` TINYINT(1) NULL DEFAULT 0").catch(() => {});
+      await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `createdBy` VARCHAR(255) NULL").catch(() => {});
+      await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `updatedBy` VARCHAR(255) NULL").catch(() => {});
     } catch (migErr) {}
 
     // Wrap toJSON to handle populated mongooseCompat associations & run associations
