@@ -381,22 +381,43 @@ async function sendDuePaymentReminders(targetInstitution = null, forceAllDue = f
     for (const [instId, count] of Object.entries(institutionRemindersCount)) {
       if (count > 0) {
         const noticeKey = `${instId}_${todayBDStr}_due_notice`;
-        if (!executedNotices.has(noticeKey)) {
-          executedNotices.add(noticeKey);
-          try {
-            await Notice.create({
+        if (executedNotices.has(noticeKey)) {
+          continue;
+        }
+
+        try {
+          // ডাটাবেজ ডুপ্লিকেট প্রতিরোধ: আজকের তারিখে ইতিমধ্যে এই নোটিশটি তৈরি হয়েছে কিনা সরাসরি ডাটাবেজে যাচাই
+          const startOfDay = new Date(`${todayBDStr}T00:00:00.000+06:00`);
+          const endOfDay = new Date(`${todayBDStr}T23:59:59.999+06:00`);
+
+          const existingNotice = await Notice.findOne({
+            where: {
               institution: instId,
               title: '⚠️ চলতি মাসের বেতন ও বকেয়া ফি পরিশোধের তাগিদ',
-              content: `সম্মানিত অভিভাবকবৃন্দ, চলতি মাসের বেতন ও নির্ধারিত ফি পরিশোধের শেষ সময়সীমা ঘনিয়ে এসেছে (আর মাত্র ৩ দিন বাকি)। যাদের ফি এখনো বকেয়া রয়েছে, বিলম্ব ফি এড়াতে নির্ধারিত শেষ তারিখের মধ্যে পরিশোধ করার জন্য বিশেষভাবে অনুরোধ করা হলো।`,
-              audience: ['guardian', 'student'],
-              priority: 'urgent',
-              isPublished: true,
-              publishedAt: new Date(),
-              publishedBy: 'সিস্টেম অটোমেশন'
-            });
-          } catch (notErr) {
-            console.error('[Invoice Reminder] Notice creation error:', notErr.message);
+              createdAt: { [Op.between]: [startOfDay, endOfDay] }
+            }
+          });
+
+          if (existingNotice) {
+            console.log(`[Invoice Reminder] Notice already exists for institution ${instId} on ${todayBDStr}. Skipping duplicate.`);
+            executedNotices.add(noticeKey);
+            continue;
           }
+
+          executedNotices.add(noticeKey);
+          await Notice.create({
+            institution: instId,
+            title: '⚠️ চলতি মাসের বেতন ও বকেয়া ফি পরিশোধের তাগিদ',
+            content: `সম্মানিত অভিভাবকবৃন্দ, চলতি মাসের বেতন ও নির্ধারিত ফি পরিশোধের শেষ সময়সীমা ঘনিয়ে এসেছে (আর মাত্র ৩ দিন বাকি)। যাদের ফি এখনো বকেয়া রয়েছে, বিলম্ব ফি এড়াতে নির্ধারিত শেষ তারিখের মধ্যে পরিশোধ করার জন্য বিশেষভাবে অনুরোধ করা হলো।`,
+            audience: ['guardian', 'student'],
+            priority: 'urgent',
+            isPublished: true,
+            publishedAt: new Date(),
+            publishedBy: 'সিস্টেম অটোমেশন'
+          });
+          console.log(`[Invoice Reminder] 📢 Created automated due fee notice for institution ${instId}`);
+        } catch (notErr) {
+          console.error('[Invoice Reminder] Notice creation error:', notErr.message);
         }
       }
     }
@@ -440,9 +461,25 @@ function startInvoiceScheduler() {
       // ২. প্রতিদিন সকাল ৯টা থেকে রাত ৯টার মধ্যে দিনে একবার বকেয়া ৩ দিনের রিমাইন্ডার পাঠানো
       const bdHour = parseInt(now.toLocaleTimeString('en-US', { timeZone: 'Asia/Dhaka', hour12: false, hour: '2-digit' }), 10);
       if (bdHour >= 9 && lastReminderDate !== todayBDStr) {
-        console.log(`[Invoice Scheduler] 📢 Running daily check for 3-day due payment reminders at ${todayBDStr} (${bdHour}:00 BD)...`);
-        await sendDuePaymentReminders(null, false);
-        lastReminderDate = todayBDStr;
+        // ডাটাবেজ চেক: আজকের দিনে কোনো প্রতিষ্ঠান থেকে সিস্টেম অটোমেশন নোটিশ ইতিমধ্যে সম্পন্ন হয়েছে কিনা
+        const startOfDay = new Date(`${todayBDStr}T00:00:00.000+06:00`);
+        const endOfDay = new Date(`${todayBDStr}T23:59:59.999+06:00`);
+        const existingDailyNotice = await Notice.findOne({
+          where: {
+            title: '⚠️ চলতি মাসের বেতন ও বকেয়া ফি পরিশোধের তাগিদ',
+            publishedBy: 'সিস্টেম অটোমেশন',
+            createdAt: { [Op.between]: [startOfDay, endOfDay] }
+          }
+        });
+
+        if (existingDailyNotice) {
+          console.log(`[Invoice Scheduler] Daily due reminders already completed today (${todayBDStr}). Marking as run.`);
+          lastReminderDate = todayBDStr;
+        } else {
+          console.log(`[Invoice Scheduler] 📢 Running daily check for 3-day due payment reminders at ${todayBDStr} (${bdHour}:00 BD)...`);
+          await sendDuePaymentReminders(null, false);
+          lastReminderDate = todayBDStr;
+        }
       }
     } catch (err) {
       console.error('[Invoice Scheduler] Scheduler run error:', err);
