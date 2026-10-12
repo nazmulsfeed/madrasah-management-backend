@@ -85,6 +85,7 @@ const connectDB = async () => {
         SET t.createdBy = u._id
         WHERE t.createdBy IS NULL OR t.createdBy = ''
       `).catch(() => {});
+      await sequelize.query("CREATE TABLE IF NOT EXISTS `notice_reads` (`id` INT AUTO_INCREMENT PRIMARY KEY, `_id` CHAR(36) NOT NULL, `notice` VARCHAR(255) NOT NULL, `user` VARCHAR(255) NOT NULL, `readAt` DATETIME DEFAULT CURRENT_TIMESTAMP, `createdAt` DATETIME NOT NULL, `updatedAt` DATETIME NOT NULL, UNIQUE KEY `uniq_notice_user` (`notice`, `user`), KEY `idx_user` (`user`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci").catch(() => {});
     } catch (migErr) {}
 
     // Wrap toJSON to handle populated mongooseCompat associations & run associations
