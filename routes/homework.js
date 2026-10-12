@@ -6,7 +6,7 @@ const { authorize, checkPermission } = require('../middleware/rbac');
 
 router.get('/public/settings', homeworkController.getPublicHomeworkSettings);
 router.get('/public', homeworkController.getPublicHomeworks);
-router.post('/public/toggle', protect, homeworkController.togglePublicHomework);
+router.post('/public/toggle', protect, checkPermission('can_toggle_public_homework'), homeworkController.togglePublicHomework);
 
 router.use(protect);
 

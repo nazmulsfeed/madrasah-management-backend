@@ -418,8 +418,15 @@ exports.getPublicHomeworks = async (req, res, next) => {
 
 exports.togglePublicHomework = async (req, res, next) => {
   try {
-    if (req.user.userType !== 'super_admin') {
-      return ApiResponse.forbidden(res, 'শুধুমাত্র সুপার এডমিন এই পরিবর্তন করতে পারবেন');
+    const isSuperOrCoSuper = req.user.userType === 'super_admin' || 
+                             req.user.userType === 'co_super_admin' || 
+                             req.user.adminRole === 'co_super_admin';
+    if (!isSuperOrCoSuper) {
+      const { evaluateUserPermission } = require('../middleware/rbac');
+      const canToggle = await evaluateUserPermission(req.user, 'homework.toggle_public');
+      if (!canToggle) {
+        return ApiResponse.forbidden(res, 'পাবলিক হোমওয়ার্ক সেটিংস পরিবর্তন করার অনুমতি আপনার নেই');
+      }
     }
 
     const Institution = require('../models/Institution');

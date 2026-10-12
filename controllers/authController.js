@@ -107,6 +107,22 @@ exports.login = async (req, res, next) => {
         can_view_all_attendance: true, can_view_all_homework: true, can_use_messaging: true, can_manage_hostel: true,
         can_view_library: true, can_view_settings: true
       };
+      const isSuperOrCoSuperOnly = user.userType === 'super_admin' || user.userType === 'co_super_admin' || user.adminRole === 'co_super_admin';
+      if (isSuperOrCoSuperOnly) {
+        permissions.can_toggle_public_homework = true;
+      } else {
+        const rolesToCheck = [user.userType, user.adminRole].filter(Boolean);
+        const rolePerms = await RolePermission.findAll({ where: { role: rolesToCheck } });
+        rolePerms.forEach(rp => {
+          let perms = rp.permissions;
+          if (typeof perms === 'string') {
+            try { perms = JSON.parse(perms); } catch (e) {}
+          }
+          if (perms && (perms['homework.toggle_public'] || perms.can_toggle_public_homework)) {
+            permissions.can_toggle_public_homework = true;
+          }
+        });
+      }
     } else {
       const rolesToCheck = [user.userType];
       if (user.adminRole) rolesToCheck.push(user.adminRole);
@@ -118,6 +134,9 @@ exports.login = async (req, res, next) => {
         }
         if (perms && typeof perms === 'object') {
           Object.assign(permissions, perms);
+          if (perms['homework.toggle_public']) {
+            permissions.can_toggle_public_homework = true;
+          }
         }
       });
     }
@@ -237,6 +256,22 @@ exports.getMe = async (req, res, next) => {
         can_view_all_attendance: true, can_view_all_homework: true, can_use_messaging: true, can_manage_hostel: true,
         can_view_library: true, can_view_settings: true
       };
+      const isSuperOrCoSuperOnly = user.userType === 'super_admin' || user.userType === 'co_super_admin' || user.adminRole === 'co_super_admin';
+      if (isSuperOrCoSuperOnly) {
+        permissions.can_toggle_public_homework = true;
+      } else {
+        const rolesToCheck = [user.userType, user.adminRole].filter(Boolean);
+        const rolePerms = await RolePermission.findAll({ where: { role: rolesToCheck } });
+        rolePerms.forEach(rp => {
+          let perms = rp.permissions;
+          if (typeof perms === 'string') {
+            try { perms = JSON.parse(perms); } catch (e) {}
+          }
+          if (perms && (perms['homework.toggle_public'] || perms.can_toggle_public_homework)) {
+            permissions.can_toggle_public_homework = true;
+          }
+        });
+      }
     } else {
       const rolesToCheck = [user.userType];
       if (user.adminRole) rolesToCheck.push(user.adminRole);
@@ -248,6 +283,9 @@ exports.getMe = async (req, res, next) => {
         }
         if (perms && typeof perms === 'object') {
           Object.assign(permissions, perms);
+          if (perms['homework.toggle_public']) {
+            permissions.can_toggle_public_homework = true;
+          }
         }
       });
     }
