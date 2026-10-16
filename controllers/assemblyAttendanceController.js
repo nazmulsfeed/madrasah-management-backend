@@ -62,7 +62,7 @@ exports.getAssemblyAttendance = async (req, res, next) => {
       }),
       User.findAll({
         where: { institution },
-        attributes: ['_id', 'firstName', 'lastName', 'username', 'phone'],
+        attributes: ['_id', 'firstName', 'lastName', 'username', 'phone', 'photo'],
       }),
       Guardian.findAll({
         where: { institution, status: 'active' },
@@ -82,7 +82,26 @@ exports.getAssemblyAttendance = async (req, res, next) => {
     users.forEach(u => userMap.set(String(u._id), u));
 
     const guardianMap = new Map();
-    guardians.forEach(g => guardianMap.set(String(g._id), g));
+    const guardianStudentMap = new Map();
+    guardians.forEach(g => {
+      guardianMap.set(String(g._id), g);
+      let arr = g.students;
+      if (typeof arr === 'string') {
+        try { arr = JSON.parse(arr); } catch (_) { arr = []; }
+      }
+      if (Array.isArray(arr)) {
+        arr.forEach(item => {
+          let sid = null;
+          if (typeof item === 'string') sid = item;
+          else if (item && typeof item === 'object') {
+            sid = item.student || item.studentId || item._id || item.id;
+          }
+          if (sid) {
+            guardianStudentMap.set(String(typeof sid === 'object' ? (sid._id || sid.id) : sid), g);
+          }
+        });
+      }
+    });
 
     const classMap = new Map();
     classes.forEach(c => classMap.set(String(c._id), c.name));
@@ -141,18 +160,40 @@ exports.getAssemblyAttendance = async (req, res, next) => {
         ? `${studentUser.firstName || ''} ${studentUser.lastName || ''}`.trim() || studentUser.username
         : (student.studentId || 'শিক্ষার্থী');
 
+      // Find linked guardian (from student.guardian or guardianStudentMap)
+      let linkedGuardian = null;
+      if (student.guardian) {
+        linkedGuardian = guardianMap.get(String(student.guardian));
+      }
+      if (!linkedGuardian) {
+        linkedGuardian = guardianStudentMap.get(String(student._id));
+      }
+
       // Determine Father's Name (পিতার নাম)
       let fatherName = student.fatherName || '';
-      if (!fatherName && student.guardian) {
-        const g = guardianMap.get(String(student.guardian));
-        if (g && g.user) {
-          const gUser = userMap.get(String(g.user));
-          if (gUser) {
-            fatherName = `${gUser.firstName || ''} ${gUser.lastName || ''}`.trim();
-          }
+      if (!fatherName && linkedGuardian && linkedGuardian.user) {
+        const gUser = userMap.get(String(linkedGuardian.user));
+        if (gUser) {
+          fatherName = `${gUser.firstName || ''} ${gUser.lastName || ''}`.trim();
         }
       }
       if (!fatherName) fatherName = '—';
+
+      // Determine Guardian Phone (অভিভাবকের মোবাইল)
+      let guardianPhone = '';
+      if (linkedGuardian && linkedGuardian.user) {
+        const gUser = userMap.get(String(linkedGuardian.user));
+        if (gUser && gUser.phone) {
+          guardianPhone = gUser.phone.trim();
+        }
+      }
+      if (!guardianPhone && studentUser && studentUser.phone) {
+        guardianPhone = studentUser.phone.trim();
+      }
+      if (!guardianPhone) guardianPhone = '—';
+
+      // Determine Student Photo (প্রোফাইল ছবি)
+      const photo = student.photo || studentUser?.photo || '';
 
       // Roll Number: check enr.rollNumber, fallback to student.rollNumber or admissionNumber
       let rollNumber = '';
@@ -196,6 +237,8 @@ exports.getAssemblyAttendance = async (req, res, next) => {
         rollNumeric: parseInt(rollNumber, 10) || 999999,
         studentName,
         fatherName,
+        guardianPhone,
+        photo,
         classLevelId: studentClassId,
         className,
         sectionId: studentSectionVal,
