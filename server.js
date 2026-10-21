@@ -32,6 +32,8 @@ require('./models/Payment');
 require('./models/Notice');
 require('./models/PushSubscription');
 require('./models/TeacherAttendance');
+require('./models/BiometricDevice');
+require('./models/DeviceCommand');
 require('./models/Book');
 require('./models/Hostel');
 require('./models/IncomeCategory');
@@ -103,11 +105,22 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// ZKTeco hardware native root route support (/iclock/cdata) - শুধুমাত্র iclock রুটের জন্য raw text পার্সার
+// ZKTeco hardware native root route support (/iclock/...) - ডিভাইসের সরাসরি যোগাযোগের জন্য raw text পার্সার
 const parseRawText = express.text({ type: ['text/*', 'application/octet-stream', 'text/plain', '*/*'] });
 const attendanceController = require('./controllers/attendanceController');
+
+// Native root routes & API mapped routes
 app.all('/iclock/cdata', parseRawText, attendanceController.zktecoADMSListener);
 app.all('/api/v1/attendance/iclock/cdata', parseRawText, attendanceController.zktecoADMSListener);
+
+app.all('/iclock/getrequest', parseRawText, attendanceController.zktecoADMSGetRequest);
+app.all('/api/v1/attendance/iclock/getrequest', parseRawText, attendanceController.zktecoADMSGetRequest);
+
+app.all('/iclock/devicecmd', parseRawText, attendanceController.zktecoADMSDeviceCmd);
+app.all('/api/v1/attendance/iclock/devicecmd', parseRawText, attendanceController.zktecoADMSDeviceCmd);
+
+app.all('/iclock/fdata', parseRawText, attendanceController.zktecoADMSFData);
+app.all('/api/v1/attendance/iclock/fdata', parseRawText, attendanceController.zktecoADMSFData);
 
 app.use((req, res, next) => {
   if (!req.url.startsWith('/api')) {

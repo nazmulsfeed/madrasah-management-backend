@@ -262,6 +262,78 @@ const connectDB = async () => {
         await sequelize.query("ALTER TABLE `users` ADD COLUMN `baseSalary` DECIMAL(12,2) NULL DEFAULT 0");
         console.log("✅ Added baseSalary column to users table");
       }
+      const [stuSyncCol] = await sequelize.query("SHOW COLUMNS FROM `students` LIKE 'deviceSyncStatus'");
+      if (!stuSyncCol || stuSyncCol.length === 0) {
+        await sequelize.query("ALTER TABLE `students` ADD COLUMN `deviceSyncStatus` VARCHAR(50) NULL DEFAULT 'not_uploaded'");
+        console.log("✅ Added deviceSyncStatus column to students table");
+      }
+      const [stuLastSyncCol] = await sequelize.query("SHOW COLUMNS FROM `students` LIKE 'deviceLastSyncedAt'");
+      if (!stuLastSyncCol || stuLastSyncCol.length === 0) {
+        await sequelize.query("ALTER TABLE `students` ADD COLUMN `deviceLastSyncedAt` DATETIME NULL");
+        console.log("✅ Added deviceLastSyncedAt column to students table");
+      }
+      const [stuSyncDevCol] = await sequelize.query("SHOW COLUMNS FROM `students` LIKE 'deviceSyncedDevices'");
+      if (!stuSyncDevCol || stuSyncDevCol.length === 0) {
+        await sequelize.query("ALTER TABLE `students` ADD COLUMN `deviceSyncedDevices` TEXT NULL");
+        console.log("✅ Added deviceSyncedDevices column to students table");
+      }
+      const [teaSyncCol] = await sequelize.query("SHOW COLUMNS FROM `teachers` LIKE 'deviceSyncStatus'");
+      if (!teaSyncCol || teaSyncCol.length === 0) {
+        await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `deviceSyncStatus` VARCHAR(50) NULL DEFAULT 'not_uploaded'");
+        console.log("✅ Added deviceSyncStatus column to teachers table");
+      }
+      const [teaLastSyncCol] = await sequelize.query("SHOW COLUMNS FROM `teachers` LIKE 'deviceLastSyncedAt'");
+      if (!teaLastSyncCol || teaLastSyncCol.length === 0) {
+        await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `deviceLastSyncedAt` DATETIME NULL");
+        console.log("✅ Added deviceLastSyncedAt column to teachers table");
+      }
+      const [teaSyncDevCol] = await sequelize.query("SHOW COLUMNS FROM `teachers` LIKE 'deviceSyncedDevices'");
+      if (!teaSyncDevCol || teaSyncDevCol.length === 0) {
+        await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `deviceSyncedDevices` TEXT NULL");
+        console.log("✅ Added deviceSyncedDevices column to teachers table");
+      }
+      // Create biometric_devices and device_commands tables safely
+      await sequelize.query(`
+        CREATE TABLE IF NOT EXISTS \`biometric_devices\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`_id\` CHAR(36) NOT NULL UNIQUE,
+          \`institution\` VARCHAR(255) NULL,
+          \`serialNumber\` VARCHAR(100) NOT NULL UNIQUE,
+          \`deviceName\` VARCHAR(255) NULL DEFAULT 'ZKTeco Device',
+          \`deviceModel\` VARCHAR(100) NULL DEFAULT 'MB560-VL',
+          \`ipAddress\` VARCHAR(100) NULL,
+          \`firmwareVersion\` VARCHAR(100) NULL,
+          \`userCount\` INT DEFAULT 0,
+          \`fingerprintCount\` INT DEFAULT 0,
+          \`faceCount\` INT DEFAULT 0,
+          \`logCount\` INT DEFAULT 0,
+          \`lastSeenAt\` DATETIME NULL,
+          \`status\` VARCHAR(50) DEFAULT 'offline',
+          \`createdAt\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          \`updatedAt\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `).catch(() => {});
+
+      await sequelize.query(`
+        CREATE TABLE IF NOT EXISTS \`device_commands\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`_id\` CHAR(36) NOT NULL UNIQUE,
+          \`institution\` VARCHAR(255) NULL,
+          \`serialNumber\` VARCHAR(100) NOT NULL,
+          \`commandType\` VARCHAR(50) NOT NULL,
+          \`commandText\` TEXT NOT NULL,
+          \`targetUserId\` VARCHAR(100) NULL,
+          \`targetUserType\` VARCHAR(50) NULL,
+          \`targetUserName\` VARCHAR(255) NULL,
+          \`status\` VARCHAR(50) DEFAULT 'pending',
+          \`sentAt\` DATETIME NULL,
+          \`executedAt\` DATETIME NULL,
+          \`returnCode\` VARCHAR(100) NULL,
+          \`createdAt\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          \`updatedAt\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          KEY \`idx_dev_status\` (\`serialNumber\`, \`status\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `).catch(() => {});
       // Auto-clean any unwanted initial balance of 900 and normalize branch names
       try {
         await sequelize.query("UPDATE `accounts` SET `balance` = 0 WHERE (`code` = '1001' OR `name` LIKE '%নগদ%') AND `balance` = 900");

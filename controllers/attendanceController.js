@@ -11,6 +11,8 @@ const Teacher = require('../models/Teacher');
 const TeacherAttendance = require('../models/TeacherAttendance');
 const Institution = require('../models/Institution');
 const StudentEnrollment = require('../models/StudentEnrollment');
+const BiometricDevice = require('../models/BiometricDevice');
+const DeviceCommand = require('../models/DeviceCommand');
 const ApiResponse = require('../utils/apiResponse');
 
 // Helper: date string থেকে UTC start/end of day তৈরি করা
@@ -750,12 +752,65 @@ exports.zktecoADMSListener = async (req, res) => {
   try {
     const query = req.query || {};
     const method = req.method;
+    const SN = String(query.SN || query.sn || '').trim();
 
-    console.log(`[ZKTeco ADMS] ${method} Received. Query:`, query);
+    console.log(`[ZKTeco ADMS] ${method} Received. SN: ${SN}, Query:`, query);
+
+    // সক্রিয় প্রতিষ্ঠান খুঁজে বের করা (বা যেকোনো প্রথম প্রতিষ্ঠান)
+    let defaultInst = await Institution.findOne({ where: { status: 'active' } });
+    if (!defaultInst) {
+      defaultInst = await Institution.findOne();
+    }
+
+    // ডিভাইস ট্র্যাকিং ও অনলাইন স্ট্যাটাস আপডেট
+    if (SN) {
+      try {
+        const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress;
+        let [dev, created] = await BiometricDevice.findOrCreate({
+          where: { serialNumber: SN },
+          defaults: {
+            serialNumber: SN,
+            deviceName: `ZKTeco (${SN})`,
+            deviceModel: query.model || 'MB560-VL',
+            ipAddress: ip,
+            status: 'online',
+            lastSeenAt: new Date(),
+            institution: defaultInst?._id || null,
+          },
+        });
+        if (!created) {
+          await dev.update({
+            ipAddress: ip,
+            status: 'online',
+            lastSeenAt: new Date(),
+            ...(query.pushver ? { firmwareVersion: query.pushver } : {}),
+          });
+        }
+      } catch (devErr) {
+        console.warn('[ZKTeco ADMS] Device upsert error:', devErr.message);
+      }
+    }
 
     // হ্যান্ডশেক অথবা পিং রিকোয়েস্ট (ডিভাইস চালু হলে বা কনফিগারেশন চেক করলে)
     if (method === 'GET') {
       res.set('Content-Type', 'text/plain');
+      if (query.options === 'all' || query.pushopt) {
+        const admsConfig = [
+          `GET OPTION FROM: ${SN || 'ZKTeco'}`,
+          'Stamp=9999',
+          'OpStamp=9999',
+          'PhotoStamp=9999',
+          'ErrorDelay=30',
+          'Delay=10',
+          'TransTimes=00:00;14:05',
+          'TransInterval=1',
+          'TransFlag=1111111111',
+          'TimeZone=6',
+          'Realtime=1',
+          'Encrypt=0',
+        ].join('\n') + '\n';
+        return res.status(200).send(admsConfig);
+      }
       return res.status(200).send('OK');
     }
 
@@ -782,10 +837,18 @@ exports.zktecoADMSListener = async (req, res) => {
 
     console.log('[ZKTeco ADMS POST Raw Data]:', rawData);
 
-    // সক্রিয় প্রতিষ্ঠান খুঁজে বের করা (বা যেকোনো প্রথম প্রতিষ্ঠান)
-    let defaultInst = await Institution.findOne({ where: { status: 'active' } });
-    if (!defaultInst) {
-      defaultInst = await Institution.findOne();
+    // যদি মেশিন USERINFO টেবিল ডাটা পাঠায় (লাইভ কোয়েরির ফিরতি উত্তর)
+    if (query.table === 'USERINFO' && rawData) {
+      const userLines = rawData.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      console.log(`[ZKTeco ADMS] Received ${userLines.length} USERINFO records from device ${SN}`);
+      if (SN) {
+        await BiometricDevice.update(
+          { userCount: userLines.length, lastSeenAt: new Date(), status: 'online' },
+          { where: { serialNumber: SN } }
+        ).catch(() => {});
+      }
+      res.set('Content-Type', 'text/plain');
+      return res.status(200).send('OK');
     }
 
     if (defaultInst && rawData) {
@@ -1947,6 +2010,574 @@ exports.runTeacherAutoAbsentCheck = async (req, res, next) => {
     }, `কাট-অফ চেকের মাধ্যমে ${absentCount} জন শিক্ষককে অনুপস্থিত মার্ক করা হয়েছে`);
   } catch (error) {
     console.error('runTeacherAutoAbsentCheck error:', error);
+    next(error);
+  }
+};
+
+// ==========================================
+// ZKTeco ADMS প্রোটোকল রুটসমূহ (ডিভাইস পুশ ও কমান্ড)
+// ==========================================
+
+// @desc    ZKTeco ADMS Command Pull endpoint
+// @route   ALL /iclock/getrequest এবং /api/v1/attendance/iclock/getrequest
+exports.zktecoADMSGetRequest = async (req, res) => {
+  try {
+    const SN = String(req.query.SN || req.query.sn || '').trim();
+
+    if (SN) {
+      await BiometricDevice.update(
+        { lastSeenAt: new Date(), status: 'online' },
+        { where: { serialNumber: SN } }
+      ).catch(() => {});
+    }
+
+    // খুঁজবো এই ডিভাইসের জন্য কোনো 'pending' কমান্ড আছে কিনা
+    const pendingCommands = await DeviceCommand.findAll({
+      where: {
+        [Op.or]: [
+          ...(SN ? [{ serialNumber: SN }] : []),
+          { serialNumber: 'all' },
+        ],
+        status: 'pending',
+      },
+      order: [['id', 'ASC']],
+      limit: 30, // একবারে সর্বোচ্চ ৩০টি কমান্ড যাতে বাফার ওভারফ্লো না হয়
+    });
+
+    if (pendingCommands && pendingCommands.length > 0) {
+      const responseLines = [];
+      const now = new Date();
+
+      for (const cmd of pendingCommands) {
+        responseLines.push(`C:${cmd.id}:${cmd.commandText}`);
+        cmd.status = 'sent';
+        cmd.sentAt = now;
+        await cmd.save();
+      }
+
+      console.log(`[ZKTeco ADMS] Sent ${responseLines.length} command(s) to device SN=${SN || 'all'}`);
+      res.set('Content-Type', 'text/plain');
+      return res.status(200).send(responseLines.join('\n') + '\n');
+    }
+
+    // কোনো কমান্ড পেন্ডিং না থাকলে স্বাভাবিক OK রেসপন্স
+    res.set('Content-Type', 'text/plain');
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('[ZKTeco ADMS GetRequest Error]:', error.message);
+    res.set('Content-Type', 'text/plain');
+    res.status(200).send('OK');
+  }
+};
+
+// @desc    ZKTeco ADMS Command Response / Execution Feedback
+// @route   ALL /iclock/devicecmd এবং /api/v1/attendance/iclock/devicecmd
+exports.zktecoADMSDeviceCmd = async (req, res) => {
+  try {
+    const SN = String(req.query.SN || req.query.sn || '').trim();
+
+    let rawData = typeof req.body === 'string' ? req.body : '';
+    if (!rawData && req.rawBody) rawData = req.rawBody;
+    if (!rawData && typeof req.body === 'object') {
+      rawData = Object.keys(req.body)[0] || '';
+    }
+
+    console.log(`[ZKTeco ADMS DeviceCmd] Feedback received from SN=${SN}:`, rawData);
+
+    if (SN) {
+      await BiometricDevice.update(
+        { lastSeenAt: new Date(), status: 'online' },
+        { where: { serialNumber: SN } }
+      ).catch(() => {});
+    }
+
+    if (rawData) {
+      const lines = rawData.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      for (const line of lines) {
+        // e.g. ID=101&Return=0&CMD=DATA USER PIN=...
+        const params = new URLSearchParams(line);
+        const cmdId = params.get('ID');
+        const returnCode = params.get('Return');
+
+        if (cmdId) {
+          const cmd = await DeviceCommand.findOne({ where: { id: parseInt(cmdId, 10) } });
+          if (cmd) {
+            const isSuccess = returnCode === '0';
+            cmd.status = isSuccess ? 'executed' : 'failed';
+            cmd.executedAt = new Date();
+            cmd.returnCode = returnCode;
+            await cmd.save();
+
+            // যদি এটি কোনো ইউজারের জন্য সফল আপলোড হয়, তবে স্টুডেন্ট বা টিচারের স্ট্যাটাস আপডেট করা
+            if (isSuccess && cmd.targetUserId) {
+              const now = new Date();
+              if (cmd.targetUserType === 'student') {
+                const stu = await Student.findByPk(cmd.targetUserId);
+                if (stu) {
+                  let devices = [];
+                  try { devices = JSON.parse(stu.deviceSyncedDevices || '[]'); } catch (e) {
+                    if (stu.deviceSyncedDevices) devices = stu.deviceSyncedDevices.split(',');
+                  }
+                  if (SN && !devices.includes(SN)) devices.push(SN);
+                  await stu.update({
+                    deviceSyncStatus: 'synced',
+                    deviceLastSyncedAt: now,
+                    deviceSyncedDevices: JSON.stringify(devices),
+                  });
+                }
+              } else if (cmd.targetUserType === 'teacher') {
+                const tea = await Teacher.findByPk(cmd.targetUserId);
+                if (tea) {
+                  let devices = [];
+                  try { devices = JSON.parse(tea.deviceSyncedDevices || '[]'); } catch (e) {
+                    if (tea.deviceSyncedDevices) devices = tea.deviceSyncedDevices.split(',');
+                  }
+                  if (SN && !devices.includes(SN)) devices.push(SN);
+                  await tea.update({
+                    deviceSyncStatus: 'synced',
+                    deviceLastSyncedAt: now,
+                    deviceSyncedDevices: JSON.stringify(devices),
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    res.set('Content-Type', 'text/plain');
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('[ZKTeco ADMS DeviceCmd Error]:', error.message);
+    res.set('Content-Type', 'text/plain');
+    res.status(200).send('OK');
+  }
+};
+
+// @desc    ZKTeco ADMS FData endpoint (Biometrics / Face / Template)
+// @route   ALL /iclock/fdata এবং /api/v1/attendance/iclock/fdata
+exports.zktecoADMSFData = async (req, res) => {
+  res.set('Content-Type', 'text/plain');
+  res.status(200).send('OK');
+};
+
+// ==========================================
+// বায়োমেট্রিক ডিভাইস ইউজার ম্যানেজমেন্ট APIs (Frontend)
+// ==========================================
+
+// @desc    বায়োমেট্রিক ডিভাইসে আপলোডযোগ্য শিক্ষার্থী ও শিক্ষক তালিকা
+// @route   GET /api/v1/attendance/biometric-users
+exports.getBiometricUsers = async (req, res, next) => {
+  try {
+    const institutionId = req.user.institution;
+    const { type = 'all', classLevel, section, status = 'all', search = '' } = req.query;
+
+    let students = [];
+    let teachers = [];
+
+    // ১. স্টুডেন্ট ডাটা আনা (যদি type === 'all' বা 'student' হয়)
+    if (type === 'all' || type === 'student') {
+      const studentWhere = {
+        isDeleted: false,
+        status: 'active',
+      };
+      if (institutionId) studentWhere.institution = institutionId;
+      if (classLevel && classLevel !== 'all') studentWhere.currentClass = classLevel;
+      if (section && section !== 'all') studentWhere.currentSection = section;
+
+      const rawStudents = await Student.findAll({
+        where: studentWhere,
+        order: [['rollNumber', 'ASC'], ['name', 'ASC']],
+      });
+
+      students = rawStudents.map((s) => {
+        const effectiveId = String(s.deviceUserId || s.studentId || s.admissionNumber || s.rollNumber || '').trim();
+        const updatedAt = s.updatedAt ? new Date(s.updatedAt) : new Date();
+        const lastSyncedAt = s.deviceLastSyncedAt ? new Date(s.deviceLastSyncedAt) : null;
+
+        let computedStatus = 'not_uploaded';
+        if (!lastSyncedAt) {
+          computedStatus = 'not_uploaded';
+        } else if (updatedAt.getTime() > lastSyncedAt.getTime() + 2000) {
+          computedStatus = 'needs_update';
+        } else {
+          computedStatus = 'synced';
+        }
+
+        let syncedDevices = [];
+        try {
+          syncedDevices = JSON.parse(s.deviceSyncedDevices || '[]');
+        } catch (e) {
+          if (s.deviceSyncedDevices) syncedDevices = s.deviceSyncedDevices.split(',');
+        }
+
+        return {
+          id: s._id,
+          type: 'student',
+          name: s.name,
+          firstNameEn: s.firstNameEn || '',
+          lastNameEn: s.lastNameEn || '',
+          deviceUserId: s.deviceUserId || '',
+          effectiveDeviceUserId: effectiveId,
+          studentId: s.studentId,
+          rollNumber: s.rollNumber,
+          admissionNumber: s.admissionNumber,
+          classLevel: s.currentClass || '',
+          section: s.currentSection || '',
+          branch: s.branch || '',
+          photo: s.photo || '',
+          phone: s.phone || '',
+          syncStatus: computedStatus,
+          lastSyncedAt: s.deviceLastSyncedAt,
+          updatedAt: s.updatedAt,
+          syncedDevices,
+        };
+      });
+    }
+
+    // ২. শিক্ষক ডাটা আনা (যদি type === 'all' বা 'teacher' হয়)
+    if (type === 'all' || type === 'teacher') {
+      const teacherWhere = {
+        status: 'active',
+      };
+      if (institutionId) teacherWhere.institution = institutionId;
+
+      const rawTeachers = await Teacher.findAll({
+        where: teacherWhere,
+      });
+
+      const userIds = rawTeachers.map(t => t.user).filter(Boolean);
+      const users = await User.findAll({ where: { _id: { [Op.in]: userIds } } });
+      const userMap = new Map();
+      users.forEach(u => userMap.set(String(u._id), u));
+
+      teachers = rawTeachers.map((t) => {
+        const u = userMap.get(String(t.user)) || {};
+        const teacherName = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.username || 'শিক্ষক';
+        const effectiveId = String(t.deviceUserId || t.employeeId || u.phone || u.username || '').trim();
+        const updatedAt = t.updatedAt ? new Date(t.updatedAt) : new Date();
+        const lastSyncedAt = t.deviceLastSyncedAt ? new Date(t.deviceLastSyncedAt) : null;
+
+        let computedStatus = 'not_uploaded';
+        if (!lastSyncedAt) {
+          computedStatus = 'not_uploaded';
+        } else if (updatedAt.getTime() > lastSyncedAt.getTime() + 2000) {
+          computedStatus = 'needs_update';
+        } else {
+          computedStatus = 'synced';
+        }
+
+        let syncedDevices = [];
+        try {
+          syncedDevices = JSON.parse(t.deviceSyncedDevices || '[]');
+        } catch (e) {
+          if (t.deviceSyncedDevices) syncedDevices = t.deviceSyncedDevices.split(',');
+        }
+
+        return {
+          id: t._id,
+          type: 'teacher',
+          name: teacherName,
+          firstNameEn: u.firstNameEn || '',
+          lastNameEn: u.lastNameEn || '',
+          deviceUserId: t.deviceUserId || '',
+          effectiveDeviceUserId: effectiveId,
+          employeeId: t.employeeId || '',
+          designation: t.designation || 'সহকারী শিক্ষক',
+          department: t.department || '',
+          branch: t.branch || '',
+          photo: u.photo || '',
+          phone: u.phone || '',
+          syncStatus: computedStatus,
+          lastSyncedAt: t.deviceLastSyncedAt,
+          updatedAt: t.updatedAt,
+          syncedDevices,
+        };
+      });
+    }
+
+    let combinedUsers = [...students, ...teachers];
+
+    // সার্চ ফিল্টার
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      combinedUsers = combinedUsers.filter(u =>
+        (u.name && u.name.toLowerCase().includes(q)) ||
+        (u.effectiveDeviceUserId && u.effectiveDeviceUserId.toLowerCase().includes(q)) ||
+        (u.rollNumber && String(u.rollNumber).toLowerCase().includes(q)) ||
+        (u.studentId && u.studentId.toLowerCase().includes(q)) ||
+        (u.phone && u.phone.includes(q))
+      );
+    }
+
+    // স্ট্যাটাস ফিল্টার
+    const totalCount = combinedUsers.length;
+    const notUploadedCount = combinedUsers.filter(u => u.syncStatus === 'not_uploaded').length;
+    const needsUpdateCount = combinedUsers.filter(u => u.syncStatus === 'needs_update').length;
+    const syncedCount = combinedUsers.filter(u => u.syncStatus === 'synced').length;
+
+    if (status && status !== 'all') {
+      combinedUsers = combinedUsers.filter(u => u.syncStatus === status);
+    }
+
+    return ApiResponse.success(res, {
+      stats: {
+        total: totalCount,
+        notUploaded: notUploadedCount,
+        needsUpdate: needsUpdateCount,
+        synced: syncedCount,
+      },
+      users: combinedUsers,
+    }, 'ব্যবহারকারী তালিকা সফলভাবে লোড হয়েছে');
+  } catch (error) {
+    console.error('getBiometricUsers error:', error);
+    next(error);
+  }
+};
+
+// @desc    মার্ক করা আইডিগুলোর ভেরিফিকেশন ও বিশদ রিপোর্ট
+// @route   POST /api/v1/attendance/biometric-verify
+exports.verifyBiometricUsers = async (req, res, next) => {
+  try {
+    const institutionId = req.user.institution;
+    const { users = [], serialNumber, liveQuery = false } = req.body;
+
+    if (!Array.isArray(users) || users.length === 0) {
+      return ApiResponse.error(res, 'ভেরিফাই করার জন্য অন্তত একজন ব্যবহারকারী নির্বাচন করুন', 400);
+    }
+
+    let notUploaded = 0;
+    let needsUpdate = 0;
+    let upToDate = 0;
+    let missingIdCount = 0;
+
+    const verifiedDetails = users.map((u) => {
+      const effectiveId = String(u.effectiveDeviceUserId || u.deviceUserId || '').trim();
+      const hasSpecificDeviceId = Boolean(u.deviceUserId && String(u.deviceUserId).trim());
+      if (!hasSpecificDeviceId) missingIdCount++;
+
+      const updatedAt = u.updatedAt ? new Date(u.updatedAt) : new Date();
+      const lastSyncedAt = u.lastSyncedAt ? new Date(u.lastSyncedAt) : null;
+
+      let verifiedStatus = 'not_uploaded';
+      let message = 'মেশিনে এখনও আপলোড করা হয়নি';
+
+      if (!lastSyncedAt) {
+        verifiedStatus = 'not_uploaded';
+        message = 'মেশিনে আপলোড করা হয়নি — আপলোড প্রয়োজন';
+        notUploaded++;
+      } else if (updatedAt.getTime() > lastSyncedAt.getTime() + 2000) {
+        verifiedStatus = 'needs_update';
+        message = `তথ্য পরিবর্তন হয়েছে (${new Date(updatedAt).toLocaleDateString('bn-BD')}) — পুনরায় সিঙ্ক করুন`;
+        needsUpdate++;
+      } else {
+        verifiedStatus = 'synced';
+        message = 'মেশিনের ডাটা আপ-টু-ডেট আছে';
+        upToDate++;
+      }
+
+      return {
+        id: u.id,
+        type: u.type,
+        name: u.name,
+        effectiveDeviceUserId: effectiveId,
+        hasSpecificDeviceId,
+        status: verifiedStatus,
+        message,
+        lastSyncedAt: u.lastSyncedAt,
+        updatedAt: u.updatedAt,
+      };
+    });
+
+    // যদি লাইভ ডিভাইস কোয়েরি চাওয়া হয়ে থাকে এবং সিরিয়াল নম্বর থাকে
+    let liveQueryQueued = false;
+    if (liveQuery) {
+      const targetSN = serialNumber && serialNumber !== 'all' ? serialNumber : 'all';
+      await DeviceCommand.create({
+        institution: institutionId,
+        serialNumber: targetSN,
+        commandType: 'QUERY_USERINFO',
+        commandText: 'DATA QUERY USERINFO',
+        status: 'pending',
+      });
+      liveQueryQueued = true;
+    }
+
+    return ApiResponse.success(res, {
+      summary: {
+        totalChecked: users.length,
+        notUploaded,
+        needsUpdate,
+        upToDate,
+        missingIdCount,
+        liveQueryQueued,
+      },
+      verifiedDetails,
+    }, 'ভেরিফিকেশন রিপোর্ট সফলভাবে সম্পন্ন হয়েছে');
+  } catch (error) {
+    console.error('verifyBiometricUsers error:', error);
+    next(error);
+  }
+};
+
+// @desc    নির্বাচিত আইডিগুলো ZKTeco ডিভাইসে আপলোড করা (ADMS Command Queue)
+// @route   POST /api/v1/attendance/biometric-upload
+exports.uploadBiometricUsers = async (req, res, next) => {
+  try {
+    const institutionId = req.user.institution;
+    const { users = [], serialNumber = 'all', includePhoto = false } = req.body;
+
+    if (!Array.isArray(users) || users.length === 0) {
+      return ApiResponse.error(res, 'আপলোড করার জন্য অন্তত একজন ব্যবহারকারী নির্বাচন করুন', 400);
+    }
+
+    // টার্গেট ডিভাইস নির্ধারণ
+    let targetSNs = [];
+    if (serialNumber && serialNumber !== 'all') {
+      targetSNs = [serialNumber];
+    } else {
+      const registeredDevices = await BiometricDevice.findAll({
+        where: institutionId ? { institution: institutionId } : {},
+      });
+      if (registeredDevices && registeredDevices.length > 0) {
+        targetSNs = registeredDevices.map(d => d.serialNumber);
+      } else {
+        // যদি এখনও ডাটাবেজে কোনো ডিভাইস রেজিস্টার না হয়ে থাকে, গ্লোবাল 'all' কিউতে পাঠানো হবে
+        targetSNs = ['all'];
+      }
+    }
+
+    const commandRecords = [];
+    const now = new Date();
+
+    for (const sn of targetSNs) {
+      for (const u of users) {
+        const cleanId = String(u.effectiveDeviceUserId || u.deviceUserId || '').trim();
+        if (!cleanId) continue;
+
+        // নাম ক্লিন করা (ট্যাব বা নিউলাইন সরানো যাতে ZKTeco প্রোটোকল ভেঙে না যায়)
+        const cleanName = String(u.name || '').replace(/[\t\r\n]/g, ' ').trim() || `User_${cleanId}`;
+        
+        // ZKTeco Push Command Standard
+        // PIN=<id>\tName=<name>\tPri=0\tPass=\tCard=\tGrp=1
+        const cmdText = `DATA USER PIN=${cleanId}\tName=${cleanName}\tPri=0\tPass=\tCard=\tGrp=1`;
+
+        commandRecords.push({
+          institution: institutionId,
+          serialNumber: sn,
+          commandType: 'DATA_USER',
+          commandText: cmdText,
+          targetUserId: u.id,
+          targetUserType: u.type,
+          targetUserName: cleanName,
+          status: 'pending',
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        // যদি ছবি আপলোড করার সুযোগ থাকে এবং ইউজারের ছবি থাকে
+        if (includePhoto && u.photo) {
+          // ZKTeco ADMS photo command format
+          // Photo queueing can also be handled via DATA USERPIC if configured
+        }
+      }
+    }
+
+    if (commandRecords.length > 0) {
+      await DeviceCommand.bulkCreate(commandRecords);
+    }
+
+    return ApiResponse.success(res, {
+      totalQueued: commandRecords.length,
+      targetDevices: targetSNs,
+      usersCount: users.length,
+    }, `${users.length} জন ব্যবহারকারীর আইডি ZKTeco আপলোড কিউতে যুক্ত করা হয়েছে! ডিভাইস কানেক্ট হলেই স্বয়ংক্রিয়ভাবে আপলোড সম্পন্ন হবে।`);
+  } catch (error) {
+    console.error('uploadBiometricUsers error:', error);
+    next(error);
+  }
+};
+
+// @desc    কানেক্টেড বায়োমেট্রিক ডিভাইসের তালিকা ও রিয়েল-টাইম স্ট্যাটাস
+// @route   GET /api/v1/attendance/biometric-devices
+exports.getBiometricDevices = async (req, res, next) => {
+  try {
+    const institutionId = req.user.institution;
+    const where = {};
+    if (institutionId) where.institution = institutionId;
+
+    const devices = await BiometricDevice.findAll({
+      where,
+      order: [['lastSeenAt', 'DESC']],
+    });
+
+    const now = Date.now();
+    const formattedDevices = await Promise.all(
+      devices.map(async (d) => {
+        const lastSeen = d.lastSeenAt ? new Date(d.lastSeenAt).getTime() : 0;
+        // গত ২ মিনিটের মধ্যে পিং আসলে অনলাইন ধরা হবে
+        const isOnline = lastSeen > 0 && now - lastSeen < 120000;
+
+        const pendingCount = await DeviceCommand.count({
+          where: {
+            [Op.or]: [{ serialNumber: d.serialNumber }, { serialNumber: 'all' }],
+            status: 'pending',
+          },
+        });
+
+        return {
+          id: d._id,
+          serialNumber: d.serialNumber,
+          deviceName: d.deviceName || `ZKTeco (${d.serialNumber})`,
+          deviceModel: d.deviceModel || 'MB560-VL',
+          ipAddress: d.ipAddress || '',
+          firmwareVersion: d.firmwareVersion || '',
+          userCount: d.userCount || 0,
+          status: isOnline ? 'online' : 'offline',
+          lastSeenAt: d.lastSeenAt,
+          pendingCommands: pendingCount,
+        };
+      })
+    );
+
+    return ApiResponse.success(res, {
+      devices: formattedDevices,
+    }, 'ডিভাইস তালিকা সফলভাবে লোড হয়েছে');
+  } catch (error) {
+    console.error('getBiometricDevices error:', error);
+    next(error);
+  }
+};
+
+// @desc    ডিভাইসে সরাসরি কমান্ড প্রেরণ (CHECK, REBOOT, QUERY USERINFO)
+// @route   POST /api/v1/attendance/biometric-device-command
+exports.sendBiometricDeviceCommand = async (req, res, next) => {
+  try {
+    const institutionId = req.user.institution;
+    const { serialNumber, commandType } = req.body;
+
+    if (!serialNumber || !commandType) {
+      return ApiResponse.error(res, 'ডিভাইসের সিরিয়াল নম্বর এবং কমান্ডের ধরন আবশ্যক', 400);
+    }
+
+    let commandText = commandType;
+    if (commandType === 'CHECK') commandText = 'CHECK';
+    else if (commandType === 'QUERY_USERINFO') commandText = 'DATA QUERY USERINFO';
+    else if (commandType === 'REBOOT') commandText = 'REBOOT';
+    else if (commandType === 'CLEAR_LOG') commandText = 'CLEAR LOG';
+
+    await DeviceCommand.create({
+      institution: institutionId,
+      serialNumber,
+      commandType,
+      commandText,
+      status: 'pending',
+    });
+
+    return ApiResponse.success(res, null, `কমান্ড '${commandType}' সফলভাবে ডিভাইসের জন্য কিউতে যুক্ত করা হয়েছে`);
+  } catch (error) {
+    console.error('sendBiometricDeviceCommand error:', error);
     next(error);
   }
 };

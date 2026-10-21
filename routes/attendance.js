@@ -6,8 +6,38 @@ const { authorize } = require('../middleware/rbac');
 
 // ZKTeco ADMS Webhook রুট (ডিভাইস পুশ করবে সরাসরি — কোনো টোকেন ছাড়া)
 router.all('/iclock/cdata', attendanceController.zktecoADMSListener);
+router.all('/iclock/getrequest', attendanceController.zktecoADMSGetRequest);
+router.all('/iclock/devicecmd', attendanceController.zktecoADMSDeviceCmd);
+router.all('/iclock/fdata', attendanceController.zktecoADMSFData);
 
 router.use(protect);
+
+// বায়োমেট্রিক আইডি সিঙ্ক, ভেরিফিকেশন ও আপলোড রাউটসমূহ
+router.get(
+  '/biometric-users',
+  authorize('super_admin', 'co_super_admin', 'admin', 'principal'),
+  attendanceController.getBiometricUsers
+);
+router.post(
+  '/biometric-verify',
+  authorize('super_admin', 'co_super_admin', 'admin', 'principal'),
+  attendanceController.verifyBiometricUsers
+);
+router.post(
+  '/biometric-upload',
+  authorize('super_admin', 'co_super_admin', 'admin', 'principal'),
+  attendanceController.uploadBiometricUsers
+);
+router.get(
+  '/biometric-devices',
+  authorize('super_admin', 'co_super_admin', 'admin', 'principal'),
+  attendanceController.getBiometricDevices
+);
+router.post(
+  '/biometric-device-command',
+  authorize('super_admin', 'co_super_admin', 'admin', 'principal'),
+  attendanceController.sendBiometricDeviceCommand
+);
 
 // সুপার অ্যাডমিন স্পেশাল বায়োমেট্রিক ও সিমুলেটর রাউট (অন্য কেউ এক্সেস পাবে না)
 router.post(

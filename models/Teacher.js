@@ -62,6 +62,19 @@ Teacher.init({
     allowNull: true,
     defaultValue: '',
   },
+  deviceSyncStatus: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: 'not_uploaded', // not_uploaded, synced, needs_update
+  },
+  deviceLastSyncedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  deviceSyncedDevices: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+  },
   status: {
     type: DataTypes.STRING,
     allowNull: true,
