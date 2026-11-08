@@ -223,11 +223,13 @@ exports.createTeacher = async (req, res, next) => {
     const finalUserType = validUserTypes.includes(requestedUserType) ? requestedUserType : 'teacher';
 
     const teacherBranch = req.body.branch || req.user.branch || null;
+    const finalGender = req.body.gender === 'female' ? 'female' : 'male';
 
     const userFields = {
       firstName: firstName || '',
       lastName: lastName || '',
       phone: phone || '',
+      gender: finalGender,
       photo: req.body.photo || '',
       password: (password && password.trim() !== '') ? password.trim() : 'teacher123',
       userType: finalUserType,
@@ -261,6 +263,7 @@ exports.createTeacher = async (req, res, next) => {
       user: user._id,
       institution: req.user.institution,
       branch: teacherBranch,
+      gender: finalGender,
       employeeId: finalTeacherId, // required by schema
       teacherType: teacherType || (finalUserType === 'hifz_teacher' ? 'hifz' : 'regular'),
       designation: req.body.designation || defaultDesignation,
@@ -318,6 +321,7 @@ exports.updateTeacher = async (req, res, next) => {
       if (req.body.lastName !== undefined) userDoc.lastName = req.body.lastName;
       if (req.body.phone !== undefined) userDoc.phone = req.body.phone;
       if (req.body.photo !== undefined) userDoc.photo = req.body.photo;
+      if (req.body.gender !== undefined) userDoc.gender = req.body.gender;
 
       const validUserTypes = [
         'co_super_admin', 'admin', 'principal', 'vice_principal', 'teacher', 'hifz_teacher',
@@ -367,6 +371,7 @@ exports.updateTeacher = async (req, res, next) => {
     }
 
     // Update Teacher profile
+    if (req.body.gender !== undefined) teacher.gender = req.body.gender;
     if (req.body.teacherType !== undefined) teacher.teacherType = req.body.teacherType;
     if (req.body.branch !== undefined) {
       teacher.branch = req.body.branch;

@@ -35,6 +35,11 @@ Subject.init({
     allowNull: true,
     defaultValue: false,
   },
+  totalMarks: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+    defaultValue: 100,
+  },
   classLevels: {
     type: DataTypes.JSON,
     allowNull: true,

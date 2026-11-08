@@ -157,6 +157,7 @@ app.use('/api/v1/permissions', rolePermissionRoutes);
 app.use('/api/v1/reports', reportRoutes);
 app.use('/api/v1/books', bookRoutes);
 app.use('/api/v1/hostels', hostelRoutes);
+app.use('/api/v1/hostel', hostelRoutes);
 app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/audit-logs', auditLogRoutes);
 app.use('/api/v1/search', searchRoutes);

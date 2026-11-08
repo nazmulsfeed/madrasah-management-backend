@@ -334,6 +334,80 @@ const connectDB = async () => {
           KEY \`idx_dev_status\` (\`serialNumber\`, \`status\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `).catch(() => {});
+
+      // Feature Update Safe Migrations:
+      // 1. Subject totalMarks
+      const [subTotalMarksCol] = await sequelize.query("SHOW COLUMNS FROM `subjects` LIKE 'totalMarks'");
+      if (!subTotalMarksCol || subTotalMarksCol.length === 0) {
+        await sequelize.query("ALTER TABLE `subjects` ADD COLUMN `totalMarks` FLOAT NULL DEFAULT 100").catch(() => {});
+        console.log("✅ Added totalMarks column to subjects table");
+      }
+      // 2. Teacher gender
+      const [teaGenderCol] = await sequelize.query("SHOW COLUMNS FROM `teachers` LIKE 'gender'");
+      if (!teaGenderCol || teaGenderCol.length === 0) {
+        await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `gender` VARCHAR(20) NULL DEFAULT 'male'").catch(() => {});
+        console.log("✅ Added gender column to teachers table");
+      }
+      // 3. User gender
+      const [userGenderCol] = await sequelize.query("SHOW COLUMNS FROM `users` LIKE 'gender'");
+      if (!userGenderCol || userGenderCol.length === 0) {
+        await sequelize.query("ALTER TABLE `users` ADD COLUMN `gender` VARCHAR(20) NULL DEFAULT 'male'").catch(() => {});
+        console.log("✅ Added gender column to users table");
+      }
+      // 4. Exam category, termNumber, month, selectedSubjects
+      const [examCatCol] = await sequelize.query("SHOW COLUMNS FROM `exams` LIKE 'examCategory'");
+      if (!examCatCol || examCatCol.length === 0) {
+        await sequelize.query("ALTER TABLE `exams` ADD COLUMN `examCategory` VARCHAR(50) NULL DEFAULT 'general'").catch(() => {});
+        console.log("✅ Added examCategory column to exams table");
+      }
+      const [examTermCol] = await sequelize.query("SHOW COLUMNS FROM `exams` LIKE 'termNumber'");
+      if (!examTermCol || examTermCol.length === 0) {
+        await sequelize.query("ALTER TABLE `exams` ADD COLUMN `termNumber` INT NULL DEFAULT NULL").catch(() => {});
+        console.log("✅ Added termNumber column to exams table");
+      }
+      const [examMonthCol] = await sequelize.query("SHOW COLUMNS FROM `exams` LIKE 'month'");
+      if (!examMonthCol || examMonthCol.length === 0) {
+        await sequelize.query("ALTER TABLE `exams` ADD COLUMN `month` VARCHAR(20) NULL DEFAULT NULL").catch(() => {});
+        console.log("✅ Added month column to exams table");
+      }
+      const [examSelSubCol] = await sequelize.query("SHOW COLUMNS FROM `exams` LIKE 'selectedSubjects'");
+      if (!examSelSubCol || examSelSubCol.length === 0) {
+        await sequelize.query("ALTER TABLE `exams` ADD COLUMN `selectedSubjects` JSON NULL DEFAULT NULL").catch(() => {});
+        console.log("✅ Added selectedSubjects column to exams table");
+      }
+      // 5. Create meal_routines table safely
+      await sequelize.query(`
+        CREATE TABLE IF NOT EXISTS \`meal_routines\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`_id\` CHAR(36) NOT NULL UNIQUE,
+          \`institution\` VARCHAR(255) NOT NULL,
+          \`branch\` VARCHAR(255) NULL,
+          \`dayOfWeek\` VARCHAR(20) NOT NULL,
+          \`breakfast\` TEXT,
+          \`lunch\` TEXT,
+          \`snacks\` TEXT,
+          \`dinner\` TEXT,
+          \`specialNote\` TEXT,
+          \`updatedBy\` VARCHAR(255) NULL,
+          \`createdAt\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          \`updatedAt\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          KEY \`idx_meal_inst_day\` (\`institution\`, \`dayOfWeek\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `).catch(() => {});
+      // Auto-migrate hifzdailyprogresss category and hifzData columns
+      try {
+        const [hifzCatCol] = await sequelize.query("SHOW COLUMNS FROM `hifzdailyprogresss` LIKE 'category'");
+        if (!hifzCatCol || hifzCatCol.length === 0) {
+          await sequelize.query("ALTER TABLE `hifzdailyprogresss` ADD COLUMN `category` VARCHAR(50) NULL DEFAULT 'hifz'");
+          console.log("✅ Added category column to hifzdailyprogresss table");
+        }
+        const [hifzDataCol] = await sequelize.query("SHOW COLUMNS FROM `hifzdailyprogresss` LIKE 'hifzData'");
+        if (!hifzDataCol || hifzDataCol.length === 0) {
+          await sequelize.query("ALTER TABLE `hifzdailyprogresss` ADD COLUMN `hifzData` JSON NULL");
+          console.log("✅ Added hifzData column to hifzdailyprogresss table");
+        }
+        await sequelize.query("ALTER TABLE `hifzdailyprogresss` MODIFY COLUMN `sabaq` VARCHAR(255) NULL");
+      } catch (hifzColErr) {}
       // Auto-clean any unwanted initial balance of 900 and normalize branch names
       try {
         await sequelize.query("UPDATE `accounts` SET `balance` = 0 WHERE (`code` = '1001' OR `name` LIKE '%নগদ%') AND `balance` = 900");

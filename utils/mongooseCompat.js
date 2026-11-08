@@ -357,26 +357,45 @@ Model.insertMany = async function(arr) {
   return await this.bulkCreate(arr);
 };
 
-Model.findOneAndUpdate = async function(query, update, options = {}) {
-  let doc = await originalFindOne.call(this, { where: mapQuery(query) });
-  if (!doc) {
-    if (options.upsert) {
-      const data = update.$set ? { ...update.$set } : { ...update };
-      doc = await this.create({ ...query, ...data });
-      return doc;
+Model.findOneAndUpdate = function(query, update, options = {}) {
+  let populateCalls = [];
+  const p = (async () => {
+    let doc = await originalFindOne.call(this, { where: mapQuery(query) });
+    if (!doc) {
+      if (options.upsert) {
+        const data = update.$set ? { ...update.$set } : { ...update };
+        doc = await this.create({ ...query, ...data });
+        return doc;
+      }
+      return null;
     }
-    return null;
-  }
-  applyMongooseUpdates(doc, update);
-  await doc.save();
-  return doc;
+    applyMongooseUpdates(doc, update);
+    await doc.save();
+    
+    if (populateCalls.length > 0) {
+      const qb = new SequelizeQueryBuilder(this, 'findOne', { _id: doc._id });
+      populateCalls.forEach(args => qb.populate(...args));
+      const popDoc = await qb.exec();
+      return popDoc || doc;
+    }
+    return doc;
+  })();
+
+  p.populate = function(...args) {
+    populateCalls.push(args);
+    return p;
+  };
+
+  return p;
 };
 
-Model.findOneAndDelete = async function(query) {
-  const doc = await originalFindOne.call(this, { where: mapQuery(query) });
-  if (!doc) return null;
-  await doc.destroy();
-  return doc;
+Model.findOneAndDelete = function(query) {
+  return (async () => {
+    const doc = await originalFindOne.call(this, { where: mapQuery(query) });
+    if (!doc) return null;
+    await doc.destroy();
+    return doc;
+  })();
 };
 
 Model.bulkWrite = async function(ops) {

@@ -49,6 +49,11 @@ User.init({
     allowNull: true,
     defaultValue: '',
   },
+  gender: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: 'male',
+  },
   userType: {
     type: DataTypes.STRING,
     allowNull: false,

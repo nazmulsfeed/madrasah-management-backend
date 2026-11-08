@@ -42,6 +42,23 @@ Exam.init({
     allowNull: true,
     defaultValue: 'upcoming',
   },
+  examCategory: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: 'general', // 'model_test', 'monthly_test', 'term_exam', 'general'
+  },
+  termNumber: {
+    type: DataTypes.INTEGER,
+    allowNull: true, // 1, 2, 3 for term exams and model tests
+  },
+  month: {
+    type: DataTypes.STRING,
+    allowNull: true, // 'january' .. 'december'
+  },
+  selectedSubjects: {
+    type: DataTypes.JSON,
+    allowNull: true, // array of subject IDs for monthly class tests (4 subjects)
+  },
 }, {
   sequelize,
   modelName: 'Exam',

@@ -202,6 +202,12 @@ exports.getStudents = async (req, res, next) => {
     if (req.query.status) {
       filter.status = req.query.status;
     }
+    if (req.query.department && req.query.department !== 'all') {
+      filter.department = req.query.department.trim();
+    }
+    if (req.query.residentialStatus && req.query.residentialStatus !== 'all') {
+      filter.residentialStatus = req.query.residentialStatus.trim();
+    }
     if (req.query.branch) {
       const Branch = require('../models/Branch');
       const selectedBranchDoc = await Branch.findById(req.query.branch);
@@ -1294,6 +1300,28 @@ exports.getClassLevels = async (req, res, next) => {
     const filter = {};
     if (req.user.institution) filter.institution = req.user.institution;
     
+    // Auto-seed Kitab classes if missing for this institution
+    if (req.user.institution) {
+      const defaultKitabClasses = [
+        { name: 'উর্দু জামাত', code: 'URDU', order: 20 },
+        { name: 'তাইসীর জামাত', code: 'TAISEER', order: 21 },
+        { name: 'মিযান মুনশায়িব জামাত', code: 'MIZAN', order: 22 }
+      ];
+      for (const kc of defaultKitabClasses) {
+        const exists = await ClassLevel.findOne({
+          where: { institution: req.user.institution, name: kc.name }
+        });
+        if (!exists) {
+          await ClassLevel.create({
+            institution: req.user.institution,
+            name: kc.name,
+            code: kc.code,
+            order: kc.order
+          }).catch(() => {});
+        }
+      }
+    }
+
     const classes = await ClassLevel.find(filter).sort({ order: 1 });
     ApiResponse.success(res, { classes });
   } catch (error) {
@@ -1430,11 +1458,15 @@ exports.getSubjects = async (req, res, next) => {
 // @route   POST /api/v1/students/subjects
 exports.createSubject = async (req, res, next) => {
   try {
-    const { name, code, subjectType, isHifzSubject, classLevels } = req.body;
+    const { name, code, subjectType, isHifzSubject, classLevels, totalMarks } = req.body;
 
     if (!name) {
       return ApiResponse.error(res, 'বিষয়ের নাম আবশ্যক', 400);
     }
+
+    const parsedTotalMarks = totalMarks !== undefined && totalMarks !== null && totalMarks !== '' 
+      ? parseFloat(totalMarks) 
+      : 100;
 
     const subject = await Subject.create({
       institution: req.user.institution,
@@ -1442,6 +1474,7 @@ exports.createSubject = async (req, res, next) => {
       code,
       subjectType: subjectType || 'mandatory',
       isHifzSubject: !!isHifzSubject,
+      totalMarks: isNaN(parsedTotalMarks) ? 100 : parsedTotalMarks,
       classLevels: classLevels || [],
     });
 
@@ -1591,7 +1624,7 @@ exports.deleteAcademicYear = async (req, res, next) => {
 exports.getPromotionCandidates = async (req, res, next) => {
   try {
     const MarkEntry = require('../models/MarkEntry');
-    const { academicYear, classLevel, section } = req.query;
+    const { academicYear, classLevel, section, branch, department, residentialStatus, examId } = req.query;
 
     if (!academicYear || !classLevel) {
       return ApiResponse.error(res, 'শিক্ষাবর্ষ এবং শ্রেণি ফিল্টার আবশ্যক', 400);
@@ -1605,6 +1638,9 @@ exports.getPromotionCandidates = async (req, res, next) => {
     };
     if (section && section !== 'all') {
       enrollmentFilter.section = section;
+    }
+    if (branch && branch !== 'all') {
+      enrollmentFilter.branch = branch;
     }
 
     // 1. Find all active enrollments for this class & year
@@ -1627,19 +1663,52 @@ exports.getPromotionCandidates = async (req, res, next) => {
     });
 
     // 2. Load all active, non-deleted students with populated user details
-    const students = await Student.find({
+    const studentQueryFilter = {
       _id: { $in: studentIds },
       isDeleted: { $ne: true },
       status: 'active'
-    }).populate('user', 'firstName lastName firstNameEn lastNameEn email phone username fullName');
+    };
+    if (department && department !== 'all') {
+      studentQueryFilter.department = department;
+    }
+    if (residentialStatus && residentialStatus !== 'all') {
+      studentQueryFilter.residentialStatus = residentialStatus;
+    }
+    if (branch && branch !== 'all') {
+      studentQueryFilter.branch = branch;
+    }
 
-    // 3. Load all mark entries for these students and academic year
+    const students = await Student.find(studentQueryFilter).populate('user', 'firstName lastName firstNameEn lastNameEn email phone username fullName');
+
+    // 3. Load mark entries for these students (scoped to chosen examId if specified)
     let allMarks = [];
     try {
-      allMarks = await MarkEntry.find({
-        student: { $in: studentIds },
-        academicYear: academicYear
-      });
+      if (examId && examId !== 'all') {
+        if (examId === 'annual_combined') {
+          // Combined Term 1 + Term 2 + Term 3
+          const Exam = require('../models/Exam');
+          const termExams = await Exam.find({
+            institution: req.user.institution,
+            classLevel,
+            examCategory: 'term_exam'
+          });
+          const termExamIds = termExams.map(e => e._id);
+          allMarks = await MarkEntry.find({
+            student: { $in: studentIds },
+            exam: { $in: termExamIds }
+          });
+        } else {
+          allMarks = await MarkEntry.find({
+            student: { $in: studentIds },
+            exam: examId
+          });
+        }
+      } else {
+        allMarks = await MarkEntry.find({
+          student: { $in: studentIds },
+          academicYear: academicYear
+        });
+      }
     } catch (_) {}
 
     // Group marks by student
@@ -1684,6 +1753,11 @@ exports.getPromotionCandidates = async (req, res, next) => {
         admissionNumber: sVal.admissionNumber || sVal.studentId || '',
         rollNumber: enr.rollNumber || '',
         enrollmentId: enr._id,
+        branch: sVal.branch || enr.branch || '',
+        department: sVal.department || '',
+        residentialStatus: sVal.residentialStatus || 'non-residential',
+        totalObtained,
+        totalMarks,
         avgPercentage,
         marksCount: marks.length
       };
@@ -1703,7 +1777,16 @@ exports.getPromotionCandidates = async (req, res, next) => {
 // @route   POST /api/v1/students/promote
 exports.promoteStudents = async (req, res, next) => {
   try {
-    const { promotions, destClassLevelId, destSectionId, destAcademicYearId, actionType } = req.body;
+    const { 
+      promotions, 
+      destClassLevelId, 
+      destSectionId, 
+      destAcademicYearId, 
+      destBranchId, 
+      destDepartment, 
+      destResidentialStatus, 
+      actionType 
+    } = req.body;
 
     if (!promotions || !Array.isArray(promotions) || promotions.length === 0) {
       return ApiResponse.error(res, 'শিক্ষার্থী নির্বাচন আবশ্যক', 400);
@@ -1745,11 +1828,15 @@ exports.promoteStudents = async (req, res, next) => {
         updatedBy: req.user._id
       });
 
+      const effectiveBranchId = p.destBranchId || destBranchId || req.user.branch || null;
+      const effectiveDepartment = p.destDepartment || destDepartment;
+      const effectiveResidential = p.destResidentialStatus || destResidentialStatus;
+
       // 2. Create new active enrollment
       const newEnrollment = await StudentEnrollment.create({
         student: studentId,
         institution: req.user.institution,
-        branch: req.user.branch || null,
+        branch: effectiveBranchId,
         academicYear: destAcademicYearId,
         classLevel: destClassLevelId,
         section: destSectionId,
@@ -1759,10 +1846,15 @@ exports.promoteStudents = async (req, res, next) => {
         createdBy: req.user._id
       });
 
-      // 3. Update Student currentEnrollment
-      await Student.findByIdAndUpdate(studentId, {
+      // 3. Update Student currentEnrollment & profile fields if changed
+      const studentUpdates = {
         currentEnrollment: newEnrollment._id
-      });
+      };
+      if (effectiveBranchId) studentUpdates.branch = effectiveBranchId;
+      if (effectiveDepartment) studentUpdates.department = effectiveDepartment;
+      if (effectiveResidential) studentUpdates.residentialStatus = effectiveResidential;
+
+      await Student.findByIdAndUpdate(studentId, studentUpdates);
     }
 
     ApiResponse.success(res, null, `${promotedCount} জন শিক্ষার্থীকে সফলভাবে উত্তীর্ণ (Promote) করা হয়েছে`);
@@ -1904,7 +1996,8 @@ exports.getBranches = async (req, res, next) => {
       { name: 'বালিকা শাখা', code: 'GIRLS' },
       { name: 'নুরানী শাখা', code: 'NOORANI' },
       { name: 'বালক শাখা + নুরানী', code: 'BOYS_NOORANI' },
-      { name: 'বালিকা শাখা + নুরানী', code: 'GIRLS_NOORANI' }
+      { name: 'বালিকা শাখা + নুরানী', code: 'GIRLS_NOORANI' },
+      { name: 'বালিকা শাখা (কিতাব বিভাগ)', code: 'GIRLS_KITAB' }
     ];
 
     let branches = await Branch.find({ institution: req.user.institution });

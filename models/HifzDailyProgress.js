@@ -34,9 +34,18 @@ HifzDailyProgress.init({
     allowNull: true,
     unique: true,
   },
+  category: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: 'hifz',
+  },
+  hifzData: {
+    type: DataTypes.JSON,
+    allowNull: true,
+  },
   sabaq: {
     type: DataTypes.STRING,
-    allowNull: false,
+    allowNull: true,
   },
   sabqi: {
     type: DataTypes.STRING,

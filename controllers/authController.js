@@ -76,15 +76,24 @@ exports.login = async (req, res, next) => {
       return ApiResponse.error(res, 'আপনার একাউন্ট নিষ্ক্রিয়', 403);
     }
 
+    let activeStudentProfile = null;
+    let studentBranchName = '';
     if (user.userType === 'student') {
-      const studentProfile = await Student.findOne({
+      activeStudentProfile = await Student.findOne({
         where: {
           user: user._id,
           isDeleted: { [Op.ne]: true }
         }
       });
-      if (!studentProfile || studentProfile.status === 'inactive') {
+      if (!activeStudentProfile || activeStudentProfile.status === 'inactive') {
         return ApiResponse.error(res, 'এই শিক্ষার্থী অ্যাকাউন্টটি নিষ্ক্রিয় বা মুছে ফেলা হয়েছে', 403);
+      }
+      if (activeStudentProfile.branch) {
+        try {
+          const Branch = require('../models/Branch');
+          const bDoc = await Branch.findOne({ where: { _id: activeStudentProfile.branch } });
+          if (bDoc) studentBranchName = bDoc.name;
+        } catch (bErr) {}
       }
     }
 
@@ -183,6 +192,11 @@ exports.login = async (req, res, next) => {
         institution: institutionPayload,
         branch: user.branch,
         permissions,
+        residentialStatus: activeStudentProfile?.residentialStatus || null,
+        studentId: activeStudentProfile?._id || null,
+        department: activeStudentProfile?.department || null,
+        hifzProgramType: activeStudentProfile?.hifzProgramType || null,
+        studentBranchName: studentBranchName || null,
       },
     }, 'সফলভাবে লগ ইন হয়েছে');
   } catch (error) {
@@ -293,12 +307,26 @@ exports.getMe = async (req, res, next) => {
     // Check hifz eligibility and student/guardian identifiers
     let isHifzEligible = false;
     let studentId = null;
+    let studentResidentialStatus = null;
+    let studentDepartment = null;
+    let studentHifzProgramType = null;
+    let studentBranchName = '';
     let guardianStudents = [];
     
     if (user.userType === 'student') {
       const student = await Student.findOne({ user: user._id });
       if (student) {
         studentId = student._id;
+        studentResidentialStatus = student.residentialStatus || null;
+        studentDepartment = student.department || null;
+        studentHifzProgramType = student.hifzProgramType || null;
+        if (student.branch) {
+          try {
+            const Branch = require('../models/Branch');
+            const bDoc = await Branch.findOne({ where: { _id: student.branch } });
+            if (bDoc) studentBranchName = bDoc.name;
+          } catch (bErr) {}
+        }
         if (student.currentEnrollment) {
           const enrollment = await StudentEnrollment.findById(student.currentEnrollment).populate('classLevel');
           if (enrollment && enrollment.classLevel && enrollment.classLevel.educationStream === 'hifz') {
@@ -343,6 +371,10 @@ exports.getMe = async (req, res, next) => {
         permissions, 
         isHifzEligible,
         studentId,
+        residentialStatus: studentResidentialStatus,
+        department: studentDepartment,
+        hifzProgramType: studentHifzProgramType,
+        studentBranchName: studentBranchName || null,
         guardianStudents
       } 
     });

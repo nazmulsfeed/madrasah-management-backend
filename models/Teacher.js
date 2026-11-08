@@ -35,6 +35,11 @@ Teacher.init({
     allowNull: true,
     defaultValue: 'regular',
   },
+  gender: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: 'male',
+  },
   joiningDate: {
     type: DataTypes.DATE,
     allowNull: true,

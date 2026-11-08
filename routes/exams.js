@@ -10,6 +10,9 @@ router.get('/', authorize('super_admin', 'co_super_admin', 'admin', 'principal',
 router.post('/', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'teacher', 'exam.create'), examController.createExam);
 router.patch('/:id', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'teacher', 'exam.update'), examController.updateExam);
 router.delete('/:id', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'exam.delete'), examController.deleteExam);
+router.get('/annual-rankings', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'teacher', 'student', 'guardian', 'exam.view'), examController.getAnnualCombinedRankings);
+router.get('/student-results/:studentId?', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'teacher', 'student', 'guardian', 'exam.view'), examController.getStudentExamResults);
+router.get('/:id/rankings', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'teacher', 'exam.view'), examController.getExamRankings);
 router.get('/marks', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'teacher', 'student', 'guardian', 'exam.grade'), examController.getMarks);
 router.post('/marks', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'teacher', 'exam.grade'), examController.saveMarks);
 

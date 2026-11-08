@@ -11,6 +11,18 @@ exports.getExams = async (req, res, next) => {
   try {
     const filter = { institution: req.user.institution };
     if (req.query.status) filter.status = req.query.status;
+    if (req.query.examCategory && req.query.examCategory !== 'all') {
+      filter.examCategory = req.query.examCategory;
+    }
+    if (req.query.classLevel && req.query.classLevel !== 'all') {
+      filter.classLevel = req.query.classLevel;
+    }
+    if (req.query.termNumber) {
+      filter.termNumber = parseInt(req.query.termNumber, 10);
+    }
+    if (req.query.month && req.query.month !== 'all') {
+      filter.month = req.query.month;
+    }
 
     const exams = await Exam.find(filter)
       .populate('classLevel', 'name code')
@@ -26,7 +38,17 @@ exports.getExams = async (req, res, next) => {
 // @route   POST /api/v1/exams
 exports.createExam = async (req, res, next) => {
   try {
-    const { name, classLevel, startDate, endDate, status } = req.body;
+    const { 
+      name, 
+      classLevel, 
+      startDate, 
+      endDate, 
+      status, 
+      examCategory, 
+      termNumber, 
+      month, 
+      selectedSubjects 
+    } = req.body;
 
     if (!name) {
       return ApiResponse.error(res, 'পরীক্ষার নাম আবশ্যক', 400);
@@ -45,6 +67,10 @@ exports.createExam = async (req, res, next) => {
       startDate: startDate || null,
       endDate: endDate || null,
       status: status || 'upcoming',
+      examCategory: examCategory || 'general',
+      termNumber: termNumber ? parseInt(termNumber, 10) : null,
+      month: month || null,
+      selectedSubjects: Array.isArray(selectedSubjects) ? selectedSubjects : null,
     });
 
     const populated = await Exam.findById(exam._id).populate('classLevel', 'name code');
@@ -138,6 +164,30 @@ exports.saveMarks = async (req, res, next) => {
     const { exam, subject, marks } = req.body;
     // marks is an array: [{ studentId, marksObtained }]
 
+    if (!exam || !subject || !Array.isArray(marks)) {
+      return ApiResponse.error(res, 'পরীক্ষা, বিষয় এবং নম্বরের তথ্য আবশ্যক', 400);
+    }
+
+    const Subject = require('../models/Subject');
+    const subjectDoc = await Subject.findById(subject);
+    const subjectTotalMarks = (subjectDoc && subjectDoc.totalMarks && !isNaN(subjectDoc.totalMarks)) 
+      ? parseFloat(subjectDoc.totalMarks) 
+      : 100;
+
+    // Validate that no mark exceeds subject's total marks
+    for (const m of marks) {
+      if (m.marksObtained !== null && m.marksObtained !== undefined && m.marksObtained !== '') {
+        const score = parseFloat(m.marksObtained);
+        if (score > subjectTotalMarks) {
+          return ApiResponse.error(
+            res, 
+            `প্রাপ্ত নম্বর (${score}) বিষয়ের পূর্ণমান (${subjectTotalMarks})-এর বেশি হতে পারবে না`, 
+            400
+          );
+        }
+      }
+    }
+
     const upsertOps = [];
     const deleteOps = [];
 
@@ -150,13 +200,15 @@ exports.saveMarks = async (req, res, next) => {
         });
       } else {
         const score = parseFloat(m.marksObtained);
+        const percentage = subjectTotalMarks > 0 ? (score / subjectTotalMarks) * 100 : 0;
+        
         let grade = 'F';
-        if (score >= 80) grade = 'A+';
-        else if (score >= 70) grade = 'A';
-        else if (score >= 60) grade = 'A-';
-        else if (score >= 50) grade = 'B';
-        else if (score >= 40) grade = 'C';
-        else if (score >= 33) grade = 'D';
+        if (percentage >= 80) grade = 'A+';
+        else if (percentage >= 70) grade = 'A';
+        else if (percentage >= 60) grade = 'A-';
+        else if (percentage >= 50) grade = 'B';
+        else if (percentage >= 40) grade = 'C';
+        else if (percentage >= 33) grade = 'D';
 
         upsertOps.push({
           updateOne: {
@@ -168,6 +220,7 @@ exports.saveMarks = async (req, res, next) => {
                 subject,
                 student: m.studentId,
                 marksObtained: score,
+                totalMarks: subjectTotalMarks,
                 grade,
                 enteredBy: req.user._id,
               }
@@ -186,6 +239,616 @@ exports.saveMarks = async (req, res, next) => {
     }
 
     ApiResponse.success(res, null, 'নম্বর সফলভাবে সংরক্ষণ করা হয়েছে');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Helper: Calculate rankings for all students in an exam with tie handling
+async function calculateExamRanks(examId, institution) {
+  const allMarks = await MarkEntry.find({ exam: examId, institution });
+  const studentTotals = new Map();
+
+  allMarks.forEach(m => {
+    const sId = String(m.student);
+    if (!studentTotals.has(sId)) {
+      studentTotals.set(sId, {
+        studentId: sId,
+        totalObtained: 0,
+        totalMaxMarks: 0,
+        marksCount: 0
+      });
+    }
+    const rec = studentTotals.get(sId);
+    rec.totalObtained += Number(m.marksObtained) || 0;
+    rec.totalMaxMarks += Number(m.totalMarks) || 100;
+    rec.marksCount += 1;
+  });
+
+  const sortedList = Array.from(studentTotals.values()).sort((a, b) => b.totalObtained - a.totalObtained);
+
+  const ranksMap = new Map();
+  let currentRank = 1;
+  let prevTotal = null;
+
+  sortedList.forEach((item, index) => {
+    if (prevTotal !== null && item.totalObtained === prevTotal) {
+      // Shared rank for identical total scores
+      ranksMap.set(item.studentId, {
+        rank: currentRank,
+        totalObtained: item.totalObtained,
+        totalMaxMarks: item.totalMaxMarks,
+        totalStudents: sortedList.length
+      });
+    } else {
+      currentRank = index + 1;
+      ranksMap.set(item.studentId, {
+        rank: currentRank,
+        totalObtained: item.totalObtained,
+        totalMaxMarks: item.totalMaxMarks,
+        totalStudents: sortedList.length
+      });
+      prevTotal = item.totalObtained;
+    }
+  });
+
+  return { ranksMap, totalStudents: sortedList.length, sortedList };
+}
+
+// @desc    শিক্ষার্থীর ফলাফল ও মেধা পজিশন বিবরণী (Student Result View)
+// @route   GET /api/v1/exams/student-results/:studentId?
+exports.getStudentExamResults = async (req, res, next) => {
+  try {
+    const userType = req.user.userType;
+    let targetStudentId = req.params.studentId || req.query.studentId;
+
+    if (userType === 'student') {
+      const student = await Student.findOne({ user: req.user._id });
+      if (!student) {
+        return ApiResponse.success(res, { results: [] });
+      }
+      targetStudentId = student._id;
+    } else if (userType === 'guardian') {
+      const guardian = await Guardian.findOne({ user: req.user._id });
+      const linked = guardian && guardian.students ? guardian.students.map(s => String(s.student)) : [];
+      if (!targetStudentId) {
+        targetStudentId = linked[0];
+      } else if (!linked.includes(String(targetStudentId))) {
+        return ApiResponse.forbidden(res, 'এই শিক্ষার্থীর ফলাফল দেখার অনুমতি নেই');
+      }
+    }
+
+    if (!targetStudentId) {
+      return ApiResponse.error(res, 'শিক্ষার্থী আইডি আবশ্যক', 400);
+    }
+
+    let studentDoc = null;
+    const cleanId = String(targetStudentId).trim();
+
+    // Check by _id or studentId (human-readable ID like 2026001)
+    studentDoc = await Student.findOne({ _id: cleanId, institution: req.user.institution });
+
+    if (!studentDoc) {
+      studentDoc = await Student.findOne({ studentId: cleanId, institution: req.user.institution });
+    }
+
+    if (!studentDoc) {
+      studentDoc = await Student.findOne({ admissionNumber: cleanId, institution: req.user.institution });
+    }
+
+    if (!studentDoc) {
+      return ApiResponse.notFound(res, 'শিক্ষার্থী পাওয়া যায়নি');
+    }
+
+    // Safely populate user information
+    if (studentDoc.user) {
+      const User = require('../models/User');
+      const u = await User.findById(studentDoc.user);
+      if (u) {
+        studentDoc.user = {
+          _id: u._id,
+          firstName: u.firstName,
+          lastName: u.lastName,
+          fullName: u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim(),
+          avatar: u.avatar || ''
+        };
+      }
+    }
+
+    // Normalize to database _id
+    targetStudentId = studentDoc._id;
+
+    let enrollmentInfo = null;
+    if (studentDoc.currentEnrollment) {
+      const StudentEnrollment = require('../models/StudentEnrollment');
+      const ClassLevel = require('../models/ClassLevel');
+      enrollmentInfo = await StudentEnrollment.findById(studentDoc.currentEnrollment);
+      if (enrollmentInfo && enrollmentInfo.classLevel) {
+        const cl = await ClassLevel.findById(enrollmentInfo.classLevel);
+        if (cl) enrollmentInfo.classLevel = cl;
+      }
+    }
+
+    // Find all mark entries for this student
+    const markFilter = {
+      institution: req.user.institution,
+      student: targetStudentId
+    };
+    if (req.query.examId) {
+      markFilter.exam = req.query.examId;
+    }
+
+    const marks = await MarkEntry.find(markFilter)
+      .populate('subject', 'name code totalMarks')
+      .populate('exam', 'name examCategory termNumber month status startDate endDate selectedSubjects');
+
+    // Group marks by Exam
+    const examMap = new Map();
+    marks.forEach(m => {
+      const mObj = typeof m.toJSON === 'function' ? m.toJSON() : m;
+      if (!mObj.exam) return;
+      const eId = typeof mObj.exam === 'object' ? String(mObj.exam._id) : String(mObj.exam);
+      if (!examMap.has(eId)) {
+        examMap.set(eId, {
+          exam: mObj.exam,
+          subjects: []
+        });
+      }
+      examMap.get(eId).subjects.push(mObj);
+    });
+
+    const results = [];
+
+    for (const [examId, data] of examMap.entries()) {
+      const { exam, subjects } = data;
+      const { ranksMap, totalStudents } = await calculateExamRanks(examId, req.user.institution);
+      const studentRankInfo = ranksMap.get(String(targetStudentId)) || { rank: null, totalStudents };
+
+      let totalObtained = 0;
+      let totalMaxMarks = 0;
+
+      // Filter subjects if exam is monthly test and has selectedSubjects
+      const isMonthly = exam.examCategory === 'monthly_test';
+      const allowedSubjectIds = Array.isArray(exam.selectedSubjects) ? exam.selectedSubjects.map(String) : null;
+
+      const formattedSubjects = subjects
+        .filter(m => {
+          if (isMonthly && allowedSubjectIds && allowedSubjectIds.length > 0) {
+            const subId = m.subject && typeof m.subject === 'object' ? String(m.subject._id) : String(m.subject);
+            return allowedSubjectIds.includes(subId);
+          }
+          return true;
+        })
+        .map(m => {
+          const subObj = m.subject && typeof m.subject === 'object' ? m.subject : {};
+          const score = Number(m.marksObtained) || 0;
+          const subTotal = Number(m.totalMarks) || (Number(subObj.totalMarks) || 100);
+          totalObtained += score;
+          totalMaxMarks += subTotal;
+
+          const pct = subTotal > 0 ? Math.round((score / subTotal) * 100) : 0;
+          const letterGrade = m.grade || (pct >= 80 ? 'A+' : pct >= 70 ? 'A' : pct >= 60 ? 'A-' : pct >= 50 ? 'B' : pct >= 40 ? 'C' : pct >= 33 ? 'D' : 'F');
+          const gradePoint = pct >= 80 ? 5.0 : pct >= 70 ? 4.0 : pct >= 60 ? 3.5 : pct >= 50 ? 3.0 : pct >= 40 ? 2.0 : pct >= 33 ? 1.0 : 0.0;
+          return {
+            markId: m._id,
+            subjectId: subObj._id || m.subject,
+            subjectName: subObj.name || 'বিষয়',
+            subjectCode: subObj.code || '',
+            marksObtained: score,
+            totalMarks: subTotal,
+            percentage: pct,
+            grade: letterGrade,
+            gradePoint,
+            isPassed: pct >= 33
+          };
+        });
+
+      const overallPercentage = totalMaxMarks > 0 ? Math.round((totalObtained / totalMaxMarks) * 100) : 0;
+      let overallGrade = 'F';
+      if (overallPercentage >= 80) overallGrade = 'A+';
+      else if (overallPercentage >= 70) overallGrade = 'A';
+      else if (overallPercentage >= 60) overallGrade = 'A-';
+      else if (overallPercentage >= 50) overallGrade = 'B';
+      else if (overallPercentage >= 40) overallGrade = 'C';
+      else if (overallPercentage >= 33) overallGrade = 'D';
+
+      const hasFail = formattedSubjects.some(s => !s.isPassed);
+      const calculatedGpa = formattedSubjects.length > 0
+        ? (hasFail ? 0.00 : Number((formattedSubjects.reduce((acc, s) => acc + s.gradePoint, 0) / formattedSubjects.length).toFixed(2)))
+        : 0.00;
+
+      results.push({
+        examId: typeof exam === 'object' ? exam._id : examId,
+        examName: exam.name || 'পরীক্ষা',
+        examCategory: exam.examCategory || 'general',
+        termNumber: exam.termNumber,
+        month: exam.month,
+        subjects: formattedSubjects,
+        totalObtained,
+        totalMaxMarks,
+        overallPercentage,
+        overallGrade,
+        gpa: calculatedGpa,
+        isPassed: !hasFail,
+        position: studentRankInfo.rank,
+        totalStudents: studentRankInfo.totalStudents
+      });
+    }
+
+    // Calculate annual cumulative summary for this student if enrolled
+    let annualCumulative = null;
+    try {
+      const enrolledClass = studentDoc.currentEnrollment?.classLevel;
+      if (enrolledClass) {
+        const classId = typeof enrolledClass === 'object' ? enrolledClass._id : enrolledClass;
+        const annualData = await calculateAnnualCombinedRanks(classId, req.user.institution);
+        const myRankInfo = annualData.rankings.find(r => r.studentId === String(studentDoc._id));
+        if (myRankInfo) {
+          annualCumulative = {
+            term1: { name: annualData.termExams.term1?.name || '১ম সাময়িক', obtained: myRankInfo.term1Obtained, max: myRankInfo.term1Max },
+            term2: { name: annualData.termExams.term2?.name || '২য় সাময়িক', obtained: myRankInfo.term2Obtained, max: myRankInfo.term2Max },
+            term3: { name: annualData.termExams.term3?.name || '৩য় সাময়িক', obtained: myRankInfo.term3Obtained, max: myRankInfo.term3Max },
+            grandTotalObtained: myRankInfo.grandTotalObtained,
+            grandTotalMaxMarks: myRankInfo.grandTotalMaxMarks,
+            overallPercentage: myRankInfo.overallPercentage,
+            overallGrade: myRankInfo.overallGrade,
+            rank: myRankInfo.rank,
+            rankText: myRankInfo.rankText,
+            totalStudents: annualData.totalStudents
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('Annual summary calculation warning:', e);
+    }
+
+    let resolvedBranchName = '';
+    if (studentDoc.branch) {
+      if (/^[0-9a-fA-F-]{24,36}$/.test(String(studentDoc.branch))) {
+        try {
+          const Branch = require('../models/Branch');
+          const bDoc = await Branch.findOne({ _id: studentDoc.branch });
+          resolvedBranchName = bDoc ? bDoc.name : '';
+        } catch (_) {}
+      } else {
+        resolvedBranchName = studentDoc.branch;
+      }
+    }
+
+    ApiResponse.success(res, {
+      student: {
+        _id: studentDoc._id,
+        studentId: studentDoc.studentId,
+        name: studentDoc.user?.fullName || `${studentDoc.user?.firstName || ''} ${studentDoc.user?.lastName || ''}`.trim(),
+        avatar: studentDoc.user?.avatar || '',
+        rollNumber: enrollmentInfo?.rollNumber || studentDoc.currentEnrollment?.rollNumber || '',
+        className: enrollmentInfo?.classLevel?.name || '',
+        section: enrollmentInfo?.section || '',
+        department: studentDoc.department || '',
+        branch: resolvedBranchName || ''
+      },
+      results,
+      annualCumulative
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+// Helper to calculate Annual Combined Cumulative Ranks (Term 1 + Term 2 + Term 3)
+async function calculateAnnualCombinedRanks(classLevelId, institution, section = null) {
+  const Exam = require('../models/Exam');
+  const MarkEntry = require('../models/MarkEntry');
+  const StudentEnrollment = require('../models/StudentEnrollment');
+
+  // 1. Find all 3 Term Exams for this class
+  const termExams = await Exam.find({
+    institution,
+    classLevel: classLevelId,
+    examCategory: 'term_exam'
+  }).sort({ termNumber: 1, startDate: 1 });
+
+  const term1Exam = termExams.find(e => Number(e.termNumber) === 1);
+  const term2Exam = termExams.find(e => Number(e.termNumber) === 2);
+  const term3Exam = termExams.find(e => Number(e.termNumber) === 3);
+
+  const termExamIds = termExams.map(e => e._id);
+
+  // 2. Find enrolled active students in this class
+  const enrollFilter = {
+    institution,
+    classLevel: classLevelId,
+    enrollmentStatus: 'active'
+  };
+  if (section && section !== 'all') {
+    enrollFilter.section = section;
+  }
+
+  const enrollments = await StudentEnrollment.findAll({
+    where: enrollFilter,
+    order: [['rollNumber', 'ASC']]
+  });
+
+  const studentIds = enrollments.map(e => e.student).filter(Boolean);
+
+  // 3. Find marks for these term exams
+  let marks = [];
+  if (termExamIds.length > 0 && studentIds.length > 0) {
+    marks = await MarkEntry.find({
+      institution,
+      exam: { $in: termExamIds },
+      student: { $in: studentIds }
+    }).populate('subject', 'name totalMarks');
+  }
+
+  // Group marks by student and term
+  const studentTermData = new Map();
+
+  studentIds.forEach(id => {
+    studentTermData.set(String(id), {
+      studentId: String(id),
+      term1Obtained: 0,
+      term1Max: 0,
+      term1Count: 0,
+      term2Obtained: 0,
+      term2Max: 0,
+      term2Count: 0,
+      term3Obtained: 0,
+      term3Max: 0,
+      term3Count: 0,
+      grandTotalObtained: 0,
+      grandTotalMaxMarks: 0,
+      hasAnyMarks: false
+    });
+  });
+
+  marks.forEach(m => {
+    const sId = String(m.student);
+    if (!studentTermData.has(sId)) return;
+    const rec = studentTermData.get(sId);
+    const score = Number(m.marksObtained) || 0;
+    const max = Number(m.totalMarks) || (Number(m.subject?.totalMarks) || 100);
+
+    const examIdStr = String(m.exam);
+    if (term1Exam && String(term1Exam._id) === examIdStr) {
+      rec.term1Obtained += score;
+      rec.term1Max += max;
+      rec.term1Count += 1;
+      rec.hasAnyMarks = true;
+    } else if (term2Exam && String(term2Exam._id) === examIdStr) {
+      rec.term2Obtained += score;
+      rec.term2Max += max;
+      rec.term2Count += 1;
+      rec.hasAnyMarks = true;
+    } else if (term3Exam && String(term3Exam._id) === examIdStr) {
+      rec.term3Obtained += score;
+      rec.term3Max += max;
+      rec.term3Count += 1;
+      rec.hasAnyMarks = true;
+    }
+  });
+
+  // Calculate grand totals & percentage
+  const studentList = Array.from(studentTermData.values()).map(rec => {
+    rec.grandTotalObtained = rec.term1Obtained + rec.term2Obtained + rec.term3Obtained;
+    rec.grandTotalMaxMarks = rec.term1Max + rec.term2Max + rec.term3Max;
+    rec.overallPercentage = rec.grandTotalMaxMarks > 0 
+      ? Math.round((rec.grandTotalObtained / rec.grandTotalMaxMarks) * 100) 
+      : 0;
+
+    let grade = 'F';
+    if (rec.overallPercentage >= 80) grade = 'A+';
+    else if (rec.overallPercentage >= 70) grade = 'A';
+    else if (rec.overallPercentage >= 60) grade = 'A-';
+    else if (rec.overallPercentage >= 50) grade = 'B';
+    else if (rec.overallPercentage >= 40) grade = 'C';
+    else if (rec.overallPercentage >= 33) grade = 'D';
+    rec.overallGrade = rec.hasAnyMarks ? grade : '—';
+    return rec;
+  });
+
+  // Enrollment map for rolls
+  const enrollMap = new Map();
+  enrollments.forEach(e => {
+    enrollMap.set(String(e.student), typeof e.toJSON === 'function' ? e.toJSON() : e);
+  });
+
+  studentList.sort((a, b) => {
+    if (a.hasAnyMarks && !b.hasAnyMarks) return -1;
+    if (!a.hasAnyMarks && b.hasAnyMarks) return 1;
+    if (b.grandTotalObtained !== a.grandTotalObtained) {
+      return b.grandTotalObtained - a.grandTotalObtained;
+    }
+    const rollA = parseInt(enrollMap.get(a.studentId)?.rollNumber) || 999;
+    const rollB = parseInt(enrollMap.get(b.studentId)?.rollNumber) || 999;
+    return rollA - rollB;
+  });
+
+  // Assign Shared Rankings
+  let currentRank = 1;
+  let prevTotal = null;
+  let studentsWithMarksCount = 0;
+
+  const rankedList = studentList.map((item) => {
+    if (!item.hasAnyMarks) {
+      return {
+        ...item,
+        rank: null,
+        rankText: 'অনুপস্থিত'
+      };
+    }
+
+    studentsWithMarksCount += 1;
+    if (prevTotal !== null && item.grandTotalObtained === prevTotal) {
+      // Shared Rank
+    } else {
+      currentRank = studentsWithMarksCount;
+      prevTotal = item.grandTotalObtained;
+    }
+
+    const rankNum = currentRank;
+    const isTie = studentList.filter(s => s.hasAnyMarks && s.grandTotalObtained === item.grandTotalObtained).length > 1;
+
+    let rankText = '';
+    if (rankNum === 1) rankText = isTie ? '🥇 ১ম স্থান (যৌথ)' : '🥇 ১ম স্থান';
+    else if (rankNum === 2) rankText = isTie ? '🥈 ২য় স্থান (যৌথ)' : '🥈 ২য় স্থান';
+    else if (rankNum === 3) rankText = isTie ? '🥉 ৩য় স্থান (যৌথ)' : '🥉 ৩য় স্থান';
+    else if (rankNum === 4) rankText = isTie ? '৪র্থ (যৌথ)' : '৪র্থ';
+    else if (rankNum === 5) rankText = isTie ? '৫ম (যৌথ)' : '৫ম';
+    else if (rankNum === 6) rankText = isTie ? '৬ষ্ঠ (যৌথ)' : '৬ষ্ঠ';
+    else if (rankNum === 7) rankText = isTie ? '৭ম (যৌথ)' : '৭ম';
+    else if (rankNum === 8) rankText = isTie ? '৮ম (যৌথ)' : '৮ম';
+    else if (rankNum === 9) rankText = isTie ? '৯ম (যৌথ)' : '৯ম';
+    else if (rankNum === 10) rankText = isTie ? '১০ম (যৌথ)' : '১০ম';
+    else rankText = isTie ? `${rankNum}তম (যৌথ)` : `${rankNum}তম`;
+
+    return {
+      ...item,
+      rank: rankNum,
+      rankText,
+      isTie
+    };
+  });
+
+  return {
+    termExams: {
+      term1: term1Exam ? { _id: term1Exam._id, name: term1Exam.name } : null,
+      term2: term2Exam ? { _id: term2Exam._id, name: term2Exam.name } : null,
+      term3: term3Exam ? { _id: term3Exam._id, name: term3Exam.name } : null,
+    },
+    rankings: rankedList,
+    totalStudents: studentList.length,
+    enrollMap
+  };
+}
+
+// @desc    বার্ষিক সমন্বিত মেধা তালিকা (Combined Cumulative Annual Merit List)
+// @route   GET /api/v1/exams/annual-rankings
+exports.getAnnualCombinedRankings = async (req, res, next) => {
+  try {
+    const { classLevel, section } = req.query;
+    if (!classLevel) {
+      return ApiResponse.error(res, 'শ্রেণি নির্বাচন আবশ্যক', 400);
+    }
+
+    const ClassLevel = require('../models/ClassLevel');
+    const classDoc = await ClassLevel.findById(classLevel);
+    if (!classDoc) {
+      return ApiResponse.notFound(res, 'শ্রেণি পাওয়া যায়নি');
+    }
+
+    const { termExams, rankings, totalStudents, enrollMap } = await calculateAnnualCombinedRanks(
+      classLevel,
+      req.user.institution,
+      section
+    );
+
+    const studentIds = rankings.map(r => r.studentId);
+    const students = await Student.find({
+      _id: { $in: studentIds }
+    }).populate('user', 'firstName lastName fullName phone');
+
+    const sMap = new Map();
+    students.forEach(s => sMap.set(String(s._id), s));
+
+    const formattedRankings = rankings.map(r => {
+      const sDoc = sMap.get(r.studentId);
+      const enr = enrollMap.get(r.studentId);
+      const u = sDoc?.user || {};
+      const name = u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim() || sDoc?.studentId || 'শিক্ষার্থী';
+
+      return {
+        ...r,
+        studentCode: sDoc?.studentId || '',
+        name,
+        rollNumber: enr?.rollNumber || '',
+        section: enr?.section || '',
+        branch: sDoc?.branch || enr?.branch || ''
+      };
+    });
+
+    ApiResponse.success(res, {
+      classLevel: {
+        _id: classDoc._id,
+        name: classDoc.name,
+        code: classDoc.code
+      },
+      termExams,
+      rankings: formattedRankings,
+      totalStudents
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    পরীক্ষার মেধা তালিকা ও পজিশন (Rankings View)
+// @route   GET /api/v1/exams/:id/rankings
+exports.getExamRankings = async (req, res, next) => {
+  try {
+    const exam = await Exam.findById(req.params.id).populate('classLevel', 'name');
+    if (!exam) {
+      return ApiResponse.notFound(res, 'পরীক্ষা পাওয়া যায়নি');
+    }
+
+    const { sortedList } = await calculateExamRanks(exam._id, req.user.institution);
+    const studentIds = sortedList.map(s => s.studentId);
+
+    const students = await Student.find({
+      _id: { $in: studentIds }
+    }).populate('user', 'firstName lastName fullName phone').populate('currentEnrollment');
+
+    const studentMap = new Map();
+    students.forEach(s => {
+      studentMap.set(String(s._id), s);
+    });
+
+    let currentRank = 1;
+    let prevTotal = null;
+
+    const rankings = sortedList.map((item, index) => {
+      const sDoc = studentMap.get(item.studentId);
+      if (prevTotal !== null && item.totalObtained === prevTotal) {
+        // Shared rank
+      } else {
+        currentRank = index + 1;
+        prevTotal = item.totalObtained;
+      }
+
+      const pct = item.totalMaxMarks > 0 ? Math.round((item.totalObtained / item.totalMaxMarks) * 100) : 0;
+      let grade = 'F';
+      if (pct >= 80) grade = 'A+';
+      else if (pct >= 70) grade = 'A';
+      else if (pct >= 60) grade = 'A-';
+      else if (pct >= 50) grade = 'B';
+      else if (pct >= 40) grade = 'C';
+      else if (pct >= 33) grade = 'D';
+
+      return {
+        rank: currentRank,
+        studentId: item.studentId,
+        studentCode: sDoc?.studentId || '',
+        name: sDoc?.user?.fullName || `${sDoc?.user?.firstName || ''} ${sDoc?.user?.lastName || ''}`.trim() || 'শিক্ষার্থী',
+        rollNumber: sDoc?.currentEnrollment?.rollNumber || '',
+        totalObtained: item.totalObtained,
+        totalMaxMarks: item.totalMaxMarks,
+        percentage: pct,
+        grade
+      };
+    });
+
+    ApiResponse.success(res, {
+      exam: {
+        _id: exam._id,
+        name: exam.name,
+        examCategory: exam.examCategory,
+        termNumber: exam.termNumber,
+        month: exam.month,
+        className: exam.classLevel?.name || ''
+      },
+      rankings
+    });
   } catch (error) {
     next(error);
   }
