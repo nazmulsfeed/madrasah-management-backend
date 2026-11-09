@@ -1415,16 +1415,22 @@ exports.getSubjects = async (req, res, next) => {
     
     let filteredSubjects = subjects;
     if (req.query.classLevel) {
-      const targetClassLevel = req.query.classLevel;
+      const targetClassLevel = String(req.query.classLevel).trim();
       filteredSubjects = subjects.filter(sub => {
         let list = sub.classLevels;
         if (typeof list === 'string') {
           try { list = JSON.parse(list); } catch(_) { list = []; }
         }
         if (!Array.isArray(list) || list.length === 0) {
-          return true; // general subject
+          return false; // Strict: only assigned subjects for this classLevel
         }
-        return list.includes(targetClassLevel);
+        return list.some(item => {
+          if (!item) return false;
+          if (typeof item === 'object') {
+            return String(item._id) === targetClassLevel || String(item.name) === targetClassLevel;
+          }
+          return String(item) === targetClassLevel;
+        });
       });
     }
 

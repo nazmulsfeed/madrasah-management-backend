@@ -169,7 +169,44 @@ exports.saveMarks = async (req, res, next) => {
     }
 
     const Subject = require('../models/Subject');
-    const subjectDoc = await Subject.findById(subject);
+    const subjectDoc = await Subject.findOne({ _id: subject, institution: req.user.institution });
+    if (!subjectDoc) {
+      return ApiResponse.error(res, 'বিষয় পাওয়া যায়নি', 404);
+    }
+
+    const examDoc = await Exam.findOne({ _id: exam, institution: req.user.institution });
+    if (!examDoc) {
+      return ApiResponse.error(res, 'পরীক্ষা পাওয়া যায়নি', 404);
+    }
+
+    // Backend validation: Verify subject is assigned to this exam's class
+    if (examDoc.classLevel) {
+      const targetClass = String(examDoc.classLevel);
+      let assignedClasses = subjectDoc.classLevels;
+      if (typeof assignedClasses === 'string') {
+        try { assignedClasses = JSON.parse(assignedClasses); } catch(_) { assignedClasses = []; }
+      }
+      if (!Array.isArray(assignedClasses) || assignedClasses.length === 0) {
+        return ApiResponse.error(res, 'এই বিষয়টি কোনো শ্রেণির জন্য নির্ধারিত (Assign) নয়', 400);
+      }
+      const isAssigned = assignedClasses.some(c => {
+        if (!c) return false;
+        if (typeof c === 'object') return String(c._id) === targetClass || String(c.name) === targetClass;
+        return String(c) === targetClass;
+      });
+      if (!isAssigned) {
+        return ApiResponse.error(res, 'এই বিষয়টি সংশ্লিষ্ট শ্রেণির পরীক্ষার জন্য নির্ধারিত নয়', 400);
+      }
+    }
+
+    // Backend validation: If monthly test with 4 selected subjects, ensure subject is in selectedSubjects
+    if (examDoc.examCategory === 'monthly_test' && Array.isArray(examDoc.selectedSubjects) && examDoc.selectedSubjects.length > 0) {
+      const allowedSubs = examDoc.selectedSubjects.map(s => typeof s === 'object' ? String(s._id) : String(s));
+      if (!allowedSubs.includes(String(subjectDoc._id))) {
+        return ApiResponse.error(res, 'এই বিষয়টি এই মাসিক পরীক্ষার নির্ধারিত ৪টি বিষয়ের অন্তর্ভুক্ত নয়', 400);
+      }
+    }
+
     const subjectTotalMarks = (subjectDoc && subjectDoc.totalMarks && !isNaN(subjectDoc.totalMarks)) 
       ? parseFloat(subjectDoc.totalMarks) 
       : 100;
@@ -248,21 +285,33 @@ exports.saveMarks = async (req, res, next) => {
 async function calculateExamRanks(examId, institution) {
   const allMarks = await MarkEntry.find({ exam: examId, institution });
   const studentTotals = new Map();
+  const distinctSubjectIds = new Set();
 
   allMarks.forEach(m => {
     const sId = String(m.student);
+    const subId = String(m.subject);
+    if (m.marksObtained !== null && m.marksObtained !== undefined) {
+      distinctSubjectIds.add(subId);
+    }
+
     if (!studentTotals.has(sId)) {
       studentTotals.set(sId, {
         studentId: sId,
         totalObtained: 0,
         totalMaxMarks: 0,
-        marksCount: 0
+        marksCount: 0,
+        subjectMarks: {}
       });
     }
     const rec = studentTotals.get(sId);
     rec.totalObtained += Number(m.marksObtained) || 0;
     rec.totalMaxMarks += Number(m.totalMarks) || 100;
     rec.marksCount += 1;
+    rec.subjectMarks[subId] = {
+      marksObtained: m.marksObtained,
+      totalMarks: m.totalMarks || 100,
+      grade: m.grade
+    };
   });
 
   const sortedList = Array.from(studentTotals.values()).sort((a, b) => b.totalObtained - a.totalObtained);
@@ -292,7 +341,7 @@ async function calculateExamRanks(examId, institution) {
     }
   });
 
-  return { ranksMap, totalStudents: sortedList.length, sortedList };
+  return { ranksMap, totalStudents: sortedList.length, sortedList, distinctSubjectIds: Array.from(distinctSubjectIds) };
 }
 
 // @desc    শিক্ষার্থীর ফলাফল ও মেধা পজিশন বিবরণী (Student Result View)
@@ -792,7 +841,31 @@ exports.getExamRankings = async (req, res, next) => {
       return ApiResponse.notFound(res, 'পরীক্ষা পাওয়া যায়নি');
     }
 
-    const { sortedList } = await calculateExamRanks(exam._id, req.user.institution);
+    const { sortedList, distinctSubjectIds } = await calculateExamRanks(exam._id, req.user.institution);
+
+    // Fetch subjects that have marks entered for this exam
+    const Subject = require('../models/Subject');
+    let evaluatedSubjects = [];
+    if (distinctSubjectIds && distinctSubjectIds.length > 0) {
+      evaluatedSubjects = await Subject.find({
+        _id: { $in: distinctSubjectIds },
+        institution: req.user.institution
+      });
+    }
+
+    // Filter evaluated subjects to ensure they belong to this exam's class
+    if (exam.classLevel) {
+      const targetClass = String(exam.classLevel?._id || exam.classLevel);
+      evaluatedSubjects = evaluatedSubjects.filter(sub => {
+        let list = sub.classLevels;
+        if (typeof list === 'string') {
+          try { list = JSON.parse(list); } catch(_) { list = []; }
+        }
+        if (!Array.isArray(list)) return false;
+        return list.some(c => (typeof c === 'object' && c !== null ? String(c._id) : String(c)) === targetClass);
+      });
+    }
+
     const studentIds = sortedList.map(s => s.studentId);
 
     const students = await Student.find({
@@ -816,7 +889,7 @@ exports.getExamRankings = async (req, res, next) => {
         prevTotal = item.totalObtained;
       }
 
-      const pct = item.totalMaxMarks > 0 ? Math.round((item.totalObtained / item.totalMaxMarks) * 100) : 0;
+      const pct = item.totalMaxMarks > 0 ? Number(((item.totalObtained / item.totalMaxMarks) * 100).toFixed(1)) : 0;
       let grade = 'F';
       if (pct >= 80) grade = 'A+';
       else if (pct >= 70) grade = 'A';
@@ -831,10 +904,12 @@ exports.getExamRankings = async (req, res, next) => {
         studentCode: sDoc?.studentId || '',
         name: sDoc?.user?.fullName || `${sDoc?.user?.firstName || ''} ${sDoc?.user?.lastName || ''}`.trim() || 'শিক্ষার্থী',
         rollNumber: sDoc?.currentEnrollment?.rollNumber || '',
+        subjectMarks: item.subjectMarks || {},
         totalObtained: item.totalObtained,
         totalMaxMarks: item.totalMaxMarks,
         percentage: pct,
-        grade
+        grade,
+        isIncomplete: evaluatedSubjects.length > 0 && (item.marksCount < evaluatedSubjects.length)
       };
     });
 
@@ -847,6 +922,12 @@ exports.getExamRankings = async (req, res, next) => {
         month: exam.month,
         className: exam.classLevel?.name || ''
       },
+      evaluatedSubjects: evaluatedSubjects.map(s => ({
+        _id: s._id,
+        name: s.name,
+        code: s.code,
+        totalMarks: Number(s.totalMarks) || 100
+      })),
       rankings
     });
   } catch (error) {
