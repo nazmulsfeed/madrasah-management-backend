@@ -113,7 +113,7 @@ exports.getMarks = async (req, res, next) => {
 
     const marks = await MarkEntry.find(filter)
       .populate('student', 'studentId user currentEnrollment')
-      .populate('subject', 'name code')
+      .populate('subject', 'name code totalMarks')
       .populate('exam', 'name');
 
     // Enrich marks with student user name and enrollment info
