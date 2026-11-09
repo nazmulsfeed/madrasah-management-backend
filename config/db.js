@@ -292,6 +292,11 @@ const connectDB = async () => {
         await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `deviceSyncedDevices` TEXT NULL");
         console.log("✅ Added deviceSyncedDevices column to teachers table");
       }
+      const [markBreakdownCol] = await sequelize.query("SHOW COLUMNS FROM `markentrys` LIKE 'breakdown'");
+      if (!markBreakdownCol || markBreakdownCol.length === 0) {
+        await sequelize.query("ALTER TABLE `markentrys` ADD COLUMN `breakdown` JSON NULL");
+        console.log("✅ Added breakdown column to markentrys table");
+      }
       // Create biometric_devices and device_commands tables safely
       await sequelize.query(`
         CREATE TABLE IF NOT EXISTS \`biometric_devices\` (

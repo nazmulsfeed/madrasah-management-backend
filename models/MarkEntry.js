@@ -46,6 +46,10 @@ MarkEntry.init({
     type: DataTypes.STRING,
     allowNull: true,
   },
+  breakdown: {
+    type: DataTypes.JSON,
+    allowNull: true,
+  },
   status: {
     type: DataTypes.STRING,
     allowNull: true,

@@ -259,6 +259,7 @@ exports.saveMarks = async (req, res, next) => {
                 marksObtained: score,
                 totalMarks: subjectTotalMarks,
                 grade,
+                breakdown: m.breakdown || null,
                 enteredBy: req.user._id,
               }
             },
