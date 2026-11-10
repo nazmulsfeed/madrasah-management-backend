@@ -86,6 +86,29 @@ const connectDB = async () => {
         WHERE t.createdBy IS NULL OR t.createdBy = ''
       `).catch(() => {});
       await sequelize.query("CREATE TABLE IF NOT EXISTS `notice_reads` (`id` INT AUTO_INCREMENT PRIMARY KEY, `_id` CHAR(36) NOT NULL, `notice` VARCHAR(255) NOT NULL, `user` VARCHAR(255) NOT NULL, `readAt` DATETIME DEFAULT CURRENT_TIMESTAMP, `createdAt` DATETIME NOT NULL, `updatedAt` DATETIME NOT NULL, UNIQUE KEY `uniq_notice_user` (`notice`, `user`), KEY `idx_user` (`user`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci").catch(() => {});
+      await sequelize.query(`
+        CREATE TABLE IF NOT EXISTS \`exam_routines\` (
+          \`_id\` CHAR(36) NOT NULL PRIMARY KEY,
+          \`institution\` VARCHAR(255) NOT NULL,
+          \`academicYear\` VARCHAR(255) NULL,
+          \`exam\` VARCHAR(255) NULL,
+          \`examName\` VARCHAR(255) NULL,
+          \`classLevel\` VARCHAR(255) NULL,
+          \`className\` VARCHAR(255) NULL,
+          \`stream\` VARCHAR(50) NOT NULL DEFAULT 'all',
+          \`title\` VARCHAR(255) NOT NULL,
+          \`status\` VARCHAR(50) NOT NULL DEFAULT 'published',
+          \`instructions\` TEXT NULL,
+          \`schedule\` JSON NULL,
+          \`createdBy\` VARCHAR(255) NULL,
+          \`createdAt\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          \`updatedAt\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          KEY \`idx_institution\` (\`institution\`),
+          KEY \`idx_exam\` (\`exam\`),
+          KEY \`idx_classLevel\` (\`classLevel\`),
+          KEY \`idx_stream\` (\`stream\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `).catch(() => {});
     } catch (migErr) {}
 
     // Wrap toJSON to handle populated mongooseCompat associations & run associations

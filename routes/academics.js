@@ -8,8 +8,8 @@ const { authorize } = require('../middleware/rbac');
 router.get('/public/timetable', academicsController.getPublicTimetable);
 router.get('/public/calendar', academicsController.getPublicCalendar);
 
-// Protected endpoints (Admins and Principals only)
-router.put('/timetable', protect, authorize('super_admin', 'co_super_admin', 'admin', 'principal'), academicsController.saveTimetable);
-router.put('/calendar', protect, authorize('super_admin', 'co_super_admin', 'admin', 'principal'), academicsController.saveCalendar);
+// Protected endpoints (Admins and Principals or users with academic.manage permission)
+router.put('/timetable', protect, authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'academic.manage', 'routine.update'), academicsController.saveTimetable);
+router.put('/calendar', protect, authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'academic.manage'), academicsController.saveCalendar);
 
 module.exports = router;

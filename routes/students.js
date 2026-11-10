@@ -14,18 +14,18 @@ router.delete('/classes/:id', authorize('super_admin', 'co_super_admin', 'admin'
 router.get('/sections', studentController.getSections);
 router.get('/subjects', studentController.getSubjects);
 router.get('/academic-years', studentController.getAcademicYears);
-router.post('/academic-years', authorize('super_admin', 'co_super_admin', 'admin', 'principal'), studentController.createAcademicYear);
-router.patch('/academic-years/:id', authorize('super_admin', 'co_super_admin', 'admin', 'principal'), studentController.updateAcademicYear);
-router.delete('/academic-years/:id', authorize('super_admin', 'co_super_admin', 'admin', 'principal'), studentController.deleteAcademicYear);
+router.post('/academic-years', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'academic.manage'), studentController.createAcademicYear);
+router.patch('/academic-years/:id', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'academic.manage'), studentController.updateAcademicYear);
+router.delete('/academic-years/:id', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'academic.manage'), studentController.deleteAcademicYear);
 router.get('/promotion-candidates', studentController.getPromotionCandidates);
 router.get('/next-roll', studentController.getNextRollNumber);
 router.get('/next-student-id', studentController.getNextStudentId);
 router.get('/branches', studentController.getBranches);
 router.post('/promote', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'student.promote'), studentController.promoteStudents);
-router.post('/subjects', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'subject.create'), studentController.createSubject);
-router.patch('/subjects/:id', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'subject.update'), studentController.updateSubject);
-router.delete('/subjects/:id', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'subject.delete'), studentController.deleteSubject);
-router.post('/class-subjects', authorize('super_admin', 'co_super_admin', 'admin', 'principal'), studentController.updateClassSubjects);
+router.post('/subjects', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'subject.create', 'academic.manage'), studentController.createSubject);
+router.patch('/subjects/:id', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'subject.update', 'academic.manage'), studentController.updateSubject);
+router.delete('/subjects/:id', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'subject.delete', 'academic.manage'), studentController.deleteSubject);
+router.post('/class-subjects', authorize('super_admin', 'co_super_admin', 'admin', 'principal', 'academic.manage'), studentController.updateClassSubjects);
 
 router
   .route('/')

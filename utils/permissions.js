@@ -75,7 +75,8 @@ const permissionCategories = [
       { key: 'routine.view', label: 'View Class Routine' },
       { key: 'routine.create', label: 'Create Routine' },
       { key: 'routine.update', label: 'Update Routine' },
-      { key: 'routine.delete', label: 'Delete Routine' }
+      { key: 'routine.delete', label: 'Delete Routine' },
+      { key: 'academic.manage', label: 'Academic Management (অ্যাকাডেমিক সেটিংস ও রুটিন ব্যবস্থাপনা)' }
     ]
   },
   {
@@ -330,12 +331,12 @@ const defaultRolePermissions = {
   teacher: getPermissionsForKeys([
     'student.view', 'attendance.view', 'attendance.create',
     'homework.view', 'homework.create', 'homework.update', 'homework.delete',
-    'exam.view', 'exam.grade', 'notice.view', 'messaging.use'
+    'exam.view', 'exam.grade', 'notice.view', 'messaging.use', 'academic.manage'
   ]),
   hifz_teacher: getPermissionsForKeys([
     'student.view', 'attendance.view', 'attendance.create',
     'homework.view', 'homework.create', 'hifz.view', 'hifz.manage',
-    'notice.view', 'messaging.use'
+    'notice.view', 'messaging.use', 'academic.manage'
   ]),
   accountant: getPermissionsForKeys([
     'student.view', 'fee.view', 'student_fee.view', 'student_fee.adjust',

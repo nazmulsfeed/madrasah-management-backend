@@ -24,6 +24,7 @@ require('./models/HomeworkSubmission');
 require('./models/RolePermission');
 
 require('./models/Exam');
+require('./models/ExamRoutine');
 require('./models/MarkEntry');
 require('./models/HifzDailyProgress');
 

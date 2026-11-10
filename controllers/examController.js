@@ -5,6 +5,13 @@ const Student = require('../models/Student');
 const Guardian = require('../models/Guardian');
 const ApiResponse = require('../utils/apiResponse');
 
+// Helper: Convert Bengali digits to English digits
+function normalizeBnNumber(val) {
+  if (val === null || val === undefined) return '';
+  const bnToEnMap = { '০': '0', '১': '1', '২': '2', '৩': '3', '৪': '4', '৫': '5', '৬': '6', '৭': '7', '৮': '8', '৯': '9' };
+  return String(val).replace(/[০-৯]/g, d => bnToEnMap[d]);
+}
+
 // @desc    সকল পরীক্ষা তালিকা
 // @route   GET /api/v1/exams
 exports.getExams = async (req, res, next) => {
@@ -151,7 +158,10 @@ exports.getMarks = async (req, res, next) => {
       return markObj;
     }));
 
-    ApiResponse.success(res, { marks: enrichedMarks });
+    // Filter out deleted students if any
+    const validMarks = enrichedMarks.filter(m => m.student && !m.student.isDeleted);
+
+    ApiResponse.success(res, { marks: validMarks });
   } catch (error) {
     next(error);
   }
@@ -211,10 +221,14 @@ exports.saveMarks = async (req, res, next) => {
       ? parseFloat(subjectDoc.totalMarks) 
       : 100;
 
-    // Validate that no mark exceeds subject's total marks
+    // Validate and normalize marks
     for (const m of marks) {
       if (m.marksObtained !== null && m.marksObtained !== undefined && m.marksObtained !== '') {
-        const score = parseFloat(m.marksObtained);
+        const rawScore = normalizeBnNumber(m.marksObtained);
+        const score = parseFloat(rawScore);
+        if (isNaN(score)) {
+          return ApiResponse.error(res, `অকার্যকর নম্বর ইনপুট (${m.marksObtained})`, 400);
+        }
         if (score > subjectTotalMarks) {
           return ApiResponse.error(
             res, 
@@ -222,6 +236,7 @@ exports.saveMarks = async (req, res, next) => {
             400
           );
         }
+        m.marksObtained = score;
       }
     }
 
@@ -285,11 +300,29 @@ exports.saveMarks = async (req, res, next) => {
 // Helper: Calculate rankings for all students in an exam with tie handling
 async function calculateExamRanks(examId, institution) {
   const allMarks = await MarkEntry.find({ exam: examId, institution });
+
+  // Exclude deleted students from calculation
+  const Student = require('../models/Student');
+  const distinctStudentIds = Array.from(new Set(allMarks.map(m => String(m.student)).filter(Boolean)));
+  let validStudentSet = new Set();
+  if (distinctStudentIds.length > 0) {
+    const validStudents = await Student.findAll({
+      where: {
+        _id: distinctStudentIds,
+        institution,
+        isDeleted: false
+      }
+    });
+    validStudentSet = new Set(validStudents.map(s => String(s._id)));
+  }
+
   const studentTotals = new Map();
   const distinctSubjectIds = new Set();
 
   allMarks.forEach(m => {
     const sId = String(m.student);
+    if (!validStudentSet.has(sId)) return;
+
     const subId = String(m.subject);
     if (m.marksObtained !== null && m.marksObtained !== undefined) {
       distinctSubjectIds.add(subId);
@@ -620,7 +653,24 @@ async function calculateAnnualCombinedRanks(classLevelId, institution, section =
     order: [['rollNumber', 'ASC']]
   });
 
-  const studentIds = enrollments.map(e => e.student).filter(Boolean);
+  const rawStudentIds = enrollments.map(e => e.student).filter(Boolean);
+
+  // Exclude deleted students
+  const Student = require('../models/Student');
+  let validStudentSet = new Set();
+  if (rawStudentIds.length > 0) {
+    const validStudents = await Student.findAll({
+      where: {
+        _id: rawStudentIds,
+        institution,
+        isDeleted: false
+      }
+    });
+    validStudentSet = new Set(validStudents.map(s => String(s._id)));
+  }
+
+  const validEnrollments = enrollments.filter(e => validStudentSet.has(String(e.student)));
+  const studentIds = validEnrollments.map(e => String(e.student));
 
   // 3. Find marks for these term exams
   let marks = [];
@@ -700,7 +750,7 @@ async function calculateAnnualCombinedRanks(classLevelId, institution, section =
 
   // Enrollment map for rolls
   const enrollMap = new Map();
-  enrollments.forEach(e => {
+  validEnrollments.forEach(e => {
     enrollMap.set(String(e.student), typeof e.toJSON === 'function' ? e.toJSON() : e);
   });
 
@@ -795,23 +845,41 @@ exports.getAnnualCombinedRankings = async (req, res, next) => {
     );
 
     const studentIds = rankings.map(r => r.studentId);
-    const students = await Student.find({
-      _id: { $in: studentIds }
-    }).populate('user', 'firstName lastName fullName phone');
+    const Student = require('../models/Student');
+    const User = require('../models/User');
+
+    const students = await Student.findAll({
+      where: {
+        _id: studentIds,
+        institution: req.user.institution,
+        isDeleted: false
+      }
+    });
+
+    const userIds = students.map(s => s.user).filter(Boolean);
+    const users = userIds.length > 0 ? await User.findAll({ where: { _id: userIds } }) : [];
+    const userMap = new Map();
+    users.forEach(u => userMap.set(String(u._id), u));
 
     const sMap = new Map();
-    students.forEach(s => sMap.set(String(s._id), s));
+    students.forEach(s => {
+      const uDoc = userMap.get(String(s.user));
+      const fullName = uDoc ? (uDoc.fullName || `${uDoc.firstName || ''} ${uDoc.lastName || ''}`.trim()) : '';
+      sMap.set(String(s._id), {
+        ...(typeof s.toJSON === 'function' ? s.toJSON() : s),
+        name: fullName || s.studentId || 'শিক্ষার্থী'
+      });
+    });
 
-    const formattedRankings = rankings.map(r => {
+    const validRankings = rankings.filter(r => sMap.has(r.studentId));
+    const formattedRankings = validRankings.map(r => {
       const sDoc = sMap.get(r.studentId);
       const enr = enrollMap.get(r.studentId);
-      const u = sDoc?.user || {};
-      const name = u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim() || sDoc?.studentId || 'শিক্ষার্থী';
 
       return {
         ...r,
         studentCode: sDoc?.studentId || '',
-        name,
+        name: sDoc?.name || 'শিক্ষার্থী',
         rollNumber: enr?.rollNumber || '',
         section: enr?.section || '',
         branch: sDoc?.branch || enr?.branch || ''
@@ -826,7 +894,7 @@ exports.getAnnualCombinedRankings = async (req, res, next) => {
       },
       termExams,
       rankings: formattedRankings,
-      totalStudents
+      totalStudents: validRankings.length
     });
   } catch (error) {
     next(error);
@@ -868,21 +936,50 @@ exports.getExamRankings = async (req, res, next) => {
     }
 
     const studentIds = sortedList.map(s => s.studentId);
+    const Student = require('../models/Student');
+    const User = require('../models/User');
+    const StudentEnrollment = require('../models/StudentEnrollment');
 
-    const students = await Student.find({
-      _id: { $in: studentIds }
-    }).populate('user', 'firstName lastName fullName phone').populate('currentEnrollment');
+    const students = await Student.findAll({
+      where: {
+        _id: studentIds,
+        institution: req.user.institution,
+        isDeleted: false
+      }
+    });
+
+    const userIds = students.map(s => s.user).filter(Boolean);
+    const users = userIds.length > 0 ? await User.findAll({ where: { _id: userIds } }) : [];
+    const userMap = new Map();
+    users.forEach(u => userMap.set(String(u._id), u));
 
     const studentMap = new Map();
     students.forEach(s => {
-      studentMap.set(String(s._id), s);
+      const uDoc = userMap.get(String(s.user));
+      const fullName = uDoc ? (uDoc.fullName || `${uDoc.firstName || ''} ${uDoc.lastName || ''}`.trim()) : '';
+      studentMap.set(String(s._id), {
+        ...(typeof s.toJSON === 'function' ? s.toJSON() : s),
+        name: fullName || s.studentId || 'শিক্ষার্থী'
+      });
     });
+
+    const enrollments = await StudentEnrollment.findAll({
+      where: {
+        student: studentIds,
+        institution: req.user.institution
+      }
+    });
+    const enrollMap = new Map();
+    enrollments.forEach(e => enrollMap.set(String(e.student), e));
 
     let currentRank = 1;
     let prevTotal = null;
 
-    const rankings = sortedList.map((item, index) => {
+    const validSortedList = sortedList.filter(item => studentMap.has(item.studentId));
+
+    const rankings = validSortedList.map((item, index) => {
       const sDoc = studentMap.get(item.studentId);
+      const enr = enrollMap.get(item.studentId);
       if (prevTotal !== null && item.totalObtained === prevTotal) {
         // Shared rank
       } else {
@@ -903,8 +1000,10 @@ exports.getExamRankings = async (req, res, next) => {
         rank: currentRank,
         studentId: item.studentId,
         studentCode: sDoc?.studentId || '',
-        name: sDoc?.user?.fullName || `${sDoc?.user?.firstName || ''} ${sDoc?.user?.lastName || ''}`.trim() || 'শিক্ষার্থী',
-        rollNumber: sDoc?.currentEnrollment?.rollNumber || '',
+        name: sDoc?.name || 'শিক্ষার্থী',
+        rollNumber: enr?.rollNumber || '',
+        section: enr?.section || '',
+        branch: sDoc?.branch || enr?.branch || '',
         subjectMarks: item.subjectMarks || {},
         totalObtained: item.totalObtained,
         totalMaxMarks: item.totalMaxMarks,
