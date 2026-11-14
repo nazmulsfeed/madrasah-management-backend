@@ -886,6 +886,15 @@ exports.getAnnualCombinedRankings = async (req, res, next) => {
       };
     });
 
+    const getNumericRoll = (roll) => {
+      if (!roll) return 999999;
+      const bnToEn = { '০': '0', '১': '1', '২': '2', '৩': '3', '৪': '4', '৫': '5', '৬': '6', '৭': '7', '৮': '8', '৯': '9' };
+      const clean = String(roll).replace(/[০-৯]/g, d => bnToEn[d]).replace(/\D/g, '');
+      const num = parseInt(clean, 10);
+      return isNaN(num) ? 999999 : num;
+    };
+    formattedRankings.sort((a, b) => getNumericRoll(a.rollNumber) - getNumericRoll(b.rollNumber));
+
     ApiResponse.success(res, {
       classLevel: {
         _id: classDoc._id,
