@@ -1064,6 +1064,50 @@ exports.getExamRankings = async (req, res, next) => {
       return ApiResponse.notFound(res, 'পরীক্ষা পাওয়া যায়নি');
     }
 
+    // Verify class scoping for student and guardian
+    if (req.user.userType === 'student') {
+      const Student = require('../models/Student');
+      const StudentEnrollment = require('../models/StudentEnrollment');
+      let studentDoc = await Student.findOne({ where: { user: req.user._id, isDeleted: false } }) || await Student.findOne({ user: req.user._id });
+      let studentClassId = null;
+      if (studentDoc && studentDoc.currentEnrollment) {
+        const enr = await StudentEnrollment.findById(studentDoc.currentEnrollment);
+        if (enr && enr.classLevel) studentClassId = typeof enr.classLevel === 'object' ? String(enr.classLevel._id) : String(enr.classLevel);
+      }
+      if (!studentClassId && studentDoc) {
+        const enr = await StudentEnrollment.findOne({ where: { student: studentDoc._id, enrollmentStatus: 'active' } }) || await StudentEnrollment.findOne({ student: studentDoc._id, enrollmentStatus: 'active' });
+        if (enr && enr.classLevel) studentClassId = typeof enr.classLevel === 'object' ? String(enr.classLevel._id) : String(enr.classLevel);
+      }
+      const examClassId = typeof exam.classLevel === 'object' ? String(exam.classLevel._id) : String(exam.classLevel);
+      if (studentClassId && examClassId && studentClassId !== examClassId) {
+        return ApiResponse.forbidden(res, 'অন্য শ্রেণির মেধা তালিকা দেখার অনুমতি নেই');
+      }
+    } else if (req.user.userType === 'guardian') {
+      const Guardian = require('../models/Guardian');
+      const Student = require('../models/Student');
+      const StudentEnrollment = require('../models/StudentEnrollment');
+      let guardianDoc = req.user.profileId ? await Guardian.findById(req.user.profileId) : await Guardian.findOne({ user: req.user._id });
+      const linkedStudentIds = guardianDoc && guardianDoc.students ? guardianDoc.students.map(s => String(s.student)) : [];
+      if (linkedStudentIds.length === 0) {
+        return ApiResponse.forbidden(res, 'কোনো শিক্ষার্থী লিঙ্ক করা নেই');
+      }
+      const sDocs = await Student.findAll({ where: { _id: linkedStudentIds } });
+      const enrollIds = sDocs.map(s => s.currentEnrollment).filter(Boolean);
+      let classIds = [];
+      if (enrollIds.length > 0) {
+        const enrolls = await StudentEnrollment.findAll({ where: { _id: enrollIds } });
+        classIds.push(...enrolls.map(e => String(e.classLevel)).filter(Boolean));
+      }
+      const activeEnrolls = await StudentEnrollment.findAll({ where: { student: linkedStudentIds, enrollmentStatus: 'active' } });
+      classIds.push(...activeEnrolls.map(e => String(e.classLevel)).filter(Boolean));
+      classIds = [...new Set(classIds)];
+
+      const examClassId = typeof exam.classLevel === 'object' ? String(exam.classLevel._id) : String(exam.classLevel);
+      if (classIds.length > 0 && examClassId && !classIds.includes(examClassId)) {
+        return ApiResponse.forbidden(res, 'আপনার সন্তানের শ্রেণি ছাড়া অন্য শ্রেণির মেধা তালিকা দেখার অনুমতি নেই');
+      }
+    }
+
     const { sortedList, distinctSubjectIds } = await calculateExamRanks(exam._id, req.user.institution);
 
     // Fetch subjects that have marks entered for this exam
