@@ -193,9 +193,12 @@ exports.getStudents = async (req, res, next) => {
     if (req.user.institution) {
       filter.institution = req.user.institution;
     }
+    if (req.user.userType === 'student') {
+      filter.user = req.user._id;
+    }
     if (req.user.userType === 'guardian') {
       const Guardian = require('../models/Guardian');
-      const guardianDoc = await Guardian.findById(req.user.profileId);
+      const guardianDoc = await Guardian.findById(req.user.profileId) || await Guardian.findOne({ user: req.user._id });
       const studentIds = guardianDoc ? guardianDoc.students.map(s => s.student) : [];
       filter._id = { $in: studentIds };
     }

@@ -31,6 +31,113 @@ exports.getExams = async (req, res, next) => {
       filter.month = req.query.month;
     }
 
+    // Role-based Scoping for Student and Guardian
+    const Student = require('../models/Student');
+    const Guardian = require('../models/Guardian');
+    const StudentEnrollment = require('../models/StudentEnrollment');
+
+    if (req.user.userType === 'student') {
+      let studentDoc = await Student.findOne({
+        where: { user: req.user._id, institution: req.user.institution, isDeleted: false }
+      });
+      if (!studentDoc) {
+        studentDoc = await Student.findOne({ user: req.user._id });
+      }
+
+      if (!studentDoc) {
+        return ApiResponse.success(res, { exams: [] });
+      }
+
+      let studentClassLevel = null;
+      if (studentDoc.currentEnrollment) {
+        const enr = await StudentEnrollment.findById(studentDoc.currentEnrollment);
+        if (enr && enr.classLevel) {
+          studentClassLevel = typeof enr.classLevel === 'object' ? String(enr.classLevel._id) : String(enr.classLevel);
+        }
+      }
+      if (!studentClassLevel) {
+        const enr = await StudentEnrollment.findOne({
+          where: { student: studentDoc._id, enrollmentStatus: 'active' }
+        }) || await StudentEnrollment.findOne({
+          student: studentDoc._id, enrollmentStatus: 'active'
+        });
+        if (enr && enr.classLevel) {
+          studentClassLevel = typeof enr.classLevel === 'object' ? String(enr.classLevel._id) : String(enr.classLevel);
+        }
+      }
+
+      if (!studentClassLevel) {
+        return ApiResponse.success(res, { exams: [] });
+      }
+
+      filter.classLevel = studentClassLevel;
+    } else if (req.user.userType === 'guardian') {
+      let guardianDoc = null;
+      if (req.user.profileId) {
+        guardianDoc = await Guardian.findById(req.user.profileId);
+      }
+      if (!guardianDoc) {
+        guardianDoc = await Guardian.findOne({ user: req.user._id });
+      }
+
+      const linkedStudentIds = guardianDoc && guardianDoc.students ? guardianDoc.students.map(s => String(s.student)) : [];
+      if (linkedStudentIds.length === 0) {
+        return ApiResponse.success(res, { exams: [] });
+      }
+
+      // If specific studentId is queried, verify and filter strictly for that student's class
+      const targetStudentId = req.query.studentId;
+      if (targetStudentId) {
+        if (!linkedStudentIds.includes(String(targetStudentId))) {
+          return ApiResponse.forbidden(res, 'এই শিক্ষার্থীর তথ্য দেখার অনুমতি নেই');
+        }
+        const sDoc = await Student.findById(targetStudentId);
+        let cId = null;
+        if (sDoc && sDoc.currentEnrollment) {
+          const enr = await StudentEnrollment.findById(sDoc.currentEnrollment);
+          if (enr && enr.classLevel) cId = typeof enr.classLevel === 'object' ? String(enr.classLevel._id) : String(enr.classLevel);
+        }
+        if (!cId) {
+          const enr = await StudentEnrollment.findOne({
+            where: { student: targetStudentId, enrollmentStatus: 'active' }
+          }) || await StudentEnrollment.findOne({ student: targetStudentId, enrollmentStatus: 'active' });
+          if (enr && enr.classLevel) cId = typeof enr.classLevel === 'object' ? String(enr.classLevel._id) : String(enr.classLevel);
+        }
+        if (!cId) {
+          return ApiResponse.success(res, { exams: [] });
+        }
+        filter.classLevel = cId;
+      } else {
+        // Collect classLevels for all linked students
+        const sDocs = await Student.findAll({ where: { _id: linkedStudentIds } });
+        const enrollIds = sDocs.map(s => s.currentEnrollment).filter(Boolean);
+        let classIds = [];
+        if (enrollIds.length > 0) {
+          const enrolls = await StudentEnrollment.findAll({ where: { _id: enrollIds } });
+          classIds.push(...enrolls.map(e => String(e.classLevel)).filter(Boolean));
+        }
+        const activeEnrolls = await StudentEnrollment.findAll({
+          where: { student: linkedStudentIds, enrollmentStatus: 'active' }
+        });
+        classIds.push(...activeEnrolls.map(e => String(e.classLevel)).filter(Boolean));
+        classIds = [...new Set(classIds)];
+
+        if (classIds.length === 0) {
+          return ApiResponse.success(res, { exams: [] });
+        }
+        // If guardian chose a class in query, ensure it is one of their children's classes
+        if (req.query.classLevel && req.query.classLevel !== 'all') {
+          if (classIds.includes(String(req.query.classLevel))) {
+            filter.classLevel = req.query.classLevel;
+          } else {
+            filter.classLevel = { $in: classIds };
+          }
+        } else {
+          filter.classLevel = { $in: classIds };
+        }
+      }
+    }
+
     const exams = await Exam.find(filter)
       .populate('classLevel', 'name code')
       .sort({ startDate: -1 });
@@ -827,7 +934,54 @@ async function calculateAnnualCombinedRanks(classLevelId, institution, section =
 // @route   GET /api/v1/exams/annual-rankings
 exports.getAnnualCombinedRankings = async (req, res, next) => {
   try {
-    const { classLevel, section } = req.query;
+    let { classLevel, section } = req.query;
+
+    // Enforce class scoping for student and guardian
+    if (req.user.userType === 'student') {
+      const Student = require('../models/Student');
+      const StudentEnrollment = require('../models/StudentEnrollment');
+      let studentDoc = await Student.findOne({ where: { user: req.user._id, isDeleted: false } }) || await Student.findOne({ user: req.user._id });
+      let studentClassId = null;
+      if (studentDoc && studentDoc.currentEnrollment) {
+        const enr = await StudentEnrollment.findById(studentDoc.currentEnrollment);
+        if (enr && enr.classLevel) studentClassId = typeof enr.classLevel === 'object' ? String(enr.classLevel._id) : String(enr.classLevel);
+      }
+      if (!studentClassId && studentDoc) {
+        const enr = await StudentEnrollment.findOne({ where: { student: studentDoc._id, enrollmentStatus: 'active' } }) || await StudentEnrollment.findOne({ student: studentDoc._id, enrollmentStatus: 'active' });
+        if (enr && enr.classLevel) studentClassId = typeof enr.classLevel === 'object' ? String(enr.classLevel._id) : String(enr.classLevel);
+      }
+      if (!studentClassId) {
+        return ApiResponse.forbidden(res, 'আপনার শ্রেণি নির্ধারিত হয়নি');
+      }
+      classLevel = studentClassId;
+    } else if (req.user.userType === 'guardian') {
+      const Guardian = require('../models/Guardian');
+      const Student = require('../models/Student');
+      const StudentEnrollment = require('../models/StudentEnrollment');
+      let guardianDoc = req.user.profileId ? await Guardian.findById(req.user.profileId) : await Guardian.findOne({ user: req.user._id });
+      const linkedStudentIds = guardianDoc && guardianDoc.students ? guardianDoc.students.map(s => String(s.student)) : [];
+      if (linkedStudentIds.length === 0) {
+        return ApiResponse.forbidden(res, 'কোনো শিক্ষার্থী লিঙ্ক করা নেই');
+      }
+      const sDocs = await Student.findAll({ where: { _id: linkedStudentIds } });
+      const enrollIds = sDocs.map(s => s.currentEnrollment).filter(Boolean);
+      let classIds = [];
+      if (enrollIds.length > 0) {
+        const enrolls = await StudentEnrollment.findAll({ where: { _id: enrollIds } });
+        classIds.push(...enrolls.map(e => String(e.classLevel)).filter(Boolean));
+      }
+      const activeEnrolls = await StudentEnrollment.findAll({ where: { student: linkedStudentIds, enrollmentStatus: 'active' } });
+      classIds.push(...activeEnrolls.map(e => String(e.classLevel)).filter(Boolean));
+      classIds = [...new Set(classIds)];
+
+      if (classIds.length === 0) {
+        return ApiResponse.forbidden(res, 'শিক্ষার্থীর শ্রেণি পাওয়া যায়নি');
+      }
+      if (!classLevel || !classIds.includes(String(classLevel))) {
+        classLevel = classIds[0];
+      }
+    }
+
     if (!classLevel) {
       return ApiResponse.error(res, 'শ্রেণি নির্বাচন আবশ্যক', 400);
     }
