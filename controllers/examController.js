@@ -407,9 +407,67 @@ exports.saveMarks = async (req, res, next) => {
 // Helper: Calculate rankings for all students in an exam with tie handling
 async function calculateExamRanks(examId, institution) {
   const allMarks = await MarkEntry.find({ exam: examId, institution });
+  const Exam = require('../models/Exam');
+  const Subject = require('../models/Subject');
+  const Student = require('../models/Student');
+
+  const examDoc = await Exam.findById(examId);
+  const targetClassId = examDoc?.classLevel ? String(examDoc.classLevel?._id || examDoc.classLevel) : null;
+  const isMonthly = examDoc?.examCategory === 'monthly_test';
+  const allowedSubjectIds = (isMonthly && Array.isArray(examDoc.selectedSubjects) && examDoc.selectedSubjects.length > 0)
+    ? examDoc.selectedSubjects.map(s => typeof s === 'object' ? String(s._id) : String(s))
+    : null;
+
+  // Find all subjects that belong to this institution
+  const allSubs = await Subject.find({ institution });
+  // Filter subjects assigned to this exam's class
+  let classSubjects = allSubs.filter(sub => {
+    if (!targetClassId) return true;
+    let list = sub.classLevels;
+    if (typeof list === 'string') {
+      try { list = JSON.parse(list); } catch(_) { list = []; }
+    }
+    if (!Array.isArray(list)) return false;
+    return list.some(c => (typeof c === 'object' && c !== null ? String(c._id) : String(c)) === targetClassId);
+  });
+
+  if (allowedSubjectIds) {
+    classSubjects = classSubjects.filter(sub => allowedSubjectIds.includes(String(sub._id)));
+  }
+
+  const classSubjectIdSet = new Set(classSubjects.map(s => String(s._id)));
+  const classSubjectMap = new Map();
+  classSubjects.forEach(s => classSubjectMap.set(String(s._id), s));
+
+  // Determine evaluated subjects: class subjects that actually have marks entered in this exam
+  const evaluatedSubjectIds = new Set();
+  allMarks.forEach(m => {
+    const subId = String(m.subject);
+    if (m.marksObtained !== null && m.marksObtained !== undefined && m.marksObtained !== '') {
+      if (classSubjectIdSet.size === 0 || classSubjectIdSet.has(subId)) {
+        evaluatedSubjectIds.add(subId);
+      }
+    }
+  });
+
+  // Fallback: If no class subjects matched marks, use distinct subjects from marks
+  if (evaluatedSubjectIds.size === 0) {
+    allMarks.forEach(m => {
+      if (m.marksObtained !== null && m.marksObtained !== undefined && m.marksObtained !== '') {
+        evaluatedSubjectIds.add(String(m.subject));
+      }
+    });
+  }
+
+  // Calculate standard total max marks for the exam across evaluated subjects
+  let examTotalMaxMarks = 0;
+  evaluatedSubjectIds.forEach(subId => {
+    const sDoc = classSubjectMap.get(subId);
+    const subTotal = Number(sDoc?.totalMarks) || 100;
+    examTotalMaxMarks += subTotal;
+  });
 
   // Exclude deleted students from calculation
-  const Student = require('../models/Student');
   const distinctStudentIds = Array.from(new Set(allMarks.map(m => String(m.student)).filter(Boolean)));
   let validStudentSet = new Set();
   if (distinctStudentIds.length > 0) {
@@ -423,52 +481,108 @@ async function calculateExamRanks(examId, institution) {
     validStudentSet = new Set(validStudents.map(s => String(s._id)));
   }
 
+  // Aggregate student marks per subject (avoid duplicate mark entries!)
   const studentTotals = new Map();
-  const distinctSubjectIds = new Set();
 
   allMarks.forEach(m => {
     const sId = String(m.student);
     if (!validStudentSet.has(sId)) return;
 
     const subId = String(m.subject);
-    if (m.marksObtained !== null && m.marksObtained !== undefined) {
-      distinctSubjectIds.add(subId);
-    }
+    // Ignore subjects not in evaluated subjects
+    if (!evaluatedSubjectIds.has(subId)) return;
 
     if (!studentTotals.has(sId)) {
       studentTotals.set(sId, {
         studentId: sId,
-        totalObtained: 0,
-        totalMaxMarks: 0,
-        marksCount: 0,
-        subjectMarks: {}
+        subjectMarks: {},
+        marksCount: 0
       });
     }
+
     const rec = studentTotals.get(sId);
-    rec.totalObtained += Number(m.marksObtained) || 0;
-    rec.totalMaxMarks += Number(m.totalMarks) || 100;
-    rec.marksCount += 1;
+    const sDoc = classSubjectMap.get(subId);
+    const subMax = Number(sDoc?.totalMarks) || Number(m.totalMarks) || 100;
     rec.subjectMarks[subId] = {
-      marksObtained: m.marksObtained,
-      totalMarks: m.totalMarks || 100,
+      marksObtained: m.marksObtained !== null && m.marksObtained !== undefined && m.marksObtained !== '' ? Number(m.marksObtained) : null,
+      totalMarks: subMax,
       grade: m.grade
     };
   });
 
-  const sortedList = Array.from(studentTotals.values()).sort((a, b) => b.totalObtained - a.totalObtained);
+  // Now compute totalObtained, failedCount, etc. strictly over evaluated subjects
+  const studentList = [];
+  studentTotals.forEach(rec => {
+    let totalObtained = 0;
+    let countWithMarks = 0;
+    let failedCount = 0;
+
+    evaluatedSubjectIds.forEach(subId => {
+      const sm = rec.subjectMarks[subId];
+      if (sm && sm.marksObtained !== null && sm.marksObtained !== undefined) {
+        totalObtained += sm.marksObtained;
+        countWithMarks++;
+        if (sm.marksObtained < sm.totalMarks * 0.33) {
+          failedCount++;
+        }
+      }
+    });
+
+    const isPassed = countWithMarks > 0 && failedCount === 0 && (evaluatedSubjectIds.size === 0 || countWithMarks === evaluatedSubjectIds.size);
+    const pct = examTotalMaxMarks > 0 ? Number(((totalObtained / examTotalMaxMarks) * 100).toFixed(1)) : 0;
+
+    let grade = 'F';
+    let gpa = 0.00;
+    if (isPassed) {
+      if (pct >= 80) { grade = 'A+'; gpa = 5.00; }
+      else if (pct >= 70) { grade = 'A'; gpa = 4.00; }
+      else if (pct >= 60) { grade = 'A-'; gpa = 3.50; }
+      else if (pct >= 50) { grade = 'B'; gpa = 3.00; }
+      else if (pct >= 40) { grade = 'C'; gpa = 2.00; }
+      else if (pct >= 33) { grade = 'D'; gpa = 1.00; }
+    }
+
+    studentList.push({
+      studentId: rec.studentId,
+      totalObtained,
+      totalMaxMarks: examTotalMaxMarks,
+      marksCount: countWithMarks,
+      failedCount,
+      isPassed,
+      percentage: pct,
+      grade,
+      gpa,
+      subjectMarks: rec.subjectMarks
+    });
+  });
+
+  // Sort: passed students first, then by totalObtained desc
+  studentList.sort((a, b) => {
+    if (a.marksCount === 0 && b.marksCount === 0) return 0;
+    if (a.marksCount === 0) return 1;
+    if (b.marksCount === 0) return -1;
+
+    if (a.failedCount === 0 && b.failedCount > 0) return -1;
+    if (a.failedCount > 0 && b.failedCount === 0) return 1;
+
+    return b.totalObtained - a.totalObtained;
+  });
 
   const ranksMap = new Map();
   let currentRank = 1;
   let prevTotal = null;
 
-  sortedList.forEach((item, index) => {
+  studentList.forEach((item, index) => {
     if (prevTotal !== null && item.totalObtained === prevTotal) {
-      // Shared rank for identical total scores
+      // Shared rank
       ranksMap.set(item.studentId, {
         rank: currentRank,
         totalObtained: item.totalObtained,
         totalMaxMarks: item.totalMaxMarks,
-        totalStudents: sortedList.length
+        totalStudents: studentList.length,
+        isPassed: item.isPassed,
+        grade: item.grade,
+        gpa: item.gpa
       });
     } else {
       currentRank = index + 1;
@@ -476,13 +590,23 @@ async function calculateExamRanks(examId, institution) {
         rank: currentRank,
         totalObtained: item.totalObtained,
         totalMaxMarks: item.totalMaxMarks,
-        totalStudents: sortedList.length
+        totalStudents: studentList.length,
+        isPassed: item.isPassed,
+        grade: item.grade,
+        gpa: item.gpa
       });
       prevTotal = item.totalObtained;
     }
+    item.rank = currentRank;
   });
 
-  return { ranksMap, totalStudents: sortedList.length, sortedList, distinctSubjectIds: Array.from(distinctSubjectIds) };
+  return {
+    ranksMap,
+    totalStudents: studentList.length,
+    sortedList: studentList,
+    distinctSubjectIds: Array.from(evaluatedSubjectIds),
+    examTotalMaxMarks
+  };
 }
 
 // @desc    শিক্ষার্থীর ফলাফল ও মেধা পজিশন বিবরণী (Student Result View)
@@ -1170,32 +1294,12 @@ exports.getExamRankings = async (req, res, next) => {
     const enrollMap = new Map();
     enrollments.forEach(e => enrollMap.set(String(e.student), e));
 
-    let currentRank = 1;
-    let prevTotal = null;
-
-    const validSortedList = sortedList.filter(item => studentMap.has(item.studentId));
-
     const rankings = validSortedList.map((item, index) => {
       const sDoc = studentMap.get(item.studentId);
       const enr = enrollMap.get(item.studentId);
-      if (prevTotal !== null && item.totalObtained === prevTotal) {
-        // Shared rank
-      } else {
-        currentRank = index + 1;
-        prevTotal = item.totalObtained;
-      }
-
-      const pct = item.totalMaxMarks > 0 ? Number(((item.totalObtained / item.totalMaxMarks) * 100).toFixed(1)) : 0;
-      let grade = 'F';
-      if (pct >= 80) grade = 'A+';
-      else if (pct >= 70) grade = 'A';
-      else if (pct >= 60) grade = 'A-';
-      else if (pct >= 50) grade = 'B';
-      else if (pct >= 40) grade = 'C';
-      else if (pct >= 33) grade = 'D';
 
       return {
-        rank: currentRank,
+        rank: item.rank || (index + 1),
         studentId: item.studentId,
         studentCode: sDoc?.studentId || '',
         name: sDoc?.name || 'শিক্ষার্থী',
@@ -1205,8 +1309,10 @@ exports.getExamRankings = async (req, res, next) => {
         subjectMarks: item.subjectMarks || {},
         totalObtained: item.totalObtained,
         totalMaxMarks: item.totalMaxMarks,
-        percentage: pct,
-        grade,
+        percentage: item.percentage,
+        grade: item.grade,
+        gpa: (item.gpa ?? 0).toFixed(2),
+        isPassed: item.isPassed,
         isIncomplete: evaluatedSubjects.length > 0 && (item.marksCount < evaluatedSubjects.length)
       };
     });
