@@ -1294,6 +1294,8 @@ exports.getExamRankings = async (req, res, next) => {
     const enrollMap = new Map();
     enrollments.forEach(e => enrollMap.set(String(e.student), e));
 
+    const validSortedList = sortedList.filter(item => studentMap.has(item.studentId));
+
     const rankings = validSortedList.map((item, index) => {
       const sDoc = studentMap.get(item.studentId);
       const enr = enrollMap.get(item.studentId);
