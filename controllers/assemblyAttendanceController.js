@@ -4,6 +4,7 @@ const Student = require('../models/Student');
 const StudentEnrollment = require('../models/StudentEnrollment');
 const ClassLevel = require('../models/ClassLevel');
 const Section = require('../models/Section');
+const Branch = require('../models/Branch');
 const User = require('../models/User');
 const Guardian = require('../models/Guardian');
 const ApiResponse = require('../utils/apiResponse');
@@ -15,7 +16,7 @@ const ApiResponse = require('../utils/apiResponse');
 exports.getAssemblyAttendance = async (req, res, next) => {
   try {
     const institution = req.user.institution;
-    const { date, classLevel, section, branch } = req.query;
+    const { date, classLevel, section, branch, department } = req.query;
 
     if (!date) {
       return ApiResponse.error(res, 'তারিখ প্রদান করা আবশ্যক', 400);
@@ -26,14 +27,48 @@ exports.getAssemblyAttendance = async (req, res, next) => {
 
     const targetDate = new Date(date + 'T00:00:00.000Z');
 
-    // 1. Fetch active students of the institution
+    // 1. Fetch active students of the institution with smart branch and department filters
     const studentFilter = {
       institution,
       isDeleted: false,
       status: 'active',
     };
+
     if (branch && branch !== 'all') {
-      studentFilter.branch = branch;
+      const selectedBranchDoc = await Branch.findOne({
+        where: {
+          institution,
+          [Op.or]: [{ _id: branch }, { name: branch }]
+        }
+      });
+      if (selectedBranchDoc) {
+        if (selectedBranchDoc.name === 'বালক শাখা') {
+          const dualBoys = await Branch.findOne({ where: { institution, name: 'বালক শাখা + নুরানী' } });
+          const branchIds = [selectedBranchDoc._id];
+          if (dualBoys) branchIds.push(dualBoys._id);
+          studentFilter.branch = { [Op.in]: branchIds };
+        } else if (selectedBranchDoc.name === 'বালিকা শাখা') {
+          const dualGirls = await Branch.findOne({ where: { institution, name: 'বালিকা শাখা + নুরানী' } });
+          const branchIds = [selectedBranchDoc._id];
+          if (dualGirls) branchIds.push(dualGirls._id);
+          studentFilter.branch = { [Op.in]: branchIds };
+        } else if (selectedBranchDoc.name === 'নুরানী শাখা') {
+          const dualBoys = await Branch.findOne({ where: { institution, name: 'বালক শাখা + নুরানী' } });
+          const dualGirls = await Branch.findOne({ where: { institution, name: 'বালিকা শাখা + নুরানী' } });
+          const branchIds = [selectedBranchDoc._id];
+          if (dualBoys) branchIds.push(dualBoys._id);
+          if (dualGirls) branchIds.push(dualGirls._id);
+          studentFilter.branch = { [Op.in]: branchIds };
+        } else {
+          studentFilter.branch = selectedBranchDoc._id;
+        }
+      } else {
+        studentFilter.branch = branch;
+      }
+    }
+
+    if (department && department !== 'all') {
+      studentFilter.department = department.trim();
     }
 
     const students = await Student.findAll({ where: studentFilter });
@@ -49,8 +84,8 @@ exports.getAssemblyAttendance = async (req, res, next) => {
     const curEnrIds = students.map(s => s.currentEnrollment).filter(Boolean);
     const studentIds = students.map(s => s._id);
 
-    // 2. Fetch Enrollments, Users, Guardians, Classes, Sections, and Existing Assembly Attendances
-    const [enrollments, users, guardians, classes, sections, existingAttendances] = await Promise.all([
+    // 2. Fetch Enrollments, Users, Guardians, Classes, Sections, Branches, and Existing Assembly Attendances
+    const [enrollments, users, guardians, classes, sections, branches, existingAttendances] = await Promise.all([
       StudentEnrollment.findAll({
         where: {
           institution,
@@ -69,6 +104,7 @@ exports.getAssemblyAttendance = async (req, res, next) => {
       }),
       ClassLevel.findAll({ where: { institution } }),
       Section.findAll({ where: { institution } }),
+      Branch.findAll({ where: { institution } }),
       AssemblyAttendance.findAll({
         where: {
           institution,
@@ -104,12 +140,33 @@ exports.getAssemblyAttendance = async (req, res, next) => {
     });
 
     const classMap = new Map();
-    classes.forEach(c => classMap.set(String(c._id), c.name));
+    const classOrderMap = new Map();
+    const classNameToIdMap = new Map();
+    classes.forEach(c => {
+      const cIdStr = String(c._id);
+      classMap.set(cIdStr, c.name);
+      if (c.name) {
+        classMap.set(c.name, c.name);
+        classNameToIdMap.set(c.name.trim(), cIdStr);
+      }
+      if (c.code) {
+        classMap.set(c.code, c.name);
+        classNameToIdMap.set(c.code.trim(), cIdStr);
+      }
+      classOrderMap.set(cIdStr, typeof c.order === 'number' ? c.order : 99);
+      if (c.name) classOrderMap.set(c.name.trim(), typeof c.order === 'number' ? c.order : 99);
+    });
 
     const sectionMap = new Map();
     sections.forEach(s => {
       sectionMap.set(String(s._id), s.name);
       if (s.name) sectionMap.set(s.name, s.name);
+    });
+
+    const branchMap = new Map();
+    branches.forEach(b => {
+      branchMap.set(String(b._id), b.name);
+      if (b.name) branchMap.set(b.name, b.name);
     });
 
     // Map enrollment by enrollment ID and by student ID (latest preferred)
@@ -128,6 +185,18 @@ exports.getAssemblyAttendance = async (req, res, next) => {
       filterSectionDoc = sections.find(s => String(s._id) === String(section) || s.name === section);
     }
 
+    // Determine target class info if classLevel is passed
+    let filterClassDoc = null;
+    let targetClassNames = [];
+    if (classLevel && classLevel !== 'all') {
+      filterClassDoc = classes.find(c => String(c._id) === String(classLevel) || c.name === classLevel || c.code === classLevel);
+      if (filterClassDoc) {
+        targetClassNames = [filterClassDoc.name.trim()];
+      } else {
+        targetClassNames = [String(classLevel).trim()];
+      }
+    }
+
     // 3. Compile student records with proper filtering
     const records = [];
     let presentCount = 0;
@@ -139,12 +208,33 @@ exports.getAssemblyAttendance = async (req, res, next) => {
       const enr = (student.currentEnrollment && enrollmentMap.get(String(student.currentEnrollment))) ||
         enrollmentMap.get(String(student._id)) || null;
 
-      const studentClassId = enr?.classLevel ? String(enr.classLevel) : '';
-      const studentSectionVal = enr?.section ? String(enr.section) : '';
+      let studentClassId = enr?.classLevel ? String(enr.classLevel) : '';
+      let studentSectionVal = enr?.section ? String(enr.section) : '';
 
-      // Class filter
+      // Check if student belongs to special department: 'মক্তব বিভাগ', 'নাজেরা বিভাগ', 'হিফজ বিভাগ'
+      const studentDept = (student.department || '').trim();
+
+      // Enrolled academic class
+      const enrolledClassName = classMap.get(studentClassId) || '';
+      // If student has an academic class, className is strictly that class (e.g. 'তৃতীয়').
+      // If no enrolled class is found or it's empty, fallback to studentDept or '—'
+      const effectiveClassName = enrolledClassName || studentDept || '—';
+      const effectiveClassId = studentClassId || (studentDept && classNameToIdMap.get(studentDept)) || '';
+
+      // Class filter: match either classLevel ID, enrolled classLevel, or department name
       if (classLevel && classLevel !== 'all') {
-        if (studentClassId !== String(classLevel)) continue;
+        const matchesClass = (
+          studentClassId === String(classLevel) ||
+          effectiveClassId === String(classLevel) ||
+          effectiveClassName === String(classLevel) ||
+          (filterClassDoc && (
+            studentClassId === String(filterClassDoc._id) ||
+            effectiveClassId === String(filterClassDoc._id) ||
+            effectiveClassName === filterClassDoc.name.trim() ||
+            studentDept === filterClassDoc.name.trim()
+          ))
+        );
+        if (!matchesClass) continue;
       }
 
       // Section filter: check by ID or section name
@@ -205,8 +295,9 @@ exports.getAssemblyAttendance = async (req, res, next) => {
         rollNumber = String(student.admissionNumber).trim();
       }
 
-      const className = classMap.get(studentClassId) || '—';
+      const className = effectiveClassName || classMap.get(studentClassId) || '—';
       const sectionName = sectionMap.get(studentSectionVal) || studentSectionVal || '—';
+      const classOrder = classOrderMap.get(effectiveClassId) ?? classOrderMap.get(effectiveClassName) ?? 99;
 
       const existing = existingMap.get(String(student._id));
       // Status can be 'present', 'absent', or '' (unmarked / reset)
@@ -239,11 +330,14 @@ exports.getAssemblyAttendance = async (req, res, next) => {
         fatherName,
         guardianPhone,
         photo,
-        classLevelId: studentClassId,
+        classLevelId: effectiveClassId || studentClassId,
         className,
+        classOrder,
+        department: studentDept,
         sectionId: studentSectionVal,
         sectionName,
         branch: student.branch || (enr?.branch || ''),
+        branchName: branchMap.get(String(student.branch || (enr?.branch || ''))) || '—',
         status,
         inTime,
         remarks,
@@ -251,8 +345,12 @@ exports.getAssemblyAttendance = async (req, res, next) => {
       });
     }
 
-    // Default sort: Roll number
-    records.sort((a, b) => a.rollNumeric - b.rollNumeric || a.studentName.localeCompare(b.studentName, 'bn'));
+    // Default sort: Class order first, then Roll number, then Student name
+    records.sort((a, b) => {
+      if (a.classOrder !== b.classOrder) return a.classOrder - b.classOrder;
+      if (a.rollNumeric !== b.rollNumeric) return a.rollNumeric - b.rollNumeric;
+      return a.studentName.localeCompare(b.studentName, 'bn');
+    });
 
     const totalStudents = records.length;
     const presentRate = totalStudents > 0 ? Math.round((presentCount / totalStudents) * 100) : 0;
