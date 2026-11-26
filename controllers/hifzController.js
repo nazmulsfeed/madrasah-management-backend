@@ -66,11 +66,17 @@ exports.getHifzProgress = async (req, res, next) => {
     const progress = await HifzDailyProgress.find(filter)
       .populate({
         path: 'student',
-        select: 'user studentId roll photo bloodGroup currentEnrollment',
-        populate: {
-          path: 'user',
-          select: 'firstName lastName fullName'
-        }
+        select: 'user studentId roll photo bloodGroup currentEnrollment branch',
+        populate: [
+          {
+            path: 'user',
+            select: 'firstName lastName fullName'
+          },
+          {
+            path: 'branch',
+            select: 'name code'
+          }
+        ]
       })
       .populate('teacher', 'firstName lastName fullName')
       .sort({ date: -1 });
