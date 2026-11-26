@@ -805,6 +805,10 @@ exports.createStudent = async (req, res, next) => {
       fatherName,
       motherName,
       village,
+      postOffice,
+      upazila,
+      district,
+      division,
       nationalIdOrBirthCertNo
     } = req.body;
 
@@ -961,6 +965,10 @@ exports.createStudent = async (req, res, next) => {
       fatherName: fatherName || '',
       motherName: motherName || '',
       village: village || '',
+      postOffice: postOffice || '',
+      upazila: upazila || '',
+      district: district || '',
+      division: division || '',
       nationalIdOrBirthCertNo: nationalIdOrBirthCertNo || '',
       customMonthlyFee: (req.body.customMonthlyFee !== undefined && req.body.customMonthlyFee !== null && req.body.customMonthlyFee !== '' && !isNaN(parseFloat(req.body.customMonthlyFee)) && parseFloat(req.body.customMonthlyFee) >= 0)
         ? parseFloat(req.body.customMonthlyFee)
@@ -1090,7 +1098,7 @@ exports.updateStudent = async (req, res, next) => {
       await userDoc.save();
     }
 
-    const allowedFields = ['bloodGroup', 'status', 'photo', 'residentialStatus', 'hifzProgramType', 'department', 'fatherName', 'motherName', 'village', 'nationalIdOrBirthCertNo', 'deviceUserId'];
+    const allowedFields = ['bloodGroup', 'status', 'photo', 'residentialStatus', 'hifzProgramType', 'department', 'fatherName', 'motherName', 'village', 'postOffice', 'upazila', 'district', 'division', 'nationalIdOrBirthCertNo', 'deviceUserId'];
     const updates = {};
     allowedFields.forEach((field) => {
       if (req.body[field] !== undefined) updates[field] = req.body[field];

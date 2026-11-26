@@ -45,6 +45,7 @@ require('./models/Voucher');
 require('./models/QurbaniSkin');
 require('./models/FundTransfer');
 require('./models/SalaryPayment');
+require('./models/TransferCertificate');
 
 
 const authRoutes = require('./routes/auth');
@@ -73,6 +74,8 @@ const madrasahRoutes = require('./routes/madrasah');
 const searchRoutes = require('./routes/search');
 const salaryRoutes = require('./routes/salary');
 const academicRoutes = require('./routes/academics');
+const teacherSubjectAssignmentRoutes = require('./routes/teacherSubjectAssignments');
+const transferCertificateRoutes = require('./routes/transferCertificates');
 
 const app = express();
 
@@ -164,6 +167,8 @@ app.use('/api/v1/audit-logs', auditLogRoutes);
 app.use('/api/v1/search', searchRoutes);
 app.use('/api/v1/salary', salaryRoutes);
 app.use('/api/v1/academics', academicRoutes);
+app.use('/api/v1/teacher-subject-assignments', teacherSubjectAssignmentRoutes);
+app.use('/api/v1/transfer-certificates', transferCertificateRoutes);
 
 
 // ৪০৪ হ্যান্ডলার

@@ -74,6 +74,10 @@ const connectDB = async () => {
       await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `deviceUserId` VARCHAR(255) NULL DEFAULT ''").catch(() => {});
       await sequelize.query("ALTER TABLE `users` ADD COLUMN `baseSalary` DECIMAL(12,2) NULL DEFAULT 0").catch(() => {});
       await sequelize.query("ALTER TABLE `students` ADD COLUMN `deviceUserId` VARCHAR(255) NULL DEFAULT ''").catch(() => {});
+      await sequelize.query("ALTER TABLE `students` ADD COLUMN `postOffice` VARCHAR(255) NULL DEFAULT ''").catch(() => {});
+      await sequelize.query("ALTER TABLE `students` ADD COLUMN `upazila` VARCHAR(255) NULL DEFAULT ''").catch(() => {});
+      await sequelize.query("ALTER TABLE `students` ADD COLUMN `district` VARCHAR(255) NULL DEFAULT ''").catch(() => {});
+      await sequelize.query("ALTER TABLE `students` ADD COLUMN `division` VARCHAR(255) NULL DEFAULT ''").catch(() => {});
       await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `teacherCutoffTime` VARCHAR(20) NULL DEFAULT '08:45'").catch(() => {});
       await sequelize.query("ALTER TABLE `institutions` ADD COLUMN `teacherAutoAbsentEnabled` TINYINT(1) NULL DEFAULT 0").catch(() => {});
       await sequelize.query("ALTER TABLE `teachers` ADD COLUMN `createdBy` VARCHAR(255) NULL").catch(() => {});

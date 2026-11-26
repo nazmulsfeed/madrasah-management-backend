@@ -126,6 +126,26 @@ Student.init({
     allowNull: true,
     defaultValue: '',
   },
+  postOffice: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
+  upazila: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
+  district: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
+  division: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: '',
+  },
   nationalIdOrBirthCertNo: {
     type: DataTypes.STRING,
     allowNull: true,
