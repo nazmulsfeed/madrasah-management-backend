@@ -48,6 +48,7 @@ require('./models/SalaryPayment');
 require('./models/TransferCertificate');
 require('./models/ManualFeeChecklist');
 require('./models/ManualFeeChecklistAccess');
+require('./models/InfrastructureExpiry');
 
 
 const authRoutes = require('./routes/auth');
@@ -79,6 +80,7 @@ const academicRoutes = require('./routes/academics');
 const teacherSubjectAssignmentRoutes = require('./routes/teacherSubjectAssignments');
 const transferCertificateRoutes = require('./routes/transferCertificates');
 const manualFeeChecklistRoutes = require('./routes/manualFeeChecklist');
+const infrastructureRoutes = require('./routes/infrastructure');
 
 const app = express();
 
@@ -173,6 +175,7 @@ app.use('/api/v1/academics', academicRoutes);
 app.use('/api/v1/teacher-subject-assignments', teacherSubjectAssignmentRoutes);
 app.use('/api/v1/transfer-certificates', transferCertificateRoutes);
 app.use('/api/v1/manual-fee-checklist', manualFeeChecklistRoutes);
+app.use('/api/v1/infrastructure-expiry', infrastructureRoutes);
 
 
 // ৪০৪ হ্যান্ডলার
@@ -200,6 +203,10 @@ const start = async () => {
   // Start Biometric & Attendance Cutoff Auto-Scheduler
   const { startAttendanceScheduler } = require('./utils/attendanceScheduler');
   startAttendanceScheduler();
+
+  // Start Domain & Hosting Expiry Auto-Notifier
+  const { startExpiryScheduler } = require('./utils/expiryNotifier');
+  startExpiryScheduler();
 
   app.listen(PORT, () => {
     console.log(`🚀  সার্ভার চালু হয়েছে পোর্ট ${PORT} এ`);
