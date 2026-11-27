@@ -49,6 +49,8 @@ require('./models/TransferCertificate');
 require('./models/ManualFeeChecklist');
 require('./models/ManualFeeChecklistAccess');
 require('./models/InfrastructureExpiry');
+require('./models/PopupAnnouncement');
+require('./models/PopupSetting');
 
 
 const authRoutes = require('./routes/auth');
@@ -81,6 +83,7 @@ const teacherSubjectAssignmentRoutes = require('./routes/teacherSubjectAssignmen
 const transferCertificateRoutes = require('./routes/transferCertificates');
 const manualFeeChecklistRoutes = require('./routes/manualFeeChecklist');
 const infrastructureRoutes = require('./routes/infrastructure');
+const popupRoutes = require('./routes/popups');
 
 const app = express();
 
@@ -176,6 +179,7 @@ app.use('/api/v1/teacher-subject-assignments', teacherSubjectAssignmentRoutes);
 app.use('/api/v1/transfer-certificates', transferCertificateRoutes);
 app.use('/api/v1/manual-fee-checklist', manualFeeChecklistRoutes);
 app.use('/api/v1/infrastructure-expiry', infrastructureRoutes);
+app.use('/api/v1/popups', popupRoutes);
 
 
 // ৪০৪ হ্যান্ডলার

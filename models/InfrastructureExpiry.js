@@ -35,7 +35,6 @@ InfrastructureExpiry.init(
     notifiedMilestones: {
       type: DataTypes.JSON,
       allowNull: true,
-      defaultValue: [],
     },
     updatedBy: {
       type: DataTypes.STRING,
