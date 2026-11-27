@@ -79,6 +79,24 @@ exports.updateRolePermissions = async (req, res, next) => {
   }
 };
 
+async function hasSpecificChecklistAccess(user) {
+  try {
+    const { Op } = require('sequelize');
+    const ManualFeeChecklistAccess = require('../models/ManualFeeChecklistAccess');
+    const candidateIds = [
+      user?.id !== undefined && user?.id !== null ? String(user.id) : '',
+      user?._id ? String(user._id) : '',
+    ].filter(Boolean);
+    if (candidateIds.length === 0) return false;
+    const specificAccess = await ManualFeeChecklistAccess.findOne({
+      where: { userId: { [Op.in]: candidateIds } },
+    });
+    return Boolean(specificAccess);
+  } catch {
+    return false;
+  }
+}
+
 // @desc    Get my permissions
 // @route   GET /api/v1/permissions/me
 // @access  Private (Logged in users)
@@ -95,6 +113,9 @@ exports.getMyPermissions = async (req, res, next) => {
       Object.keys(require('../utils/permissions').legacyToGranularMap).forEach(legacyKey => {
         allPerms[legacyKey] = true;
       });
+      if (req.user.userType === 'super_admin' || (await hasSpecificChecklistAccess(req.user))) {
+        allPerms['finance.manual_fee_checklist'] = true;
+      }
       return ApiResponse.success(res, allPerms);
     }
 
@@ -135,6 +156,11 @@ exports.getMyPermissions = async (req, res, next) => {
       if (granularKeys.some(key => permissions[key])) {
         permissions[legacyKey] = true;
       }
+    }
+
+    // Check per-user Manual Fee Checklist access (granted by super_admin to specific teachers)
+    if (await hasSpecificChecklistAccess(req.user)) {
+      permissions['finance.manual_fee_checklist'] = true;
     }
 
     ApiResponse.success(res, permissions);
