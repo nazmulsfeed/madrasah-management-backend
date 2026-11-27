@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const Notice = require('../models/Notice');
 const ApiResponse = require('../utils/apiResponse');
 const { broadcastNotification, sendNoticePush } = require('../utils/pushHelper');
+const { parseNoticeAudience, filterNoticesForUser } = require('../utils/noticeTargeting');
 
 // @desc    পাবলিক নোটিশ তালিকা
 // @route   GET /api/v1/notices/public
@@ -18,7 +19,13 @@ exports.getPublicNotices = async (req, res, next) => {
       order: [['createdAt', 'DESC']]
     });
 
-    ApiResponse.success(res, { notices });
+    // Only expose public 'all' notices on public endpoint
+    const publicNotices = notices.filter(n => {
+      const { roles } = parseNoticeAudience(n.audience);
+      return roles.includes('all');
+    });
+
+    ApiResponse.success(res, { notices: publicNotices });
   } catch (error) {
     next(error);
   }
@@ -40,10 +47,18 @@ exports.getNotices = async (req, res, next) => {
       where.isPublished = true;
     }
 
-    const notices = await Notice.findAll({
+    const allNotices = await Notice.findAll({
       where,
       order: [['createdAt', 'DESC']]
     });
+
+    // Filter notices strictly by user role and targeted student/guardian filters
+    let notices = await filterNoticesForUser(allNotices, req.user);
+
+    // Exclude physical_board notices unless explicitly requested (so bell notifications never show them)
+    if (req.query.includePhysical !== 'true') {
+      notices = notices.filter(n => !parseNoticeAudience(n.audience).roles.includes('physical_board'));
+    }
 
     const { enrichWithUsers } = require('../utils/userEnricher');
     const enrichedNotices = await enrichWithUsers(notices, ['publishedBy']);
@@ -75,7 +90,7 @@ exports.getNotices = async (req, res, next) => {
 // @route   POST /api/v1/notices
 exports.createNotice = async (req, res, next) => {
   try {
-    const { title, content, audience, priority, isPublished } = req.body;
+    const { title, content, audience, priority, isPublished, attachments, publishedAt } = req.body;
 
     const notice = await Notice.create({
       institution: req.user.institution,
@@ -85,18 +100,23 @@ exports.createNotice = async (req, res, next) => {
       priority: priority || 'normal',
       isPublished: isPublished !== undefined ? isPublished : true,
       publishedBy: req.user._id,
+      attachments: attachments !== undefined ? attachments : null,
+      publishedAt: publishedAt ? new Date(publishedAt) : new Date(),
     });
 
     ApiResponse.created(res, { notice }, 'নোটিশ সফলভাবে তৈরি করা হয়েছে');
 
-    // ব্যাকগ্রাউন্ডে নোটিফিকেশন পাঠানো হচ্ছে (পাবলিক ভিউ অন থাকলে ব্রডকাস্ট, অফ থাকলে শুধু সংশ্লিষ্ট লগইন করা ইউজাররা পাবে)
-    sendNoticePush({
-      notice,
-      payload: {
-        title: `📢 নতুন নোটিশ: ${title}`,
-        body: content ? content.substring(0, 100) : 'একটি নতুন নোটিশ পোস্ট করা হয়েছে।',
-      }
-    });
+    const { roles } = parseNoticeAudience(notice.audience);
+    if (!roles.includes('physical_board')) {
+      // ব্যাকগ্রাউন্ডে নোটিফিকেশন পাঠানো হচ্ছে (পাবলিক ভিউ অন থাকলে ব্রডকাস্ট, অফ থাকলে শুধু সংশ্লিষ্ট লগইন করা ইউজাররা পাবে)
+      sendNoticePush({
+        notice,
+        payload: {
+          title: `📢 নতুন নোটিশ: ${title}`,
+          body: content ? content.replace(/<[^>]*>/g, '').substring(0, 100) : 'একটি নতুন নোটিশ পোস্ট করা হয়েছে।',
+        }
+      });
+    }
   } catch (error) {
     next(error);
   }
@@ -134,13 +154,15 @@ exports.updateNotice = async (req, res, next) => {
       return ApiResponse.notFound(res, 'নোটিশ পাওয়া যায়নি');
     }
 
-    const { title, content, audience, priority, isPublished } = req.body;
+    const { title, content, audience, priority, isPublished, attachments, publishedAt } = req.body;
 
     if (title !== undefined) notice.title = title;
     if (content !== undefined) notice.content = content;
     if (audience !== undefined) notice.audience = audience;
     if (priority !== undefined) notice.priority = priority;
     if (isPublished !== undefined) notice.isPublished = isPublished;
+    if (attachments !== undefined) notice.attachments = attachments;
+    if (publishedAt !== undefined) notice.publishedAt = publishedAt ? new Date(publishedAt) : notice.publishedAt;
 
     await notice.save();
     

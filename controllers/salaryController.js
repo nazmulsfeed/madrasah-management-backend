@@ -711,6 +711,15 @@ exports.paySalary = async (req, res, next) => {
       salary,
       voucher,
     });
+
+    const { notifyTeacherSalaryPayment } = require('../utils/noticeTargeting');
+    notifyTeacherSalaryPayment({
+      institution: req.user.institution,
+      publishedBy: req.user._id,
+      salary,
+      amount,
+      paymentMethod
+    });
   } catch (error) {
     console.error('paySalary error:', error);
     next(error);
@@ -813,6 +822,15 @@ exports.bulkPaySalary = async (req, res, next) => {
 
       totalPaidBulk += payable;
       successCount++;
+
+      const { notifyTeacherSalaryPayment } = require('../utils/noticeTargeting');
+      notifyTeacherSalaryPayment({
+        institution: req.user.institution,
+        publishedBy: req.user._id,
+        salary: sal,
+        amount: payable,
+        paymentMethod
+      });
     }
 
     // Deduct total from fund account

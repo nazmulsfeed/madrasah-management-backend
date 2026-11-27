@@ -263,8 +263,8 @@ async function sendNoticePush({ notice, payload = {} }) {
     const inst = await Institution.findOne();
     const isPublic = inst ? Boolean(inst.isHomeworkPublic) : false;
 
-    const audience = Array.isArray(notice.audience) ? notice.audience : (notice.audience ? [notice.audience] : ['all']);
-    const isAllAudience = audience.includes('all') || audience.length === 0;
+    const { getTargetUserIdsForNotice } = require('./noticeTargeting');
+    const { isAll: isAllAudience, userIds: matchedUserIds } = await getTargetUserIdsForNotice(notice);
 
     // যদি পাবলিক ভিউ অন থাকে এবং অডিয়েন্স 'all' হয়, তবে সবার জন্য ব্রডকাস্ট
     if (isPublic && isAllAudience) {
@@ -275,7 +275,7 @@ async function sendNoticePush({ notice, payload = {} }) {
       });
     }
 
-    // অন্যথায় (পাবলিক ভিউ অফ থাকলে অথবা নির্দিষ্ট অডিয়েন্স থাকলে): শুধুমাত্র লগইন করা ইউজারদের টার্গেট করা হবে
+    // অন্যথায় (পাবলিক ভিউ অফ থাকলে অথবা নির্দিষ্ট অডিয়েন্স/ফিল্টার থাকলে): শুধুমাত্র টার্গেটেড ইউজাররা পাবে
     let targetUserIds = [];
 
     if (isAllAudience) {
@@ -288,21 +288,7 @@ async function sendNoticePush({ notice, payload = {} }) {
       });
       targetUserIds = subsWithUser.map(s => s.userId).filter(Boolean);
     } else {
-      // নির্দিষ্ট রোলের ইউজারদের খোঁজা
-      const allowedRoles = [];
-      if (audience.includes('students')) allowedRoles.push('student');
-      if (audience.includes('guardians')) allowedRoles.push('guardian');
-      if (audience.includes('teachers')) allowedRoles.push('teacher', 'principal', 'vice_principal');
-      if (audience.includes('staff')) allowedRoles.push('staff', 'accountant');
-
-      const matchingUsers = await User.findAll({
-        where: {
-          userType: { [Op.in]: allowedRoles },
-          status: 'active'
-        },
-        attributes: ['_id']
-      });
-      targetUserIds = matchingUsers.map(u => String(u._id));
+      targetUserIds = matchedUserIds;
     }
 
     if (targetUserIds.length === 0) {

@@ -678,6 +678,17 @@ exports.receivePayment = async (req, res, next) => {
       : 'পেমেন্ট সফলভাবে গ্রহণ করা হয়েছে।';
 
     ApiResponse.success(res, { payment, invoice }, message);
+
+    if (status === 'success') {
+      const { notifyStudentFeePayment } = require('../utils/noticeTargeting');
+      notifyStudentFeePayment({
+        institution: req.user.institution,
+        publishedBy: req.user._id,
+        studentId: invoice.student,
+        amount,
+        invoiceLabel: invoice.title || invoice.invoiceNumber || ''
+      });
+    }
   } catch (error) {
     next(error);
   }
@@ -775,6 +786,18 @@ exports.receiveBulkPayment = async (req, res, next) => {
       : 'পেমেন্ট সফলভাবে গ্রহণ করা হয়েছে।';
 
     ApiResponse.success(res, { payments: createdPayments }, message);
+
+    if (status === 'success') {
+      const { notifyStudentFeePayment } = require('../utils/noticeTargeting');
+      const targetStudentId = invoices[0]?.student;
+      notifyStudentFeePayment({
+        institution: req.user.institution,
+        publishedBy: req.user._id,
+        studentId: targetStudentId,
+        amount: totalAmount,
+        invoiceLabel: `${invoices.length}টি ইনভয়েস`
+      });
+    }
   } catch (error) {
     next(error);
   }
@@ -887,6 +910,15 @@ exports.verifyPayment = async (req, res, next) => {
     );
 
     ApiResponse.success(res, { payment, invoice }, 'পেমেন্ট সফলভাবে ভেরিফাই ও অনুমোদন করা হয়েছে');
+
+    const { notifyStudentFeePayment } = require('../utils/noticeTargeting');
+    notifyStudentFeePayment({
+      institution: req.user.institution,
+      publishedBy: req.user._id,
+      studentId: invoice.student,
+      amount: payment.amount,
+      invoiceLabel: invoice.title || invoice.invoiceNumber || ''
+    });
   } catch (error) {
     next(error);
   }
@@ -1354,6 +1386,16 @@ exports.createAdvance = async (req, res, next) => {
       status: 'pending',
     });
     ApiResponse.created(res, { advance }, 'অগ্রিম সফলভাবে যুক্ত করা হয়েছে');
+
+    const { notifyTeacherAdvancePayment } = require('../utils/noticeTargeting');
+    notifyTeacherAdvancePayment({
+      institution,
+      publishedBy: req.user._id,
+      personType,
+      personName,
+      amount,
+      reason
+    });
   } catch (error) { next(error); }
 };
 
