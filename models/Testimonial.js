@@ -1,0 +1,68 @@
+const { Model, DataTypes } = require('sequelize');
+const sequelize = require('../config/db');
+
+class Testimonial extends Model {
+  toJSON() {
+    const values = { ...this.get() };
+    return values;
+  }
+}
+
+Testimonial.init({
+  _id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+  },
+  institution: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+  student: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+  serialNumber: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
+  isTaken: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  },
+  takenAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  issueDate: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  customData: {
+    type: DataTypes.TEXT('long'),
+    allowNull: true,
+  },
+  issuedBy: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  updatedBy: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+}, {
+  sequelize,
+  modelName: 'Testimonial',
+  tableName: 'testimonials',
+  indexes: [
+    {
+      unique: true,
+      fields: ['institution', 'student'],
+    },
+    {
+      fields: ['institution', 'serialNumber'],
+    },
+  ],
+});
+
+module.exports = Testimonial;
