@@ -6,6 +6,7 @@ const User = require('../models/User');
 const StudentEnrollment = require('../models/StudentEnrollment');
 const ClassLevel = require('../models/ClassLevel');
 const Section = require('../models/Section');
+const { matchesSearchQuery } = require('../utils/searchMatch');
 
 // @desc    Global search across students, teachers, etc.
 // @route   GET /api/v1/search/global?q=...
@@ -243,11 +244,23 @@ exports.globalSearch = async (req, res) => {
       };
     });
 
+    const wholeWords = req.query.wholeWords !== 'false';
+    const finalStudents = wholeWords
+      ? formattedStudents.filter((s) =>
+          matchesSearchQuery([s.name, s.studentId, s.rollNumber, s.className, s.section], rawQuery, true)
+        )
+      : formattedStudents;
+    const finalTeachers = wholeWords
+      ? formattedTeachers.filter((t) =>
+          matchesSearchQuery([t.name, t.designation, t.phone], rawQuery, true)
+        )
+      : formattedTeachers;
+
     return res.json({
       success: true,
       data: {
-        students: formattedStudents,
-        teachers: formattedTeachers,
+        students: finalStudents,
+        teachers: finalTeachers,
       },
     });
   } catch (error) {

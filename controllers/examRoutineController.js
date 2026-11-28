@@ -86,6 +86,13 @@ exports.createOrUpdateExamRoutine = async (req, res, next) => {
       return ApiResponse.error(res, 'রুটিনের শিরোনাম আবশ্যক', 400);
     }
 
+    const isMatrixSchedule = schedule && typeof schedule === 'object' && !Array.isArray(schedule) && schedule.kind === 'matrix';
+    const normalizedSchedule = Array.isArray(schedule)
+      ? schedule
+      : isMatrixSchedule
+      ? schedule
+      : [];
+
     const institution = req.user.institution;
     const routineData = {
       institution,
@@ -98,7 +105,7 @@ exports.createOrUpdateExamRoutine = async (req, res, next) => {
       title: title.trim(),
       status: status || 'published',
       instructions: instructions || '',
-      schedule: Array.isArray(schedule) ? schedule : [],
+      schedule: normalizedSchedule,
       createdBy: req.user._id,
     };
 

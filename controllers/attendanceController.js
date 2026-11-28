@@ -14,6 +14,7 @@ const StudentEnrollment = require('../models/StudentEnrollment');
 const BiometricDevice = require('../models/BiometricDevice');
 const DeviceCommand = require('../models/DeviceCommand');
 const ApiResponse = require('../utils/apiResponse');
+const { matchesSearchQuery } = require('../utils/searchMatch');
 
 // Helper: date string থেকে UTC start/end of day তৈরি করা
 const getDayRange = (dateStr) => {
@@ -2301,13 +2302,14 @@ exports.getBiometricUsers = async (req, res, next) => {
 
     // সার্চ ফিল্টার
     if (search && search.trim()) {
-      const q = search.trim().toLowerCase();
+      const wholeWords = req.query.wholeWords !== 'false';
+      const q = search.trim();
       combinedUsers = combinedUsers.filter(u =>
-        (u.name && u.name.toLowerCase().includes(q)) ||
-        (u.effectiveDeviceUserId && u.effectiveDeviceUserId.toLowerCase().includes(q)) ||
-        (u.rollNumber && String(u.rollNumber).toLowerCase().includes(q)) ||
-        (u.studentId && u.studentId.toLowerCase().includes(q)) ||
-        (u.phone && u.phone.includes(q))
+        matchesSearchQuery(
+          [u.name, u.effectiveDeviceUserId, u.rollNumber, u.studentId, u.phone],
+          q,
+          { wholeWords }
+        )
       );
     }
 

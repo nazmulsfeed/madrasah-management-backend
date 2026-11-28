@@ -389,11 +389,19 @@ exports.getStudents = async (req, res, next) => {
       }
 
       if (isPureNumeric) {
-        // Pure numeric: match exact student ID suffix or exact match
-        orConditions.push(
-          { studentId: new RegExp(`(ANG20|ANB20|ANG|ANB|^)0*${cleanDigits}$`, 'i') },
-          { admissionNumber: new RegExp(`0*${cleanDigits}$`, 'i') }
-        );
+        if (req.query.wholeWords !== 'false') {
+          // Whole-word / ID segment filtering runs right after via searchMatch.js
+          orConditions.push(
+            { studentId: new RegExp(cleanDigits, 'i') },
+            { admissionNumber: new RegExp(cleanDigits, 'i') }
+          );
+        } else {
+          // Substring / legacy numeric match
+          orConditions.push(
+            { studentId: new RegExp(cleanDigits, 'i') },
+            { admissionNumber: new RegExp(cleanDigits, 'i') }
+          );
+        }
       } else {
         digitVariations.forEach(dv => {
           orConditions.push(
@@ -581,7 +589,7 @@ exports.getStudents = async (req, res, next) => {
       // e.g. ANB20264 -> SUBSTRING from pos 8 -> "4" -> CAST 4
       // e.g. ANB202642 -> SUBSTRING from pos 8 -> "42" -> CAST 42
       orderClause = [
-        [sequelize.literal("CASE WHEN `Student`.`studentId` REGEXP '^AN[BG][0-9]{4}[0-9]+$' THEN CAST(SUBSTRING(`Student`.`studentId`, 8) AS UNSIGNED) ELSE CAST(NULLIF(REPLACE(REPLACE(UPPER(COALESCE(`Student`.`studentId`, '')), 'ANG', ''), 'ANB', '') AS UNSIGNED) END"), sortOrder],
+        [sequelize.literal("CASE WHEN `Student`.`studentId` REGEXP '^AN[BG][0-9]{4}[0-9]+$' THEN CAST(SUBSTRING(`Student`.`studentId`, 8) AS UNSIGNED) WHEN `Student`.`studentId` REGEXP '^[0-9]+$' THEN CAST(`Student`.`studentId` AS UNSIGNED) ELSE 999999 END"), sortOrder],
         ['studentId', sortOrder]
       ];
     } else if (sortBy === 'admissionNumber') {
@@ -596,24 +604,32 @@ exports.getStudents = async (req, res, next) => {
       orderClause = [[{ model: User, as: 'user_populated' }, 'username', sortOrder]];
     }
 
+    const hasSearch = Boolean(req.query.search && req.query.search.trim());
+    const wholeWords = req.query.wholeWords !== 'false';
+    const deferPaginationForWholeWords = hasSearch && wholeWords;
+
     let students = [];
     try {
-      students = await Student.find(filter)
+      let query = Student.find(filter)
         .populate('user', 'firstName lastName firstNameEn lastNameEn email phone photo username fullName')
         .populate('institution', 'name code')
         .populate('branch', 'name code')
-        .sort(orderClause)
-        .skip(skip)
-        .limit(limit);
+        .sort(orderClause);
+      if (!deferPaginationForWholeWords) {
+        query = query.skip(skip).limit(limit);
+      }
+      students = await query;
     } catch (sortErr) {
       console.warn('Student sort query warning, fallback to default sort:', sortErr.message);
-      students = await Student.find(filter)
+      let fallbackQuery = Student.find(filter)
         .populate('user', 'firstName lastName firstNameEn lastNameEn email phone photo username fullName')
         .populate('institution', 'name code')
         .populate('branch', 'name code')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit);
+        .sort({ createdAt: -1 });
+      if (!deferPaginationForWholeWords) {
+        fallbackQuery = fallbackQuery.skip(skip).limit(limit);
+      }
+      students = await fallbackQuery;
     }
 
     const populatedStudents = await populateStudentEnrollments(students);
@@ -704,7 +720,39 @@ exports.getStudents = async (req, res, next) => {
     const { enrichWithUsers } = require('../utils/userEnricher');
     const enrichedStudents = await enrichWithUsers(populatedStudents, ['createdBy', 'updatedBy']);
 
-    ApiResponse.paginated(res, enrichedStudents, page, limit, total);
+    let finalStudents = enrichedStudents;
+    let finalTotal = total;
+    if (deferPaginationForWholeWords) {
+      const { matchesSearchQuery } = require('../utils/searchMatch');
+      const rawQ = req.query.search.trim();
+      const bnToEnMap = { '০': '0', '১': '1', '২': '2', '৩': '3', '৪': '4', '৫': '5', '৬': '6', '৭': '7', '৮': '8', '৯': '9' };
+      const enToBnMap = { '0': '০', '1': '১', '2': '২', '3': '৩', '4': '৪', '5': '৫', '6': '৬', '7': '৭', '8': '৮', '9': '৯' };
+      const enQ = rawQ.replace(/[০-৯]/g, (d) => bnToEnMap[d]);
+      const bnQ = rawQ.replace(/[0-9]/g, (d) => enToBnMap[d]);
+      const queryVariants = [...new Set([rawQ, enQ, bnQ])].filter(Boolean);
+
+      const filteredAll = enrichedStudents.filter((st) => {
+        const fields = [
+          st.user?.fullName,
+          `${st.user?.firstName || ''} ${st.user?.lastName || ''}`.trim(),
+          st.user?.firstNameEn,
+          st.user?.lastNameEn,
+          st.user?.username,
+          st.user?.phone,
+          st.studentId,
+          st.admissionNumber,
+          st.fatherName,
+          st.motherName,
+          st.village,
+          st.currentEnrollment?.rollNumber,
+        ];
+        return queryVariants.some((qv) => matchesSearchQuery(fields, qv, true));
+      });
+      finalTotal = filteredAll.length;
+      finalStudents = filteredAll.slice(skip, skip + limit);
+    }
+
+    ApiResponse.paginated(res, finalStudents, page, limit, finalTotal);
   } catch (error) {
     next(error);
   }

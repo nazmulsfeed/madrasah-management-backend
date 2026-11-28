@@ -5,6 +5,7 @@ const ApiResponse = require('../utils/apiResponse');
 const { protect } = require('../middleware/auth');
 const { authorize } = require('../middleware/rbac');
 const { DB_RESET_PASSWORD, SUPERADMIN_USERNAME, SUPERADMIN_EMAIL, SUPERADMIN_PASSWORD } = require('../config/systemConstants');
+const { matchesSearchQuery } = require('../utils/searchMatch');
 
 router.use(protect);
 
@@ -28,6 +29,23 @@ router.get('/', authorize('super_admin', 'co_super_admin', 'admin'), async (req,
     if (req.query.search) {
       const s = new RegExp(req.query.search, 'i');
       filter.$or = [{ username: s }, { email: s }, { firstName: s }, { lastName: s }];
+    }
+
+    const wholeWords = req.query.wholeWords !== 'false';
+    if (req.query.search && wholeWords) {
+      const allUsers = await User.find(filter)
+        .populate('institution', 'name code')
+        .populate('branch', 'name code')
+        .sort({ createdAt: -1 });
+      const filtered = allUsers.filter((u) =>
+        matchesSearchQuery(
+          [u.username, u.email, u.firstName, u.lastName, `${u.firstName || ''} ${u.lastName || ''}`],
+          req.query.search,
+          { wholeWords: true }
+        )
+      );
+      const pagedUsers = filtered.slice(skip, skip + limit);
+      return ApiResponse.paginated(res, pagedUsers, page, limit, filtered.length);
     }
 
     const total = await User.countDocuments(filter);
