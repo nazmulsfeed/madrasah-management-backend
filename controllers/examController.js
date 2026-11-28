@@ -569,12 +569,12 @@ async function calculateExamRanks(examId, institution) {
   });
 
   const ranksMap = new Map();
-  let currentRank = 1;
+  let currentRank = 0;
   let prevTotal = null;
 
-  studentList.forEach((item, index) => {
+  studentList.forEach((item) => {
     if (prevTotal !== null && item.totalObtained === prevTotal) {
-      // Shared rank
+      // Shared rank (Dense Ranking)
       ranksMap.set(item.studentId, {
         rank: currentRank,
         totalObtained: item.totalObtained,
@@ -585,7 +585,7 @@ async function calculateExamRanks(examId, institution) {
         gpa: item.gpa
       });
     } else {
-      currentRank = index + 1;
+      currentRank += 1;
       ranksMap.set(item.studentId, {
         rank: currentRank,
         totalObtained: item.totalObtained,
@@ -1012,9 +1012,9 @@ async function calculateAnnualCombinedRanks(classLevelId, institution, section =
 
     studentsWithMarksCount += 1;
     if (prevTotal !== null && item.grandTotalObtained === prevTotal) {
-      // Shared Rank
+      // Shared Rank (Dense Ranking)
     } else {
-      currentRank = studentsWithMarksCount;
+      currentRank = prevTotal === null ? 1 : currentRank + 1;
       prevTotal = item.grandTotalObtained;
     }
 
